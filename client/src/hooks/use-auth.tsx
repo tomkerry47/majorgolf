@@ -135,23 +135,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       password: string;
       username: string;
     }) => {
-      // Sign up with Supabase Auth
-      const { user: authUser } = await supabaseSignUp(email, password, { username, fullName: '' });
+      try {
+        // Sign up with Supabase Auth
+        const response = await supabaseSignUp(email, password, { username, fullName: '' });
+        const authUser = response.user;
 
-      if (authUser) {
-        // Create user in database
-        const { data, error } = await supabase.from('users').insert([
-          {
-            email,
-            username,
-            id: authUser.id,
-          },
-        ]);
+        if (authUser) {
+          // Create user in database
+          const { data, error } = await supabase.from('users').insert([
+            {
+              email,
+              username,
+              id: authUser.id,
+            },
+          ]);
 
-        if (error) throw error;
-        return { user: authUser, data };
+          if (error) throw error;
+          return { user: authUser, data };
+        } else {
+          // If no user is returned but there's no error, this likely means
+          // confirmation email has been sent but the user isn't confirmed yet
+          return { 
+            user: null, 
+            message: "Confirmation email sent. Please check your inbox." 
+          };
+        }
+      } catch (error) {
+        // Re-throw any errors to be handled by the component
+        throw error;
       }
-      throw new Error("Failed to create user account");
     },
   });
 

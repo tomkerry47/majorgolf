@@ -45,21 +45,44 @@ export default function AuthForm({ type }: AuthFormProps) {
           title: "Welcome back!",
           description: "You have been successfully logged in.",
         });
+        setLocation("/");
       } else {
         const { email, password, username, fullName } = data as RegisterCredentials;
         await signUp(email, password, username, fullName);
         toast({
           title: "Account created!",
-          description: "Your account has been successfully created.",
+          description: "Check your email to confirm your registration.",
         });
+        // Don't redirect after signup since email verification is needed
       }
-      setLocation("/");
     } catch (error: any) {
       console.error("Authentication error:", error);
+      
+      let errorTitle = "Authentication failed";
+      let errorMessage = "An error occurred during authentication.";
+      
+      // Handle specific error codes from Supabase
+      if (error.__isAuthError) {
+        switch (error.code) {
+          case "invalid_credentials":
+            errorMessage = "Invalid email or password. Please try again.";
+            break;
+          case "over_email_send_rate_limit":
+            errorTitle = "Too many attempts";
+            errorMessage = "Please wait a few minutes before trying again.";
+            break;
+          case "user_already_exists":
+            errorMessage = "An account with this email already exists.";
+            break;
+          default:
+            errorMessage = error.message || errorMessage;
+        }
+      }
+      
       toast({
         variant: "destructive",
-        title: "Authentication failed",
-        description: error.message || "An error occurred during authentication.",
+        title: errorTitle,
+        description: errorMessage,
       });
     } finally {
       setIsLoading(false);
