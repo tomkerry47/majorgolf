@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useLocation } from "wouter";
-import { signIn, signUp } from "@/lib/supabase";
+import { useAuth } from "@/hooks/use-auth";
 import { registerSchema, loginSchema, type LoginCredentials, type RegisterCredentials } from "@shared/schema";
 
 interface AuthFormProps {
@@ -19,6 +19,7 @@ export default function AuthForm({ type }: AuthFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const { signIn, signUp } = useAuth();
 
   const schema = type === "login" ? loginSchema : registerSchema;
   const form = useForm<LoginCredentials | RegisterCredentials>({
@@ -46,7 +47,7 @@ export default function AuthForm({ type }: AuthFormProps) {
         });
       } else {
         const { email, password, username, fullName } = data as RegisterCredentials;
-        await signUp(email, password, { username, fullName });
+        await signUp(email, password, username);
         toast({
           title: "Account created!",
           description: "Your account has been successfully created.",
