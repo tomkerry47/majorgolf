@@ -82,9 +82,6 @@ export default function AuthForm({ type }: AuthFormProps) {
             break;
           default:
             errorMessage = error.message || "An unexpected error occurred. Please try again.";
-            break;
-          default:
-            errorMessage = error.message || errorMessage;
         }
       }
       
