@@ -18,11 +18,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase";
 
 export default function Leaderboard() {
-  const { profile } = useAuth();
+  const { user } = useAuth();
   const [selectedCompetition, setSelectedCompetition] = useState<number | 'all'>('all');
   
   const { data: competitions } = useQuery({
@@ -51,7 +51,7 @@ export default function Leaderboard() {
     };
   }, []);
   
-  const currentUserId = profile?.id;
+  const currentUserId = user?.id;
   
   const getRankBadgeColor = (rank: number) => {
     switch (rank) {
