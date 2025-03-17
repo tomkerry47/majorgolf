@@ -72,21 +72,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.params.id;
       
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(userId);
       
-      if (error) throw error;
-      if (!data) return res.status(404).json({ error: "User not found" });
+      if (userError) throw userError;
+      if (!user) return res.status(404).json({ error: "User not found" });
       
       // Get user statistics
       const { data: stats, error: statsError } = await supabase.rpc('get_user_stats', { user_id: userId });
       
-      if (statsError) throw statsError;
+      const userData = {
+        id: user.id,
+        email: user.email,
+        username: user.user_metadata?.username || user.email?.split('@')[0],
+        fullName: user.user_metadata?.full_name || '',
+        avatar: user.user_metadata?.avatar || '',
+        stats: stats || {}
+      };
       
-      res.status(200).json({ ...data, stats });
+      res.status(200).json(userData);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
