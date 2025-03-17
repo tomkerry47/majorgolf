@@ -23,7 +23,14 @@ export default function Profile() {
   }, [user, setLocation]);
   
   const { data: profileData, isLoading, error } = useQuery({
-    queryKey: [`/api/users/${userId}`],
+    queryKey: ['profile', userId],
+    queryFn: async () => {
+      const response = await fetch(`/api/users/${userId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch profile data');
+      }
+      return response.json();
+    },
     enabled: !!user && !!userId,
   });
 
