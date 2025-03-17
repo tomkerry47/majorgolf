@@ -206,11 +206,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         throw new Error(error.error || 'Failed to login');
       }
 
-      const data = await response.json();
-      setUser(data.user);
+      const { session, user } = await response.json();
+      
+      if (!session || !user) {
+        throw new Error('Invalid session data received');
+      }
+
+      // Update Supabase session
+      await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token
+      });
+
+      setUser(user);
     } catch (error) {
       console.error("Error signing in:", error);
-      throw error; // Re-throw for handling by calling component
+      throw error;
     }
   };
 

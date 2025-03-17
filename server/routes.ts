@@ -42,14 +42,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = loginSchema.parse(req.body);
       
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data: { session, user }, error } = await supabase.auth.signInWithPassword({
         email: validatedData.email,
         password: validatedData.password
       });
       
       if (error) throw error;
-      
-      res.status(200).json(data);
+      if (!session || !user) throw new Error('Failed to create session');
+
+      res.status(200).json({ 
+        session,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.user_metadata?.username || user.email?.split('@')[0],
+          fullName: user.user_metadata?.full_name || '',
+        }
+      });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
