@@ -42,21 +42,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = loginSchema.parse(req.body);
       
-      const { data: { session, user }, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: validatedData.email,
         password: validatedData.password
       });
       
       if (error) throw error;
-      if (!session || !user) throw new Error('Failed to create session');
+      if (!data.session || !data.user) throw new Error('Failed to create session');
+
+      // Fetch additional user data from the database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
+
+      if (userError) throw userError;
 
       res.status(200).json({ 
-        session,
+        session: data.session,
         user: {
-          id: user.id,
-          email: user.email,
-          username: user.user_metadata?.username || user.email?.split('@')[0],
-          fullName: user.user_metadata?.full_name || '',
+          id: data.user.id,
+          email: data.user.email,
+          username: userData?.username || data.user.email?.split('@')[0],
+          fullName: userData?.full_name || '',
+          isAdmin: userData?.is_admin || false
         }
       });
     } catch (error: any) {

@@ -193,32 +193,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to login');
-      }
+      if (error) throw error;
+      if (!data.session || !data.user) throw new Error('Invalid response from auth service');
 
-      const { session, user } = await response.json();
-      
-      if (!session || !user) {
-        throw new Error('Invalid session data received');
-      }
+      // Fetch user data from database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
 
-      // Update Supabase session
-      await supabase.auth.setSession({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token
+      if (userError) throw userError;
+
+      setUser({
+        id: data.user.id,
+        email: data.user.email || '',
+        username: userData?.username || data.user.email?.split('@')[0] || '',
+        fullName: userData?.full_name || '',
+        isAdmin: userData?.is_admin || false
       });
-
-      setUser(user);
     } catch (error) {
       console.error("Error signing in:", error);
       throw error;
