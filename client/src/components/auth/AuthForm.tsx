@@ -57,10 +57,10 @@ export default function AuthForm({ type }: AuthFormProps) {
       }
     } catch (error: any) {
       console.error("Authentication error:", error);
-      
+
       let errorTitle = "Authentication failed";
       let errorMessage = "An error occurred during authentication.";
-      
+
       // Handle specific error codes from Supabase
       if (error.__isAuthError) {
         switch (error.code) {
@@ -84,7 +84,7 @@ export default function AuthForm({ type }: AuthFormProps) {
             errorMessage = error.message || "An unexpected error occurred. Please try again.";
         }
       }
-      
+
       toast({
         variant: "destructive",
         title: errorTitle,
