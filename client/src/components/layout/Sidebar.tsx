@@ -35,9 +35,9 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
         "fixed inset-y-0 left-0 z-50 md:relative md:z-0 w-64 flex flex-col transition-transform transform-gpu duration-300 ease-in-out",
         open ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}>
-        <div className="flex flex-col flex-grow pt-5 bg-secondary overflow-y-auto text-black [&_a]:text-black [&_button]:text-black"> {/* Added text-black here */}
+        <div className="flex flex-col flex-grow pt-5 bg-secondary overflow-y-auto [&_*]:text-black"> {/* Force all elements to be black */}
           <div className="flex items-center flex-shrink-0 px-4 mb-5">
-            <span className="text-xl font-semibold text-white">Golf Syndicate</span>
+            <span className="text-xl font-semibold text-black">Golf Syndicate</span>
           </div>
           <nav className="flex-1 px-2 pb-4 space-y-1">
             <Link 
