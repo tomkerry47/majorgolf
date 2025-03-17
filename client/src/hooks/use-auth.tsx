@@ -43,7 +43,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         // Get current user from Supabase Auth
         const currentUser = await getCurrentUser();
-        
+
         if (currentUser) {
           // Get additional user data from database
           const { data: userData, error } = await supabase
@@ -51,7 +51,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             .select('id, username, email, is_admin, avatar_url')
             .eq('email', currentUser.email)
             .single();
-          
+
           if (userData) {
             setUser({
               id: currentUser.id,
@@ -87,7 +87,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               .select('id, username, email, is_admin, avatar_url')
               .eq('email', session.user.email)
               .single();
-              
+
             if (userData) {
               setUser({
                 id: session.user.id,
@@ -192,7 +192,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signIn = async (email: string, password: string) => {
-    await signInMutation.mutateAsync({ email, password });
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to login');
+      }
+
+      const data = await response.json();
+      setUser(data.user);
+    } catch (error) {
+      console.error("Error signing in:", error);
+      throw error; // Re-throw for handling by calling component
+    }
   };
 
   const signOut = async () => {
