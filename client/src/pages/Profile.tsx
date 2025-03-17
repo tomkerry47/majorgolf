@@ -22,10 +22,26 @@ export default function Profile() {
     }
   }, [user, setLocation]);
   
-  const { data: profileData, isLoading } = useQuery({
+  const { data: profileData, isLoading, error } = useQuery({
     queryKey: [`/api/users/${userId}`],
     enabled: !!user && !!userId,
   });
+
+  // Handle API errors
+  if (error) {
+    return (
+      <div className="py-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
+          <Card>
+            <CardHeader className="text-center">
+              <h2 className="text-xl font-semibold">Error Loading Profile</h2>
+              <p className="text-sm text-gray-500">There was an error loading the profile data. Please try again later.</p>
+            </CardHeader>
+          </Card>
+        </div>
+      </div>
+    );
+  }
   
   if (!user) return null;
   
