@@ -47,7 +47,7 @@ export default function AuthForm({ type }: AuthFormProps) {
         });
       } else {
         const { email, password, username, fullName } = data as RegisterCredentials;
-        await signUp(email, password, username);
+        await signUp(email, password, username, fullName);
         toast({
           title: "Account created!",
           description: "Your account has been successfully created.",

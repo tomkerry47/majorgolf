@@ -4,8 +4,7 @@ import {
   signUp as supabaseSignUp, 
   signIn as supabaseSignIn,
   signOut as supabaseSignOut,
-  getCurrentUser,
-  AuthUser
+  getCurrentUser
 } from "@/lib/supabase";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -137,7 +136,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       username: string;
     }) => {
       // Sign up with Supabase Auth
-      const { user: authUser } = await supabaseSignUp(email, password, username);
+      const { user: authUser } = await supabaseSignUp(email, password, { username, fullName: '' });
 
       if (authUser) {
         // Create user in database
@@ -176,7 +175,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     },
   });
 
-  const signUp = async (email: string, password: string, username: string) => {
+  const signUp = async (email: string, password: string, username: string, fullName: string = '') => {
     await signUpMutation.mutateAsync({ email, password, username });
   };
 
@@ -204,4 +203,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-export const useAuth = () => useContext(AuthContext);
+// Export as a named function to ensure HMR works properly
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+}
