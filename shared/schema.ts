@@ -1,139 +1,138 @@
-import { pgTable, text, serial, integer, boolean, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-
-// Enum for tournament status
-export const tournamentStatusEnum = pgEnum("tournament_status", ["upcoming", "active", "completed"]);
 
 // Users table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(),
   email: text("email").notNull().unique(),
-  password: text("password").notNull(),
-  avatarUrl: text("avatar_url"),
+  username: text("username").notNull().unique(),
+  fullName: text("full_name").notNull(),
+  password: text("password"),
+  avatar: text("avatar"),
   isAdmin: boolean("is_admin").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Tournaments table
-export const tournaments = pgTable("tournaments", {
+// Competitions table
+export const competitions = pgTable("competitions", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  location: text("location").notNull(),
+  venue: text("venue").notNull(),
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
-  status: tournamentStatusEnum("status").default("upcoming").notNull(),
-  imageUrl: text("image_url"),
   selectionDeadline: timestamp("selection_deadline").notNull(),
+  isActive: boolean("is_active").default(false).notNull(),
+  isComplete: boolean("is_complete").default(false).notNull(),
 });
 
-// Golf players table
-export const golfPlayers = pgTable("golf_players", {
+// Golfers table
+export const golfers = pgTable("golfers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  country: text("country"),
-  worldRanking: integer("world_ranking"),
+  rank: integer("rank"),
+  avatar: text("avatar"),
 });
 
 // User selections table
 export const selections = pgTable("selections", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
-  tournamentId: integer("tournament_id").references(() => tournaments.id).notNull(),
-  playerOneId: integer("player_one_id").references(() => golfPlayers.id).notNull(),
-  playerTwoId: integer("player_two_id").references(() => golfPlayers.id).notNull(),
-  playerThreeId: integer("player_three_id").references(() => golfPlayers.id).notNull(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  competitionId: integer("competition_id").notNull().references(() => competitions.id),
+  golfer1Id: integer("golfer1_id").notNull().references(() => golfers.id),
+  golfer2Id: integer("golfer2_id").notNull().references(() => golfers.id),
+  golfer3Id: integer("golfer3_id").notNull().references(() => golfers.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  uniqueUserCompetition: uniqueIndex("selections_user_competition_unique_idx").on(t.userId, t.competitionId)
+}));
 
-// Tournament results table
-export const tournamentResults = pgTable("tournament_results", {
+// Competition results table
+export const results = pgTable("results", {
   id: serial("id").primaryKey(),
-  tournamentId: integer("tournament_id").references(() => tournaments.id).notNull(),
-  playerId: integer("player_id").references(() => golfPlayers.id).notNull(),
-  position: integer("position"),
-  madeCut: boolean("made_cut").default(true).notNull(),
-  points: integer("points").default(0).notNull(),
+  competitionId: integer("competition_id").notNull().references(() => competitions.id),
+  golferId: integer("golfer_id").notNull().references(() => golfers.id),
+  position: integer("position").notNull(),
+  points: integer("points").notNull(),
 });
 
-// User points table
-export const userPoints = pgTable("user_points", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
-  tournamentId: integer("tournament_id").references(() => tournaments.id).notNull(),
-  points: integer("points").default(0).notNull(),
-  lastUpdated: timestamp("last_updated").defaultNow().notNull(),
+// Points by position table
+export const pointsSystem = pgTable("points_system", {
+  position: integer("position").primaryKey(),
+  points: integer("points").notNull(),
 });
 
-// Schema for inserting users
-export const insertUserSchema = createInsertSchema(users).omit({
+// Insert schemas
+export const insertUserSchema = createInsertSchema(users).omit({ 
+  id: true, 
+  createdAt: true,
+  isAdmin: true
+});
+
+export const insertCompetitionSchema = createInsertSchema(competitions).omit({ 
+  id: true
+});
+
+export const insertGolferSchema = createInsertSchema(golfers).omit({ 
+  id: true
+});
+
+export const insertSelectionSchema = createInsertSchema(selections).omit({ 
   id: true,
   createdAt: true,
+  updatedAt: true
 });
 
-// Schema for inserting tournaments
-export const insertTournamentSchema = createInsertSchema(tournaments).omit({
-  id: true,
+export const insertResultSchema = createInsertSchema(results).omit({ 
+  id: true
 });
 
-// Schema for inserting golf players
-export const insertGolfPlayerSchema = createInsertSchema(golfPlayers).omit({
-  id: true,
-});
+export const insertPointSystemSchema = createInsertSchema(pointsSystem);
 
-// Schema for inserting selections
-export const insertSelectionSchema = createInsertSchema(selections).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
+// Types
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
 
-// Schema for inserting tournament results
-export const insertTournamentResultSchema = createInsertSchema(tournamentResults).omit({
-  id: true,
-});
+export type InsertCompetition = z.infer<typeof insertCompetitionSchema>;
+export type Competition = typeof competitions.$inferSelect;
 
-// Schema for inserting user points
-export const insertUserPointSchema = createInsertSchema(userPoints).omit({
-  id: true,
-  lastUpdated: true,
-});
+export type InsertGolfer = z.infer<typeof insertGolferSchema>;
+export type Golfer = typeof golfers.$inferSelect;
 
-// Registration schema with password confirmation
-export const registrationSchema = insertUserSchema
-  .extend({
-    confirmPassword: z.string().min(6),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
-  });
+export type InsertSelection = z.infer<typeof insertSelectionSchema>;
+export type Selection = typeof selections.$inferSelect;
 
-// Login schema
+export type InsertResult = z.infer<typeof insertResultSchema>;
+export type Result = typeof results.$inferSelect;
+
+export type InsertPointSystem = z.infer<typeof insertPointSystemSchema>;
+export type PointSystem = typeof pointsSystem.$inferSelect;
+
+// Custom schemas
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
 });
 
-// Export types
-export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type Registration = z.infer<typeof registrationSchema>;
-export type Login = z.infer<typeof loginSchema>;
+export type LoginCredentials = z.infer<typeof loginSchema>;
 
-export type Tournament = typeof tournaments.$inferSelect;
-export type InsertTournament = z.infer<typeof insertTournamentSchema>;
+// Extended schema with validation
+export const registerSchema = insertUserSchema.extend({
+  password: z.string().min(6, { message: "Password must be at least 6 characters long" }),
+  confirmPassword: z.string(),
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"],
+});
 
-export type GolfPlayer = typeof golfPlayers.$inferSelect;
-export type InsertGolfPlayer = z.infer<typeof insertGolfPlayerSchema>;
+export type RegisterCredentials = z.infer<typeof registerSchema>;
 
-export type Selection = typeof selections.$inferSelect;
-export type InsertSelection = z.infer<typeof insertSelectionSchema>;
-
-export type TournamentResult = typeof tournamentResults.$inferSelect;
-export type InsertTournamentResult = z.infer<typeof insertTournamentResultSchema>;
-
-export type UserPoint = typeof userPoints.$inferSelect;
-export type InsertUserPoint = z.infer<typeof insertUserPointSchema>;
+// Extended schema for selection form with validation
+export const selectionFormSchema = insertSelectionSchema
+  .refine((data) => data.golfer1Id !== data.golfer2Id && 
+                     data.golfer1Id !== data.golfer3Id && 
+                     data.golfer2Id !== data.golfer3Id, {
+    message: "You must select three different golfers",
+    path: ["golfer3Id"],
+  });

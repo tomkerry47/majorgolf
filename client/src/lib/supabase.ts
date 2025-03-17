@@ -1,86 +1,109 @@
 import { createClient } from '@supabase/supabase-js';
+import { type Database } from '@shared/schema';
 
-// Get Supabase URL and anon key from environment variables
-// Default to empty strings if not available, but will throw error when trying to connect
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// Initialize Supabase client with direct values
+const supabaseUrl = 'https://bgdctfdxjdpsecihqsfh.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJnZGN0ZmR4amRwc2VjaWhxc2ZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIyNDMzNjcsImV4cCI6MjA1NzgxOTM2N30.ZjwklXt1J4waKCE3-fq8duRkeUJnusiBu89k2zZ3Vc0';
 
-// Create Supabase client
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Helper function for handling Supabase authentication errors
-export const handleSupabaseError = (error: any) => {
-  if (error) {
-    console.error('Supabase error:', error);
-    return error.message || 'An error occurred with the Supabase service';
-  }
-  return null;
-};
-
-// Types for auth data
-export interface AuthUser {
-  id: string;
-  email: string;
-  user_metadata: {
-    username?: string;
-    avatar_url?: string;
-  };
-}
-
-export interface AuthSession {
-  access_token: string;
-  refresh_token: string;
-  expires_at: number;
-  user: AuthUser;
-}
-
-// Authentication helper functions
-export const signUp = async (email: string, password: string, username: string) => {
+// Utility functions for auth
+export async function signUp(email: string, password: string, userData: { username: string, fullName: string }) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: {
-        username,
-      },
-    },
+        username: userData.username,
+        full_name: userData.fullName,
+      }
+    }
   });
   
-  if (error) throw error;
+  if (error) {
+    throw error;
+  }
+  
   return data;
-};
+}
 
-export const signIn = async (email: string, password: string) => {
+export async function signIn(email: string, password: string) {
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
-    password,
+    password
   });
   
-  if (error) throw error;
+  if (error) {
+    throw error;
+  }
+  
   return data;
-};
+}
 
-export const signOut = async () => {
+export async function signOut() {
   const { error } = await supabase.auth.signOut();
-  if (error) throw error;
-};
+  
+  if (error) {
+    throw error;
+  }
+}
 
-export const getCurrentSession = async () => {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  return data.session;
-};
-
-export const getCurrentUser = async () => {
+export async function getCurrentUser() {
   const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
+  
+  if (error) {
+    return null;
+  }
+  
   return data.user;
-};
+}
 
-// Set up realtime subscriptions
-export const subscribeToChanges = (table: string, callback: (payload: any) => void) => {
+// Session handling
+export async function getSession() {
+  const { data, error } = await supabase.auth.getSession();
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data.session;
+}
+
+// Database functions
+export async function fetchUserProfile(userId: string) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .single();
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data;
+}
+
+// Realtime subscription helpers
+export function subscribeToCompetition(competitionId: number, callback: (payload: any) => void) {
   return supabase
-    .channel(`public:${table}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table }, callback)
+    .channel(`competition:${competitionId}`)
+    .on('postgres_changes', { 
+      event: '*', 
+      schema: 'public', 
+      table: 'results',
+      filter: `competition_id=eq.${competitionId}`
+    }, callback)
     .subscribe();
-};
+}
+
+export function subscribeToLeaderboard(callback: (payload: any) => void) {
+  return supabase
+    .channel('leaderboard')
+    .on('postgres_changes', { 
+      event: '*', 
+      schema: 'public', 
+      table: 'results'
+    }, callback)
+    .subscribe();
+}
