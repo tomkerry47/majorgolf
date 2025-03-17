@@ -65,14 +65,23 @@ export default function AuthForm({ type }: AuthFormProps) {
       if (error.__isAuthError) {
         switch (error.code) {
           case "invalid_credentials":
-            errorMessage = "Invalid email or password. Please try again.";
+            errorTitle = "Invalid credentials";
+            errorMessage = "The email or password you entered is incorrect. Please try again.";
             break;
           case "over_email_send_rate_limit":
             errorTitle = "Too many attempts";
             errorMessage = "Please wait a few minutes before trying again.";
             break;
           case "user_already_exists":
+            errorTitle = "Account exists";
             errorMessage = "An account with this email already exists.";
+            break;
+          case "email_not_confirmed":
+            errorTitle = "Email not verified";
+            errorMessage = "Please check your email and verify your account before logging in.";
+            break;
+          default:
+            errorMessage = error.message || "An unexpected error occurred. Please try again.";
             break;
           default:
             errorMessage = error.message || errorMessage;
