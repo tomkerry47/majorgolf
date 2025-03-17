@@ -52,7 +52,7 @@ export default {
           "5": "hsl(var(--chart-5))",
         },
         sidebar: {
-          DEFAULT: "hsl(var(--background))",
+          DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--foreground))",
           primary: "hsl(var(--primary))",
           "primary-foreground": "hsl(var(--primary-foreground))",
