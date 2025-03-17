@@ -178,8 +178,8 @@ export default function Leaderboard() {
                           <div className="text-sm text-gray-900 font-medium">{entry.totalPoints}</div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right text-sm font-medium">
-                          <Link href={`/profile/${entry.userId}`}>
-                            <a className="text-primary hover:text-primary/80">View</a>
+                          <Link href={`/profile/${entry.userId}`} className="text-primary hover:text-primary/80">
+                            View
                           </Link>
                         </TableCell>
                       </TableRow>

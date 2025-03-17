@@ -36,12 +36,12 @@ export default function Dashboard() {
             Welcome to your Golf Syndicate Tracker. View upcoming competitions and your current standings.
           </p>
           <div className="mt-3 sm:mt-0">
-            <Link href="/competitions">
-              <Button>
+            <Button asChild>
+              <Link href="/competitions">
                 <i className="fas fa-plus -ml-1 mr-2 h-5 w-5"></i>
                 New Selection
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         </div>
       </div>

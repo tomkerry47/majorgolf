@@ -92,14 +92,15 @@ function CompetitionCard({
           </div>
         </div>
         <div className="mt-4">
-          <Link href={`/competitions/${id}`}>
-            <Button 
-              variant={hasSubmitted ? "outline" : "default"} 
-              className={`w-full ${hasSubmitted ? "text-gray-700" : "text-white"}`}
-            >
+          <Button 
+            variant={hasSubmitted ? "outline" : "default"} 
+            className={`w-full ${hasSubmitted ? "text-gray-700" : "text-white"}`}
+            asChild
+          >
+            <Link href={`/competitions/${id}`}>
               {hasSubmitted ? "View/Edit Selections" : "Make Selections"}
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -150,8 +151,8 @@ export default function UpcomingCompetitions() {
     <div className="mt-8">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-gray-900">Upcoming Competitions</h2>
-        <Link href="/competitions">
-          <a className="text-sm font-medium text-primary hover:text-primary/80">View all</a>
+        <Link href="/competitions" className="text-sm font-medium text-primary hover:text-primary/80">
+          View all
         </Link>
       </div>
       
