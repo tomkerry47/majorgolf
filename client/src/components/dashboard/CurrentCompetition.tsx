@@ -97,8 +97,8 @@ export default function CurrentCompetition() {
       <div className="mt-8">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-gray-900">Current Competition</h2>
-          <Link href="/competitions">
-            <a className="text-sm font-medium text-primary hover:text-primary/80">View all competitions</a>
+          <Link href="/competitions" className="text-sm font-medium text-primary hover:text-primary/80">
+            View all competitions
           </Link>
         </div>
         <Card className="mt-4">
@@ -108,9 +108,9 @@ export default function CurrentCompetition() {
             </div>
             <h3 className="text-lg font-medium">No Active Competition</h3>
             <p className="text-sm text-gray-500 mt-2 mb-4">There are no active competitions at the moment.</p>
-            <Link href="/competitions">
-              <Button>View Upcoming Competitions</Button>
-            </Link>
+            <Button asChild>
+              <Link href="/competitions">View Upcoming Competitions</Link>
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -161,9 +161,9 @@ export default function CurrentCompetition() {
                 <i className="fas fa-golf-ball text-3xl"></i>
               </div>
               <p className="text-sm text-gray-500">You haven't made your selections for this competition yet.</p>
-              <Link href={`/competitions/${activeCompetition.id}`}>
-                <Button className="mt-4">Make Selections</Button>
-              </Link>
+              <Button asChild className="mt-4">
+                <Link href={`/competitions/${activeCompetition.id}`}>Make Selections</Link>
+              </Button>
             </div>
           ) : (
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -185,11 +185,11 @@ export default function CurrentCompetition() {
             <p className="text-sm font-medium text-gray-500">
               Total points for this competition: <span className="text-primary font-semibold">{totalPoints}</span>
             </p>
-            <Link href="/leaderboard">
-              <Button variant="outline" size="sm" className="text-gray-700">
+            <Button variant="outline" size="sm" className="text-gray-700" asChild>
+              <Link href="/leaderboard">
                 <i className="fas fa-eye mr-1.5"></i> View Full Leaderboard
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         </CardFooter>
       </Card>

@@ -173,15 +173,15 @@ export default function AuthForm({ type }: AuthFormProps) {
           {type === "login" ? (
             <>
               Don't have an account?{" "}
-              <Link href="/register">
-                <a className="font-medium text-primary hover:text-primary/80">Sign up</a>
+              <Link href="/register" className="font-medium text-primary hover:text-primary/80">
+                Sign up
               </Link>
             </>
           ) : (
             <>
               Already have an account?{" "}
-              <Link href="/login">
-                <a className="font-medium text-primary hover:text-primary/80">Login</a>
+              <Link href="/login" className="font-medium text-primary hover:text-primary/80">
+                Login
               </Link>
             </>
           )}
