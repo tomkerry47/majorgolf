@@ -11,7 +11,7 @@ import Leaderboard from "@/pages/Leaderboard";
 import Admin from "@/pages/Admin";
 import Profile from "@/pages/Profile";
 import NotFound from "@/pages/not-found";
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider } from "@/hooks/use-auth";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { useState } from "react";

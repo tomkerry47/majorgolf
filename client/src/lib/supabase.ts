@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import { type Database } from '@shared/schema';
 
 // Initialize Supabase client with direct values
 const supabaseUrl = 'https://bgdctfdxjdpsecihqsfh.supabase.co';

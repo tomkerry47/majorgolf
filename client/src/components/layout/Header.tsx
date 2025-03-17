@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,7 @@ interface HeaderProps {
 }
 
 export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
-  const { user, profile, signOut } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
 
   return (
@@ -67,15 +67,15 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="h-8 w-8 rounded-full p-0">
                       <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-300 flex items-center justify-center">
-                        {profile?.avatar ? (
+                        {user.avatarUrl ? (
                           <img 
-                            src={profile.avatar} 
-                            alt={profile.username} 
+                            src={user.avatarUrl} 
+                            alt={user.username} 
                             className="h-8 w-8 rounded-full" 
                           />
                         ) : (
                           <span className="text-sm font-medium text-gray-800">
-                            {profile?.fullName?.charAt(0) || profile?.username?.charAt(0) || 'U'}
+                            {user.username?.charAt(0) || 'U'}
                           </span>
                         )}
                       </div>
@@ -83,7 +83,7 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <div className="px-4 py-2 text-sm">
-                      <p className="font-medium">{profile?.fullName || profile?.username}</p>
+                      <p className="font-medium">{user.username}</p>
                       <p className="text-gray-500 truncate">{user.email}</p>
                     </div>
                     <DropdownMenuSeparator />
@@ -93,7 +93,7 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
                     <DropdownMenuItem asChild>
                       <Link href="/leaderboard">Leaderboard</Link>
                     </DropdownMenuItem>
-                    {profile?.isAdmin && (
+                    {isAdmin && (
                       <DropdownMenuItem asChild>
                         <Link href="/admin">Admin</Link>
                       </DropdownMenuItem>

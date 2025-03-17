@@ -124,8 +124,8 @@ export default function CurrentCompetition() {
     <div className="mt-8">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-gray-900">Current Competition</h2>
-        <Link href="/competitions">
-          <a className="text-sm font-medium text-primary hover:text-primary/80">View all competitions</a>
+        <Link href="/competitions" className="text-sm font-medium text-primary hover:text-primary/80">
+          View all competitions
         </Link>
       </div>
       

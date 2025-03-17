@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
@@ -9,7 +9,7 @@ interface SidebarProps {
 
 export default function Sidebar({ open, setOpen }: SidebarProps) {
   const [location] = useLocation();
-  const { profile, isAdmin, signOut } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
 
   const closeSidebar = () => {
     if (open) setOpen(false);
@@ -40,89 +40,84 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
             <span className="text-xl font-semibold text-white">Golf Syndicate</span>
           </div>
           <nav className="flex-1 px-2 pb-4 space-y-1">
-            <Link href="/">
-              <a 
-                className={cn(
-                  "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
-                  isActivePath('/') ? "bg-primary" : "hover:bg-primary/20"
-                )}
-                onClick={closeSidebar}
-              >
-                <i className="fas fa-home w-6 h-6 mr-3 text-white"></i>
-                Dashboard
-              </a>
+            <Link 
+              href="/"
+              className={cn(
+                "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
+                isActivePath('/') ? "bg-primary" : "hover:bg-primary/20"
+              )}
+              onClick={closeSidebar}
+            >
+              <i className="fas fa-home w-6 h-6 mr-3 text-white"></i>
+              Dashboard
             </Link>
-            <Link href="/competitions">
-              <a 
-                className={cn(
-                  "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
-                  isActivePath('/competitions') ? "bg-primary" : "hover:bg-primary/20"
-                )}
-                onClick={closeSidebar}
-              >
-                <i className="fas fa-golf-ball w-6 h-6 mr-3 text-white"></i>
-                Competitions
-              </a>
+            <Link 
+              href="/competitions"
+              className={cn(
+                "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
+                isActivePath('/competitions') ? "bg-primary" : "hover:bg-primary/20"
+              )}
+              onClick={closeSidebar}
+            >
+              <i className="fas fa-golf-ball w-6 h-6 mr-3 text-white"></i>
+              Competitions
             </Link>
-            <Link href="/leaderboard">
-              <a 
-                className={cn(
-                  "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
-                  isActivePath('/leaderboard') ? "bg-primary" : "hover:bg-primary/20"
-                )}
-                onClick={closeSidebar}
-              >
-                <i className="fas fa-table-list w-6 h-6 mr-3 text-white"></i>
-                Leaderboard
-              </a>
+            <Link 
+              href="/leaderboard"
+              className={cn(
+                "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
+                isActivePath('/leaderboard') ? "bg-primary" : "hover:bg-primary/20"
+              )}
+              onClick={closeSidebar}
+            >
+              <i className="fas fa-table-list w-6 h-6 mr-3 text-white"></i>
+              Leaderboard
             </Link>
-            <Link href="/profile">
-              <a 
-                className={cn(
-                  "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
-                  isActivePath('/profile') ? "bg-primary" : "hover:bg-primary/20"
-                )}
-                onClick={closeSidebar}
-              >
-                <i className="fas fa-user w-6 h-6 mr-3 text-white"></i>
-                Profile
-              </a>
+            <Link 
+              href="/profile"
+              className={cn(
+                "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
+                isActivePath('/profile') ? "bg-primary" : "hover:bg-primary/20"
+              )}
+              onClick={closeSidebar}
+            >
+              <i className="fas fa-user w-6 h-6 mr-3 text-white"></i>
+              Profile
             </Link>
             {isAdmin && (
-              <Link href="/admin">
-                <a 
-                  className={cn(
-                    "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
-                    isActivePath('/admin') ? "bg-primary" : "hover:bg-primary/20"
-                  )}
-                  onClick={closeSidebar}
-                >
-                  <i className="fas fa-user-cog w-6 h-6 mr-3 text-white"></i>
-                  Admin
-                </a>
+              <Link 
+                href="/admin"
+                className={cn(
+                  "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
+                  isActivePath('/admin') ? "bg-primary" : "hover:bg-primary/20"
+                )}
+                onClick={closeSidebar}
+              >
+                <i className="fas fa-user-cog w-6 h-6 mr-3 text-white"></i>
+                Admin
               </Link>
             )}
           </nav>
           
-          {profile && (
+          {user && (
             <div className="px-4 py-4 mt-auto">
               <div className="flex items-center">
                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
-                  {profile.avatar ? (
+                  {user.avatarUrl ? (
                     <img 
-                      src={profile.avatar} 
-                      alt={profile.username} 
+                      src={user.avatarUrl} 
+                      alt={user.username} 
                       className="h-8 w-8 rounded-full" 
                     />
                   ) : (
                     <span className="text-sm font-medium text-gray-800">
-                      {profile.fullName?.charAt(0) || profile.username?.charAt(0) || 'U'}
+                      {user.username?.charAt(0) || 'U'}
                     </span>
                   )}
                 </div>
                 <div className="ml-3">
                   <p className="text-sm font-medium text-white">
-                    {profile.fullName || profile.username}
+                    {user.username}
                   </p>
                   <button 
                     onClick={signOut}

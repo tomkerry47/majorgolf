@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/use-auth";
 import StatCard from "@/components/dashboard/StatCard";
 import CurrentCompetition from "@/components/dashboard/CurrentCompetition";
 import Leaderboard from "@/components/dashboard/Leaderboard";
