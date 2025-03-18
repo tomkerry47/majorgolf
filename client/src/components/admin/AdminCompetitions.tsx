@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -151,7 +152,9 @@ export default function AdminCompetitions() {
           endDate: new Date("2025-04-13T20:00:00"),
           selectionDeadline: new Date("2025-04-09T23:59:59"),
           isActive: false,
-          isComplete: false
+          isComplete: false,
+          description: "The Masters Tournament is played annually at Augusta National Golf Club in Augusta, Georgia. It is one of the four major championships in professional golf.",
+          imageUrl: "https://www.masters.com/images/pics/large/masters_logo_meta.jpg"
         },
         {
           name: "PGA Championship",
@@ -160,7 +163,9 @@ export default function AdminCompetitions() {
           endDate: new Date("2025-05-18T20:00:00"),
           selectionDeadline: new Date("2025-05-14T23:59:59"),
           isActive: false,
-          isComplete: false
+          isComplete: false,
+          description: "The PGA Championship is one of golf's four major championships. Since 2019, it has been played in May, making it the second major of the golf season.",
+          imageUrl: "https://www.pgachampionship.com/assets/images/pgachampionship-logo.png"
         },
         {
           name: "U.S. Open",
@@ -169,7 +174,9 @@ export default function AdminCompetitions() {
           endDate: new Date("2025-06-15T20:00:00"),
           selectionDeadline: new Date("2025-06-11T23:59:59"),
           isActive: false,
-          isComplete: false
+          isComplete: false,
+          description: "The United States Open Championship is the annual open national championship of golf in the United States. It is the third of the four major championships.",
+          imageUrl: "https://www.usopen.com/content/dam/usopen/logo/us-open-championship-logo.svg"
         },
         {
           name: "The Open Championship",
@@ -178,7 +185,9 @@ export default function AdminCompetitions() {
           endDate: new Date("2025-07-20T20:00:00"),
           selectionDeadline: new Date("2025-07-16T23:59:59"),
           isActive: false,
-          isComplete: false
+          isComplete: false,
+          description: "The Open Championship, often referred to as The Open or the British Open, is the oldest golf tournament in the world. It is one of the four major championships.",
+          imageUrl: "https://www.theopen.com/assets/site/logos/the-open-logo-white.svg"
         },
         {
           name: "The Players Championship",
@@ -187,7 +196,9 @@ export default function AdminCompetitions() {
           endDate: new Date("2025-03-16T20:00:00"),
           selectionDeadline: new Date("2025-03-12T23:59:59"),
           isActive: true,
-          isComplete: false
+          isComplete: false,
+          description: "The Players Championship is an annual golf tournament on the PGA Tour. Originally known as the Tournament Players Championship, it is often regarded as golf's fifth major.",
+          imageUrl: "https://www.theplayers.com/content/dam/pga/tournaments/tournament-sites/the-players-championship/the-players-logo.svg"
         }
       ];
       
@@ -389,6 +400,38 @@ export default function AdminCompetitions() {
                     <FormLabel>Selection Deadline</FormLabel>
                     <FormControl>
                       <Input type="datetime-local" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Enter a description of the tournament..." 
+                        className="resize-none h-20"
+                        {...field} 
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="imageUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tournament Logo URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="https://example.com/logo.png" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
