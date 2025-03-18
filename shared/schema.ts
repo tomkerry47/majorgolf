@@ -24,6 +24,8 @@ export const competitions = pgTable("competitions", {
   selectionDeadline: timestamp("selection_deadline").notNull(),
   isActive: boolean("is_active").default(false).notNull(),
   isComplete: boolean("is_complete").default(false).notNull(),
+  description: text("description"),
+  imageUrl: text("image_url"),
 });
 
 // Golfers table
