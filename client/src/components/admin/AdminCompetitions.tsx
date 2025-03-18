@@ -63,7 +63,9 @@ export default function AdminCompetitions() {
   
   const form = useForm<InsertCompetition>({
     resolver: zodResolver(insertCompetitionSchema),
-    defaultValues
+    defaultValues,
+    // Add this to handle date conversion in form fields
+    shouldUnregister: false
   });
   
   const openCreateDialog = () => {
@@ -102,12 +104,14 @@ export default function AdminCompetitions() {
           title: "Competition created",
           description: "The competition has been successfully created."
         });
-      } else {
-        await apiRequest('PATCH', `/api/admin/competitions/${selectedCompetition?.id}`, data);
+      } else if (selectedCompetition) {
+        await apiRequest('PATCH', `/api/admin/competitions/${selectedCompetition.id}`, data);
         toast({
           title: "Competition updated",
           description: "The competition has been successfully updated."
         });
+      } else {
+        throw new Error("Selected competition not found");
       }
       
       queryClient.invalidateQueries({ queryKey: ['/api/admin/competitions'] });
@@ -382,7 +386,14 @@ export default function AdminCompetitions() {
                     <FormItem>
                       <FormLabel>Start Date</FormLabel>
                       <FormControl>
-                        <Input type="datetime-local" {...field} />
+                        <Input 
+                          type="datetime-local" 
+                          value={typeof field.value === 'string' ? field.value : ''} 
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -396,7 +407,14 @@ export default function AdminCompetitions() {
                     <FormItem>
                       <FormLabel>End Date</FormLabel>
                       <FormControl>
-                        <Input type="datetime-local" {...field} />
+                        <Input 
+                          type="datetime-local" 
+                          value={typeof field.value === 'string' ? field.value : ''} 
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -411,7 +429,14 @@ export default function AdminCompetitions() {
                   <FormItem>
                     <FormLabel>Selection Deadline</FormLabel>
                     <FormControl>
-                      <Input type="datetime-local" {...field} />
+                      <Input 
+                        type="datetime-local" 
+                        value={typeof field.value === 'string' ? field.value : ''} 
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
