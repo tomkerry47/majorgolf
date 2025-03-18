@@ -66,7 +66,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           email: data.user.email,
           username: userData?.username || data.user.email?.split('@')[0],
           fullName: userData?.full_name || '',
-          isAdmin: userData?.is_admin || false
+          isAdmin: userData?.isAdmin || false
         }
       });
     } catch (error: any) {
@@ -102,7 +102,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!userData) return res.status(404).json({ error: "User not found" });
       
       // Get user statistics
-      const { data: stats, error: statsError } = await supabase.rpc('get_user_stats', { user_id: userId });
+      const { data: stats, error: statsError } = await supabase.rpc('get_user_stats', { userId: userId });
       
       // Get user auth data for additional information
       const { data: authData } = await supabase.auth.getUser(userId);
@@ -114,7 +114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fullName: userData.full_name || '',
         avatar: userData.avatar_url || '',
         stats: stats || {},
-        isAdmin: !!userData.is_admin
+        isAdmin: !!userData.isAdmin
       };
       
       console.log('Fetched user data:', { userId, enrichedUserData });
@@ -314,12 +314,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from('selections')
         .select(`
           *,
-          golfer1:golfer1_id(id, name, avatar),
-          golfer2:golfer2_id(id, name, avatar),
-          golfer3:golfer3_id(id, name, avatar)
+          golfer1:golfer1Id(id, name, avatar),
+          golfer2:golfer2Id(id, name, avatar),
+          golfer3:golfer3Id(id, name, avatar)
         `)
-        .eq('competition_id', competitionId)
-        .eq('user_id', userId || currentUserId)
+        .eq('competitionId', competitionId)
+        .eq('userId', userId || currentUserId)
         .single();
       
       if (error && error.code !== 'PGRST116') { // PGRST116 is "No rows returned" error
@@ -403,8 +403,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           golfer2Id: validatedData.golfer2Id,
           golfer3Id: validatedData.golfer3Id
         })
-        .eq('competition_id', competitionId)
-        .eq('user_id', session.session.user.id)
+        .eq('competitionId', competitionId)
+        .eq('userId', session.session.user.id)
         .select()
         .single();
       
@@ -427,7 +427,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           *,
           golfer:golfer_id(id, name, avatar)
         `)
-        .eq('competition_id', competitionId)
+        .eq('competitionId', competitionId)
         .order('position', { ascending: true });
       
       if (error) throw error;
@@ -451,11 +451,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if user is admin
       const { data: user } = await supabase
         .from('users')
-        .select('is_admin')
+        .select('isAdmin')
         .eq('id', session.session.user.id)
         .single();
       
-      if (!user.is_admin) {
+      if (!user?.isAdmin) {
         return res.status(403).json({ error: "Admin access required" });
       }
       
@@ -485,7 +485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .from('competitions')
           .select('id')
           .eq('is_active', true)
-          .order('start_date', { ascending: true })
+          .order('startDate', { ascending: true })
           .limit(1)
           .single();
         
@@ -497,14 +497,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(200).json([]);
         }
         
-        const { data: leaderboard, error } = await supabase.rpc('get_leaderboard', { competition_id: activeCompetition.id });
+        const { data: leaderboard, error } = await supabase.rpc('get_leaderboard', { competitionId: activeCompetition.id });
         
         if (error) throw error;
         
         res.status(200).json(leaderboard);
       } else {
         // Get leaderboard for specified competition
-        const { data: leaderboard, error } = await supabase.rpc('get_leaderboard', { competition_id: competitionId });
+        const { data: leaderboard, error } = await supabase.rpc('get_leaderboard', { competitionId: competitionId });
         
         if (error) throw error;
         
@@ -607,11 +607,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if user is admin
       const { data: user } = await supabase
         .from('users')
-        .select('is_admin')
+        .select('isAdmin')
         .eq('id', session.session.user.id)
         .single();
       
-      if (!user.is_admin) {
+      if (!user?.isAdmin) {
         return res.status(403).json({ error: "Admin access required" });
       }
       
@@ -641,11 +641,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if user is admin
       const { data: user } = await supabase
         .from('users')
-        .select('is_admin')
+        .select('isAdmin')
         .eq('id', session.session.user.id)
         .single();
       
-      if (!user.is_admin) {
+      if (!user?.isAdmin) {
         return res.status(403).json({ error: "Admin access required" });
       }
       
@@ -653,12 +653,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from('selections')
         .select(`
           *,
-          user:user_id(id, username, email),
-          golfer1:golfer1_id(id, name),
-          golfer2:golfer2_id(id, name),
-          golfer3:golfer3_id(id, name)
+          user:userId(id, username, email),
+          golfer1:golfer1Id(id, name),
+          golfer2:golfer2Id(id, name),
+          golfer3:golfer3Id(id, name)
         `)
-        .eq('competition_id', competitionId);
+        .eq('competitionId', competitionId);
       
       if (error) throw error;
       
@@ -682,11 +682,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if user is admin
       const { data: user } = await supabase
         .from('users')
-        .select('is_admin')
+        .select('isAdmin')
         .eq('id', session.session.user.id)
         .single();
       
-      if (!user.is_admin) {
+      if (!user?.isAdmin) {
         return res.status(403).json({ error: "Admin access required" });
       }
       
@@ -722,11 +722,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if user is admin
       const { data: user } = await supabase
         .from('users')
-        .select('is_admin')
+        .select('isAdmin')
         .eq('id', session.session.user.id)
         .single();
       
-      if (!user.is_admin) {
+      if (!user?.isAdmin) {
         return res.status(403).json({ error: "Admin access required" });
       }
       
