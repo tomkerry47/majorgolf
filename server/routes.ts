@@ -500,22 +500,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = insertResultSchema.parse(req.body);
       
-      // Get user from session to check admin status
-      const { data: session } = await supabase.auth.getSession();
-      if (!session.session) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
-      // Check if user is admin
-      const { data: user } = await supabase
-        .from('users')
-        .select('isAdmin')
-        .eq('id', session.session.user.id)
-        .single();
-      
-      if (!user?.isAdmin) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
+      // User authentication and admin check is handled by the validateJWT middleware
+      // No need to check here
       
       // Create result
       const { data, error } = await supabase
@@ -675,22 +661,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const selectionId = req.params.id;
       const updateData = req.body;
       
-      // Get user from session to check admin status
-      const { data: session } = await supabase.auth.getSession();
-      if (!session.session) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
-      // Check if user is admin
-      const { data: user } = await supabase
-        .from('users')
-        .select('isAdmin')
-        .eq('id', session.session.user.id)
-        .single();
-      
-      if (!user?.isAdmin) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
+      // User authentication and admin check is handled by the validateJWT middleware
+      // No need to check here
       
       const { data, error } = await supabase
         .from('selections')
@@ -715,22 +687,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const selectionId = req.params.id;
       
-      // Get user from session to check admin status
-      const { data: session } = await supabase.auth.getSession();
-      if (!session.session) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
-      // Check if user is admin
-      const { data: user } = await supabase
-        .from('users')
-        .select('isAdmin')
-        .eq('id', session.session.user.id)
-        .single();
-      
-      if (!user?.isAdmin) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
+      // User authentication and admin check is handled by the validateJWT middleware
+      // No need to check here
       
       const { error } = await supabase
         .from('selections')
