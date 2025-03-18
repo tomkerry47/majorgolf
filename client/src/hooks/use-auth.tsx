@@ -54,6 +54,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               
               if (error) {
                 console.error("Error fetching user data:", error);
+                console.log("Error details:", error);
                 
                 // If user doesn't exist in database yet, we'll create them
                 if (error.code === 'PGRST116') {
@@ -79,6 +80,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                       username: newUser.username,
                     });
                     setIsAdmin(false);
+                    setIsLoading(false);
                   }
                 }
               } else {
@@ -87,18 +89,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                   id: session.user.id,
                   email: session.user.email || '',
                   username: userData.username,
-                  avatarUrl: userData.avatar_url,
+                  avatarUrl: userData.avatarUrl,
                 });
-                setIsAdmin(!!userData.is_admin);
+                setIsAdmin(!!userData.isAdmin);
+                setIsLoading(false);
               }
             } catch (error) {
               console.error("Error in auth state listener:", error);
+              setIsLoading(false);
             }
           }
         } else if (event === 'SIGNED_OUT') {
           console.log("User signed out");
           setUser(null);
           setIsAdmin(false);
+          setIsLoading(false);
           queryClient.clear();
         } else if (event === 'TOKEN_REFRESHED') {
           console.log("Token refreshed");

@@ -7,11 +7,11 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
   username: text("username").notNull().unique(),
-  fullName: text("full_name").notNull(),
+  fullName: text("fullName").notNull(),
   password: text("password"),
-  avatar: text("avatar"),
-  isAdmin: boolean("is_admin").default(false).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  avatarUrl: text("avatarUrl"),
+  isAdmin: boolean("isAdmin").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 // Competitions table
@@ -19,13 +19,13 @@ export const competitions = pgTable("competitions", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   venue: text("venue").notNull(),
-  startDate: timestamp("start_date").notNull(),
-  endDate: timestamp("end_date").notNull(),
-  selectionDeadline: timestamp("selection_deadline").notNull(),
-  isActive: boolean("is_active").default(false).notNull(),
-  isComplete: boolean("is_complete").default(false).notNull(),
+  startDate: timestamp("startDate").notNull(),
+  endDate: timestamp("endDate").notNull(),
+  selectionDeadline: timestamp("selectionDeadline").notNull(),
+  isActive: boolean("isActive").default(false).notNull(),
+  isComplete: boolean("isComplete").default(false).notNull(),
   description: text("description"),
-  imageUrl: text("image_url"),
+  imageUrl: text("imageUrl"),
 });
 
 // Golfers table
@@ -33,19 +33,19 @@ export const golfers = pgTable("golfers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   rank: integer("rank"),
-  avatar: text("avatar"),
+  avatarUrl: text("avatarUrl"),
 });
 
 // User selections table
 export const selections = pgTable("selections", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
-  competitionId: integer("competition_id").notNull().references(() => competitions.id),
-  golfer1Id: integer("golfer1_id").notNull().references(() => golfers.id),
-  golfer2Id: integer("golfer2_id").notNull().references(() => golfers.id),
-  golfer3Id: integer("golfer3_id").notNull().references(() => golfers.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  userId: integer("userId").notNull().references(() => users.id),
+  competitionId: integer("competitionId").notNull().references(() => competitions.id),
+  golfer1Id: integer("golfer1Id").notNull().references(() => golfers.id),
+  golfer2Id: integer("golfer2Id").notNull().references(() => golfers.id),
+  golfer3Id: integer("golfer3Id").notNull().references(() => golfers.id),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 }, (t) => ({
   uniqueUserCompetition: uniqueIndex("selections_user_competition_unique_idx").on(t.userId, t.competitionId)
 }));
@@ -53,8 +53,8 @@ export const selections = pgTable("selections", {
 // Competition results table
 export const results = pgTable("results", {
   id: serial("id").primaryKey(),
-  competitionId: integer("competition_id").notNull().references(() => competitions.id),
-  golferId: integer("golfer_id").notNull().references(() => golfers.id),
+  competitionId: integer("competitionId").notNull().references(() => competitions.id),
+  golferId: integer("golferId").notNull().references(() => golfers.id),
   position: integer("position").notNull(),
   points: integer("points").notNull(),
 });
