@@ -95,7 +95,7 @@ export default function AdminCompetitions() {
   const onSubmit = async (data: InsertCompetition) => {
     try {
       if (formAction === 'create') {
-        await apiRequest('POST', '/api/admin/competitions', data);
+        await apiRequest('POST', '/api/competitions', data);
         toast({
           title: "Competition created",
           description: "The competition has been successfully created."
@@ -110,6 +110,9 @@ export default function AdminCompetitions() {
       
       queryClient.invalidateQueries({ queryKey: ['/api/admin/competitions'] });
       queryClient.invalidateQueries({ queryKey: ['/api/competitions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/competitions/all'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/competitions/active'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/competitions/upcoming'] });
       setIsDialogOpen(false);
     } catch (error: any) {
       toast({
@@ -130,6 +133,9 @@ export default function AdminCompetitions() {
       
       queryClient.invalidateQueries({ queryKey: ['/api/admin/competitions'] });
       queryClient.invalidateQueries({ queryKey: ['/api/competitions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/competitions/all'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/competitions/active'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/competitions/upcoming'] });
       setIsDeleteDialogOpen(false);
     } catch (error: any) {
       toast({
@@ -229,6 +235,9 @@ export default function AdminCompetitions() {
         
         queryClient.invalidateQueries({ queryKey: ['/api/admin/competitions'] });
         queryClient.invalidateQueries({ queryKey: ['/api/competitions'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/competitions/all'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/competitions/active'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/competitions/upcoming'] });
       } else {
         toast({
           variant: "destructive",

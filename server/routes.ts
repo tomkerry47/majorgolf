@@ -516,6 +516,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Routes
+  app.get('/api/admin/competitions', async (req: Request, res: Response) => {
+    try {
+      // Get user from session to check admin status
+      const { data: session } = await supabase.auth.getSession();
+      if (!session.session) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      // Check if user is admin
+      const { data: user } = await supabase
+        .from('users')
+        .select('isAdmin')
+        .eq('id', session.session.user.id)
+        .single();
+      
+      if (!user?.isAdmin) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      const { data, error } = await supabase
+        .from('competitions')
+        .select('*')
+        .order('startDate', { ascending: true });
+      
+      if (error) throw error;
+      
+      res.status(200).json(data);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+  
+  app.patch('/api/admin/competitions/:id', async (req: Request, res: Response) => {
+    try {
+      const competitionId = req.params.id;
+      const updateData = req.body;
+      
+      // Get user from session to check admin status
+      const { data: session } = await supabase.auth.getSession();
+      if (!session.session) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      // Check if user is admin
+      const { data: user } = await supabase
+        .from('users')
+        .select('isAdmin')
+        .eq('id', session.session.user.id)
+        .single();
+      
+      if (!user?.isAdmin) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      // Format dates if they exist
+      if (updateData.startDate) {
+        updateData.startDate = new Date(updateData.startDate);
+      }
+      if (updateData.endDate) {
+        updateData.endDate = new Date(updateData.endDate);
+      }
+      if (updateData.selectionDeadline) {
+        updateData.selectionDeadline = new Date(updateData.selectionDeadline);
+      }
+      
+      const { data, error } = await supabase
+        .from('competitions')
+        .update(updateData)
+        .eq('id', competitionId)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      res.status(200).json(data);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+  
   app.get('/api/admin/users', async (req: Request, res: Response) => {
     try {
       // Get user from session to check admin status
