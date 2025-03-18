@@ -170,8 +170,62 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Sign in mutation
   const signInMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      return await supabaseSignIn(email, password);
+      console.log('Attempting to sign in via mutation with:', { email });
+      
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
+          console.error('Sign-in error in mutation:', error);
+          throw error;
+        }
+        
+        if (!data.session || !data.user) {
+          console.error('Invalid response from auth service: missing session or user');
+          throw new Error('Invalid response from auth service');
+        }
+
+        console.log('Sign-in successful, fetching user data for:', data.user.id);
+        
+        // Fetch user data from database
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+
+        if (userError) {
+          console.error('Error fetching user data:', userError);
+          throw userError;
+        }
+
+        console.log('User data fetched successfully:', userData);
+        
+        // Return both auth data and user data
+        return { 
+          user: {
+            id: data.user.id,
+            email: data.user.email || '',
+            username: userData?.username || data.user.email?.split('@')[0] || '',
+            avatarUrl: userData?.avatar_url || '',
+          },
+          isAdmin: !!userData?.is_admin,
+          session: data.session
+        };
+      } catch (error) {
+        console.error('Complete sign-in error:', error);
+        throw error;
+      }
     },
+    onSuccess: (data) => {
+      if (data?.user) {
+        setUser(data.user);
+        setIsAdmin(data.isAdmin || false);
+      }
+    }
   });
 
   // Sign out mutation
@@ -193,30 +247,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-      if (!data.session || !data.user) throw new Error('Invalid response from auth service');
-
-      // Fetch user data from database
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', data.user.id)
-        .single();
-
-      if (userError) throw userError;
-
-      setUser({
-        id: data.user.id,
-        email: data.user.email || '',
-        username: userData?.username || data.user.email?.split('@')[0] || '',
-        fullName: userData?.full_name || '',
-        isAdmin: userData?.is_admin || false
-      });
+      // Use the mutation to handle sign-in
+      await signInMutation.mutateAsync({ email, password });
     } catch (error) {
       console.error("Error signing in:", error);
       throw error;
@@ -243,8 +275,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-// Export as a named function to ensure HMR works properly
-export function useAuth() {
+// Create a custom hook for auth context
+export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider");

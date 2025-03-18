@@ -40,18 +40,10 @@ export default function AuthForm({ type }: AuthFormProps) {
     try {
       if (type === "login") {
         const { email, password } = data as LoginCredentials;
-        const response = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ email, password }),
-        });
+        console.log('Login attempt with:', { email });
         
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || 'Failed to login');
-        }
+        // Use the auth hook instead of direct fetch
+        await signIn(email, password);
         
         toast({
           title: "Welcome back!",

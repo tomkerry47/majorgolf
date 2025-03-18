@@ -27,16 +27,25 @@ export async function signUp(email: string, password: string, userData: { userna
 }
 
 export async function signIn(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password
-  });
+  console.log('Attempting to sign in with:', { email });
   
-  if (error) {
-    throw error;
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+    
+    if (error) {
+      console.error('Supabase sign-in error:', error);
+      throw error;
+    }
+    
+    console.log('Sign-in successful, user data:', data.user);
+    return data;
+  } catch (err) {
+    console.error('Sign-in exception:', err);
+    throw err;
   }
-  
-  return data;
 }
 
 export async function signOut() {
