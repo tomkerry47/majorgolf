@@ -36,18 +36,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { insertCompetitionSchema, type InsertCompetition } from "@shared/schema";
+import { insertCompetitionSchema, type InsertCompetition, type Competition } from "@shared/schema";
 import { Switch } from "@/components/ui/switch";
 
 export default function AdminCompetitions() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedCompetition, setSelectedCompetition] = useState<any>(null);
+  const [selectedCompetition, setSelectedCompetition] = useState<Competition | null>(null);
   const [formAction, setFormAction] = useState<'create' | 'edit'>('create');
   const [isCreatingTournaments, setIsCreatingTournaments] = useState(false);
   
-  const { data: competitions, isLoading } = useQuery({
+  const { data: competitions = [], isLoading } = useQuery<Competition[]>({
     queryKey: ['/api/admin/competitions'],
   });
   
@@ -73,12 +73,14 @@ export default function AdminCompetitions() {
     setIsDialogOpen(true);
   };
   
-  const openEditDialog = (competition: any) => {
+  const openEditDialog = (competition: Competition) => {
     const formattedCompetition = {
       ...competition,
       startDate: new Date(competition.startDate).toISOString().slice(0, 16),
       endDate: new Date(competition.endDate).toISOString().slice(0, 16),
-      selectionDeadline: new Date(competition.selectionDeadline).toISOString().slice(0, 16)
+      selectionDeadline: new Date(competition.selectionDeadline).toISOString().slice(0, 16),
+      description: competition.description || '',
+      imageUrl: competition.imageUrl || ''
     };
     
     form.reset(formattedCompetition);
@@ -87,7 +89,7 @@ export default function AdminCompetitions() {
     setIsDialogOpen(true);
   };
   
-  const openDeleteDialog = (competition: any) => {
+  const openDeleteDialog = (competition: Competition) => {
     setSelectedCompetition(competition);
     setIsDeleteDialogOpen(true);
   };
@@ -101,7 +103,7 @@ export default function AdminCompetitions() {
           description: "The competition has been successfully created."
         });
       } else {
-        await apiRequest('PATCH', `/api/admin/competitions/${selectedCompetition.id}`, data);
+        await apiRequest('PATCH', `/api/admin/competitions/${selectedCompetition?.id}`, data);
         toast({
           title: "Competition updated",
           description: "The competition has been successfully updated."
@@ -125,6 +127,7 @@ export default function AdminCompetitions() {
   
   const handleDelete = async () => {
     try {
+      if (!selectedCompetition) return;
       await apiRequest('DELETE', `/api/admin/competitions/${selectedCompetition.id}`, {});
       toast({
         title: "Competition deleted",
