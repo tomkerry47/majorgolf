@@ -1,4 +1,4 @@
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase client with direct values
 const supabaseUrl = 'https://bgdctfdxjdpsecihqsfh.supabase.co';

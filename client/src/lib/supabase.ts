@@ -14,7 +14,7 @@ export async function signUp(email: string, password: string, userData: { userna
     options: {
       data: {
         username: userData.username,
-        full_name: userData.fullName,
+        fullName: userData.fullName,
       }
     }
   });
@@ -100,7 +100,7 @@ export function subscribeToCompetition(competitionId: number, callback: (payload
       event: '*', 
       schema: 'public', 
       table: 'results',
-      filter: `competition_id=eq.${competitionId}`
+      filter: `competitionId=eq.${competitionId}`
     }, callback)
     .subscribe();
 }
