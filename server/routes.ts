@@ -819,79 +819,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log('Starting manual leaderboard calculation for competition:', competitionId);
       
-      // Get all selections for this competition with simple query first
-      console.log('Querying selections for competitionId:', competitionId, 'Type:', typeof competitionId);
-      
       // Convert competitionId to number if it's a string
       const numericCompetitionId = typeof competitionId === 'string' ? parseInt(competitionId, 10) : competitionId;
       console.log('Using numericCompetitionId:', numericCompetitionId, 'Type:', typeof numericCompetitionId);
       
-      // Use direct database connection instead of Supabase
-      // Create a DB client
-      const { Pool } = await import('pg');
-      const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-      });
+      // Use Supabase instead of direct pg Pool
       
-      try {
-        // Get selections directly
-        const selectionsResult = await pool.query(
-          'SELECT * FROM selections WHERE "competitionId" = $1',
-          [numericCompetitionId]
-        );
+      // Get selections using Supabase
+      const { data: selections, error: selectionsError } = await supabase
+        .from('selections')
+        .select('*')
+        .eq('competitionId', numericCompetitionId);
         
-        const selections = selectionsResult.rows;
-        console.log('Selections found (direct SQL):', selections?.length);
-        if (selections?.length > 0) {
-          console.log('Sample selection:', JSON.stringify(selections[0]));
-        }
-        
-        if (!selections || selections.length === 0) {
-          console.log('No selections found for this competition.');
-          await pool.end();
-          return [];
-        }
+      if (selectionsError) throw selectionsError;
+      
+      console.log('Selections found:', selections?.length);
+      if (selections?.length > 0) {
+        console.log('Sample selection:', JSON.stringify(selections[0]));
+      }
+      
+      if (!selections || selections.length === 0) {
+        console.log('No selections found for this competition.');
+        return [];
+      }
       
       // Get users separately
       const userIdsSet = new Set<number>();
-      selections.forEach(s => userIdsSet.add(s.userId));
+      selections.forEach((s: any) => userIdsSet.add(s.userId));
       const uniqueUserIds = Array.from(userIdsSet);
       console.log('Unique user IDs:', uniqueUserIds);
       
-      // Get users with direct SQL
-      const usersResult = await pool.query(
-        'SELECT id, username, email FROM users WHERE id = ANY($1)',
-        [uniqueUserIds]
-      );
-      const users = usersResult.rows;
-      console.log('Users found (direct SQL):', users?.length);
+      // Get users with Supabase
+      const { data: users, error: usersError } = await supabase
+        .from('users')
+        .select('id, username, email')
+        .in('id', uniqueUserIds);
+        
+      if (usersError) throw usersError;
+      console.log('Users found:', users?.length);
       
       // Get all golfer IDs used in selections
-      const golferIds = selections.flatMap(s => [s.golfer1Id, s.golfer2Id, s.golfer3Id].filter(Boolean));
+      const golferIds = selections.flatMap((s: any) => [s.golfer1Id, s.golfer2Id, s.golfer3Id].filter(Boolean));
       const golferIdsSet = new Set<number>();
-      golferIds.forEach(id => golferIdsSet.add(id));
+      golferIds.forEach((id: any) => golferIdsSet.add(id));
       const uniqueGolferIds = Array.from(golferIdsSet);
       console.log('Unique golfer IDs:', uniqueGolferIds);
       
-      // Get golfers with direct SQL
-      const golfersResult = await pool.query(
-        'SELECT id, name FROM golfers WHERE id = ANY($1)',
-        [uniqueGolferIds]
-      );
-      const golfers = golfersResult.rows;
-      console.log('Golfers found (direct SQL):', golfers?.length);
+      // Get golfers with Supabase
+      const { data: golfers, error: golfersError } = await supabase
+        .from('golfers')
+        .select('id, name')
+        .in('id', uniqueGolferIds);
+        
+      if (golfersError) throw golfersError;
+      console.log('Golfers found:', golfers?.length);
       
       // Create lookup maps
-      const userMap = Object.fromEntries(users.map(u => [u.id, u]));
-      const golferMap = Object.fromEntries(golfers.map(g => [g.id, g]));
+      const userMap = Object.fromEntries(users.map((u: any) => [u.id, u]));
+      const golferMap = Object.fromEntries(golfers.map((g: any) => [g.id, g]));
       
-      // Get all results for this competition with direct SQL
-      const resultsResult = await pool.query(
-        'SELECT * FROM results WHERE "competitionId" = $1',
-        [numericCompetitionId]
-      );
-      const results = resultsResult.rows;
-      console.log('Results found (direct SQL):', results?.length);
+      // Get all results for this competition with Supabase
+      const { data: results, error: resultsError } = await supabase
+        .from('results')
+        .select('*')
+        .eq('competitionId', numericCompetitionId);
+        
+      if (resultsError) throw resultsError;
+      
+      console.log('Results found:', results?.length);
       if (results?.length > 0) {
         console.log('Sample result:', JSON.stringify(results[0]));
       }
@@ -902,14 +897,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         defaultPointsLookup[i] = 11 - i;
       }
       
-      // Try to get points system with direct SQL
+      // Try to get points system with Supabase
       let pointsLookup = defaultPointsLookup;
       try {
-        const pointsSystemResult = await pool.query('SELECT * FROM points_system');
-        const pointsSystem = pointsSystemResult.rows;
+        const { data: pointsSystem, error: pointsError } = await supabase
+          .from('points_system')
+          .select('*');
+          
+        if (pointsError) throw pointsError;
           
         if (pointsSystem && pointsSystem.length > 0) {
-          pointsLookup = Object.fromEntries(pointsSystem.map(ps => [ps.position, ps.points]));
+          pointsLookup = Object.fromEntries(pointsSystem.map((ps: any) => [ps.position, ps.points]));
           console.log('Using custom points system');
         } else {
           console.log('Using default points system (no custom system found)');
@@ -928,7 +926,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }> = {};
       
       // Process selections with our lookup maps
-      selections.forEach(selection => {
+      selections.forEach((selection: any) => {
         const user = userMap[selection.userId];
         if (!user) {
           console.log('User not found for selection:', selection);
@@ -977,7 +975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Calculate points if results exist
         if (results && results.length > 0) {
-          results.forEach(result => {
+          results.forEach((result: any) => {
             // Check if this result matches any of the user's golfers
             if (result.golferId === selection.golfer1Id || 
                 result.golferId === selection.golfer2Id || 
