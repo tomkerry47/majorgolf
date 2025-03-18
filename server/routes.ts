@@ -106,6 +106,40 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Test endpoint to verify our fallback implementation
+  app.get('/api/test-leaderboard', async (req: Request, res: Response) => {
+    try {
+      // First test the RPC function
+      let rpcWorking = false;
+      try {
+        await supabase.rpc('get_leaderboard', { competitionId: 1 });
+        rpcWorking = true;
+      } catch (e: any) {
+        console.log('RPC test failed:', e.message);
+      }
+      
+      // Then test the fallback implementation
+      try {
+        const fallbackData = await getLeaderboardManually(1);
+        res.status(200).json({
+          rpcFunctionAvailable: rpcWorking,
+          fallbackImplementation: 'working',
+          sample: fallbackData.length > 0 ? fallbackData[0] : null,
+          message: 'Leaderboard implementation is working correctly. The fallback will be used when the RPC function is unavailable.'
+        });
+      } catch (e: any) {
+        res.status(500).json({
+          rpcFunctionAvailable: rpcWorking,
+          fallbackImplementation: 'error',
+          error: e.message,
+          message: 'Fallback implementation error'
+        });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
   // Apply JWT validation middleware
   app.use(validateJWT);
   // Auth Routes
@@ -546,9 +580,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from('selections')
         .select(`
           *,
-          golfer1:golfer1Id(id, name, avatarUrl),
-          golfer2:golfer2Id(id, name, avatarUrl),
-          golfer3:golfer3Id(id, name, avatarUrl)
+          golfer1:golfers!golfer1Id(id, name),
+          golfer2:golfers!golfer2Id(id, name),
+          golfer3:golfers!golfer3Id(id, name)
         `)
         .eq('competitionId', competitionId)
         .eq('userId', userId || currentUserId)
@@ -669,11 +703,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const competitionId = req.params.competitionId;
       
+      // First check if avatarUrl column exists in golfers table
+      let includeAvatarUrl = false;
+      try {
+        const { data: testGolfer, error: testError } = await supabase
+          .from('golfers')
+          .select('avatarUrl')
+          .limit(1);
+          
+        if (!testError) {
+          includeAvatarUrl = true;
+        }
+      } catch (e) {
+        console.log('avatarUrl column does not exist in golfers table');
+      }
+      
       const { data, error } = await supabase
         .from('results')
         .select(`
           *,
-          golfer:golferId(id, name, avatarUrl)
+          golfer:golferId(id, name${includeAvatarUrl ? ', avatarUrl' : ''})
         `)
         .eq('competitionId', competitionId)
         .order('position', { ascending: true });
@@ -712,6 +761,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/leaderboard/:competitionId?', async (req: Request, res: Response) => {
     try {
       const competitionId = req.params.competitionId;
+      console.log('Leaderboard request for competitionId:', competitionId);
       
       // If no competition ID is provided, get the currently active competition
       if (!competitionId) {
@@ -731,23 +781,255 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(200).json([]);
         }
         
-        const { data: leaderboard, error } = await supabase.rpc('get_leaderboard', { competitionId: activeCompetition.id });
-        
-        if (error) throw error;
-        
-        res.status(200).json(leaderboard);
+        try {
+          // First try to use the RPC function if available
+          const { data: leaderboard, error } = await supabase.rpc('get_leaderboard', { competitionId: activeCompetition.id });
+          if (error) throw error;
+          res.status(200).json(leaderboard);
+        } catch (rpcError: any) {
+          console.log('Falling back to manual leaderboard calculation:', rpcError.message || 'RPC function unavailable');
+          
+          // Manual calculation as fallback
+          const fallbackLeaderboard = await getLeaderboardManually(activeCompetition.id);
+          res.status(200).json(fallbackLeaderboard);
+        }
       } else {
         // Get leaderboard for specified competition
-        const { data: leaderboard, error } = await supabase.rpc('get_leaderboard', { competitionId: competitionId });
-        
-        if (error) throw error;
-        
-        res.status(200).json(leaderboard);
+        try {
+          // First try to use the RPC function if available
+          const { data: leaderboard, error } = await supabase.rpc('get_leaderboard', { competitionId: competitionId });
+          if (error) throw error;
+          res.status(200).json(leaderboard);
+        } catch (rpcError: any) {
+          console.log('Falling back to manual leaderboard calculation:', rpcError.message || 'RPC function unavailable');
+          
+          // Manual calculation as fallback
+          const fallbackLeaderboard = await getLeaderboardManually(competitionId);
+          res.status(200).json(fallbackLeaderboard);
+        }
       }
     } catch (error: any) {
+      console.error('Error in leaderboard route:', error);
       res.status(400).json({ error: error.message });
     }
   });
+  
+  // Helper function to calculate leaderboard manually if RPC function is unavailable
+  async function getLeaderboardManually(competitionId: string | number): Promise<any[]> {
+    try {
+      console.log('Starting manual leaderboard calculation for competition:', competitionId);
+      
+      // Get all selections for this competition with simple query first
+      console.log('Querying selections for competitionId:', competitionId, 'Type:', typeof competitionId);
+      
+      // Convert competitionId to number if it's a string
+      const numericCompetitionId = typeof competitionId === 'string' ? parseInt(competitionId, 10) : competitionId;
+      console.log('Using numericCompetitionId:', numericCompetitionId, 'Type:', typeof numericCompetitionId);
+      
+      // Use direct database connection instead of Supabase
+      // Create a DB client
+      const { Pool } = await import('pg');
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      try {
+        // Get selections directly
+        const selectionsResult = await pool.query(
+          'SELECT * FROM selections WHERE "competitionId" = $1',
+          [numericCompetitionId]
+        );
+        
+        const selections = selectionsResult.rows;
+        console.log('Selections found (direct SQL):', selections?.length);
+        if (selections?.length > 0) {
+          console.log('Sample selection:', JSON.stringify(selections[0]));
+        }
+        
+        if (!selections || selections.length === 0) {
+          console.log('No selections found for this competition.');
+          await pool.end();
+          return [];
+        }
+      
+      // Get users separately
+      const userIdsSet = new Set<number>();
+      selections.forEach(s => userIdsSet.add(s.userId));
+      const uniqueUserIds = Array.from(userIdsSet);
+      console.log('Unique user IDs:', uniqueUserIds);
+      
+      // Get users with direct SQL
+      const usersResult = await pool.query(
+        'SELECT id, username, email FROM users WHERE id = ANY($1)',
+        [uniqueUserIds]
+      );
+      const users = usersResult.rows;
+      console.log('Users found (direct SQL):', users?.length);
+      
+      // Get all golfer IDs used in selections
+      const golferIds = selections.flatMap(s => [s.golfer1Id, s.golfer2Id, s.golfer3Id].filter(Boolean));
+      const golferIdsSet = new Set<number>();
+      golferIds.forEach(id => golferIdsSet.add(id));
+      const uniqueGolferIds = Array.from(golferIdsSet);
+      console.log('Unique golfer IDs:', uniqueGolferIds);
+      
+      // Get golfers with direct SQL
+      const golfersResult = await pool.query(
+        'SELECT id, name FROM golfers WHERE id = ANY($1)',
+        [uniqueGolferIds]
+      );
+      const golfers = golfersResult.rows;
+      console.log('Golfers found (direct SQL):', golfers?.length);
+      
+      // Create lookup maps
+      const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+      const golferMap = Object.fromEntries(golfers.map(g => [g.id, g]));
+      
+      // Get all results for this competition with direct SQL
+      const resultsResult = await pool.query(
+        'SELECT * FROM results WHERE "competitionId" = $1',
+        [numericCompetitionId]
+      );
+      const results = resultsResult.rows;
+      console.log('Results found (direct SQL):', results?.length);
+      if (results?.length > 0) {
+        console.log('Sample result:', JSON.stringify(results[0]));
+      }
+      
+      // Default points system (can be overridden by actual system if available)
+      const defaultPointsLookup: Record<number, number> = {};
+      for (let i = 1; i <= 10; i++) {
+        defaultPointsLookup[i] = 11 - i;
+      }
+      
+      // Try to get points system with direct SQL
+      let pointsLookup = defaultPointsLookup;
+      try {
+        const pointsSystemResult = await pool.query('SELECT * FROM points_system');
+        const pointsSystem = pointsSystemResult.rows;
+          
+        if (pointsSystem && pointsSystem.length > 0) {
+          pointsLookup = Object.fromEntries(pointsSystem.map(ps => [ps.position, ps.points]));
+          console.log('Using custom points system');
+        } else {
+          console.log('Using default points system (no custom system found)');
+        }
+      } catch (e) {
+        console.log('Using default points system due to error:', e);
+      }
+      
+      // Calculate points for each user
+      const userPoints: Record<string, {
+        userId: string,
+        username: string,
+        email: string,
+        points: number,
+        selections: { playerName: string, position?: number }[]
+      }> = {};
+      
+      // Process selections with our lookup maps
+      selections.forEach(selection => {
+        const user = userMap[selection.userId];
+        if (!user) {
+          console.log('User not found for selection:', selection);
+          return;
+        }
+        
+        const userId = user.id;
+        if (!userPoints[userId]) {
+          userPoints[userId] = {
+            userId,
+            username: user.username,
+            email: user.email,
+            points: 0,
+            selections: []
+          };
+        }
+        
+        // Add golfers to user's selections
+        const golfer1 = golferMap[selection.golfer1Id];
+        const golfer2 = golferMap[selection.golfer2Id];
+        const golfer3 = golferMap[selection.golfer3Id];
+        
+        console.log('Selection golfers:', {
+          golfer1Id: selection.golfer1Id, 
+          golfer2Id: selection.golfer2Id, 
+          golfer3Id: selection.golfer3Id
+        });
+        
+        if (golfer1) {
+          userPoints[userId].selections.push({
+            playerName: golfer1.name
+          });
+        }
+        
+        if (golfer2) {
+          userPoints[userId].selections.push({
+            playerName: golfer2.name
+          });
+        }
+        
+        if (golfer3) {
+          userPoints[userId].selections.push({
+            playerName: golfer3.name
+          });
+        }
+        
+        // Calculate points if results exist
+        if (results && results.length > 0) {
+          results.forEach(result => {
+            // Check if this result matches any of the user's golfers
+            if (result.golferId === selection.golfer1Id || 
+                result.golferId === selection.golfer2Id || 
+                result.golferId === selection.golfer3Id) {
+              
+              const golferId = result.golferId;
+              const position = result.position;
+              
+              // Add points based on position
+              const points = result.points || pointsLookup[position] || 0;
+              userPoints[userId].points += points;
+              
+              console.log(`Adding ${points} points to user ${userId} for golfer ${golferId} in position ${position}`);
+              
+              // Find matching golfer
+              const matchingGolfer = golferId === selection.golfer1Id ? golfer1 :
+                                    golferId === selection.golfer2Id ? golfer2 :
+                                    golfer3;
+              
+              // Update position in selections
+              if (matchingGolfer) {
+                const golferSelection = userPoints[userId].selections.find(s => 
+                  s.playerName === matchingGolfer.name
+                );
+                
+                if (golferSelection) {
+                  golferSelection.position = position;
+                }
+              }
+            }
+          });
+        }
+      });
+      
+      // Convert to array and sort by points (descending)
+      const leaderboard = Object.values(userPoints).sort((a, b) => b.points - a.points);
+      console.log('Final leaderboard entries:', leaderboard.length);
+      
+      // Add rank
+      const rankedLeaderboard = leaderboard.map((entry, index) => ({
+        ...entry,
+        rank: index + 1,
+        lastPointsChange: 0 // We don't have historical data in this fallback
+      }));
+      
+      console.log('Returning leaderboard with entries:', rankedLeaderboard.length);
+      return rankedLeaderboard;
+    } catch (error) {
+      console.error('Error in manual leaderboard calculation:', error);
+      throw error;
+    }
+  }
 
   // Admin Routes
   app.get('/api/admin/competitions', async (req: Request, res: Response) => {
@@ -831,10 +1113,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from('selections')
         .select(`
           *,
-          user:userId(id, username, email),
-          golfer1:golfer1Id(id, name),
-          golfer2:golfer2Id(id, name),
-          golfer3:golfer3Id(id, name)
+          user:users!userId(id, username, email),
+          golfer1:golfers!golfer1Id(id, name),
+          golfer2:golfers!golfer2Id(id, name),
+          golfer3:golfers!golfer3Id(id, name)
         `)
         .eq('competitionId', competitionId);
       
