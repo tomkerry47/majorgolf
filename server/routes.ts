@@ -16,8 +16,16 @@ import {
 // Middleware to check JWT token from Authorization header
 const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Check if it's an admin route
-    if (req.path.startsWith('/api/admin/')) {
+    // Check if it's an admin route or one that requires admin privileges
+    if (req.path.startsWith('/api/admin/') || 
+        (req.method === 'POST' && (
+          req.path === '/api/competitions' || 
+          req.path === '/api/golfers' || 
+          req.path === '/api/results'
+        )) ||
+        (req.method === 'PATCH' && req.path.startsWith('/api/competitions/')) ||
+        (req.method === 'DELETE' && req.path.startsWith('/api/competitions/'))
+    ) {
       const authHeader = req.headers.authorization;
       
       if (!authHeader) {
