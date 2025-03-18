@@ -13,6 +13,15 @@ import {
   selectionFormSchema
 } from "@shared/schema";
 
+// Define interface for Supabase User with our additional properties
+interface ExtendedUser {
+  id: string;
+  email: string;
+  user_metadata?: Record<string, any>;
+  database_id?: number;
+  isAdmin?: boolean;
+}
+
 // Middleware to check JWT token from Authorization header
 const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -24,47 +33,136 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
         req.path.startsWith('/api/competitions/') && req.method === 'GET' ||
         req.path === '/api/competitions' && req.method === 'GET' ||
         req.path === '/api/golfers' && req.method === 'GET' ||
-        req.path.startsWith('/api/leaderboard') && req.method === 'GET') {
+        req.path.startsWith('/api/leaderboard') && req.method === 'GET' ||
+        req.path === '/api/test-leaderboard') {
       return next();
     }
     
-    // Check authorization header first
+    console.log('Validating auth for:', req.path, req.method);
+    
+    // Extract JWT token from various possible sources
+    let token: string | null = null;
+    let user: ExtendedUser | null = null;
+    
+    // 1. Check Authorization header
     const authHeader = req.headers.authorization;
-    let user = null;
-    
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
-      
-      if (token) {
-        try {
-          // Verify token with Supabase
-          const { data, error } = await supabase.auth.getUser(token);
-          
-          if (!error && data.user) {
-            user = data.user;
-          }
-        } catch (tokenError) {
-          console.error('Token validation error:', tokenError);
+      token = authHeader.split(' ')[1];
+      console.log('Found token in Authorization header');
+    }
+    
+    // 2. Check cookie (if using cookie-based auth)
+    if (!token && req.headers.cookie) {
+      const cookies = req.headers.cookie.split(';');
+      const authCookie = cookies.find(c => c.trim().startsWith('sb-access-token='));
+      if (authCookie) {
+        token = authCookie.split('=')[1];
+        console.log('Found token in cookie');
+      }
+    }
+    
+    // 3. Try to validate token if found
+    if (token) {
+      try {
+        // Verify token with Supabase
+        const { data, error } = await supabase.auth.getUser(token);
+        
+        if (error) {
+          console.error('Token validation error:', error);
+        } else if (data.user) {
+          user = data.user as ExtendedUser;
+          console.log('Valid token for user:', user.email);
         }
+      } catch (tokenError) {
+        console.error('Token validation exception:', tokenError);
+      }
+    } else {
+      console.log('No token found in request');
+    }
+    
+    // 4. If no user from token, try session as fallback
+    if (!user) {
+      try {
+        console.log('Attempting to get session');
+        const { data } = await supabase.auth.getSession();
+        
+        if (data && data.session && data.session.user) {
+          user = data.session.user as ExtendedUser;
+          console.log('Found user from session:', user.email);
+        } else {
+          console.log('No session found');
+        }
+      } catch (sessionError) {
+        console.error('Session retrieval error:', sessionError);
       }
     }
     
-    // If no user from auth header, try session
+    // 5. If still no user after all attempts, return unauthorized
     if (!user) {
-      const { data: session } = await supabase.auth.getSession();
+      console.log('Authentication failed for:', req.path);
+      return res.status(401).json({ 
+        error: "Not authenticated",
+        message: "Please sign in to access this resource"
+      });
+    }
+    
+    // 6. Verify the user exists in our database 
+    try {
+      const { data: dbUser, error: dbError } = await supabase
+        .from('users')
+        .select('id, email, username, isAdmin')
+        .eq('id', user.id)
+        .single();
       
-      if (session && session.session && session.session.user) {
-        user = session.session.user;
+      if (dbError) {
+        console.log('User not found in database, ID:', user.id);
+        
+        // Try to find by email as fallback
+        if (user.email) {
+          const { data: emailUser, error: emailError } = await supabase
+            .from('users')
+            .select('id, email, username, isAdmin')
+            .eq('email', user.email)
+            .single();
+          
+          if (!emailError && emailUser) {
+            console.log('Found user by email instead of ID');
+            
+            // Update user info with database info
+            user = {
+              ...user,
+              database_id: emailUser.id // Keep track of database ID if different
+            };
+          } else {
+            // Create user if needed
+            const { data: newUser, error: insertError } = await supabase
+              .from('users')
+              .insert({
+                id: user.id,
+                email: user.email,
+                username: user.email.split('@')[0],
+              })
+              .select()
+              .single();
+            
+            if (insertError) {
+              console.error('Failed to create user in database:', insertError);
+              return res.status(500).json({ error: "Database sync error" });
+            }
+            
+            console.log('Created new user record:', newUser.id);
+          }
+        }
+      } else {
+        // User found in database, use their database profile
+        console.log('User found in database:', dbUser.username);
+        user.isAdmin = dbUser.isAdmin;
       }
+    } catch (dbError) {
+      console.error('Database user check error:', dbError);
     }
     
-    // If still no user, return unauthorized
-    if (!user) {
-      console.log('No authenticated user found for:', req.path);
-      return res.status(401).json({ error: "Not authenticated" });
-    }
-    
-    // Check if admin access is required
+    // 7. Check admin access if required
     const needsAdminAccess = req.path.startsWith('/api/admin/') || 
         (req.method === 'POST' && (
           req.path === '/api/competitions' || 
@@ -75,27 +173,21 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
         (req.method === 'DELETE' && req.path.startsWith('/api/competitions/'));
         
     if (needsAdminAccess) {
-      // Check if user is admin
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('isAdmin')
-        .eq('id', user.id)
-        .single();
-        
-      if (userError) {
-        console.error('User data fetch error:', userError);
-        return res.status(401).json({ error: "Error fetching user permissions" });
+      if (!user.isAdmin) {
+        console.log('Admin access rejected for user:', user.email);
+        return res.status(403).json({ 
+          error: "Access denied", 
+          message: "Administrator access required" 
+        });
       }
-      
-      if (!userData?.isAdmin) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
+      console.log('Admin access granted for user:', user.email);
     }
     
-    // Store user info in request for later use
+    // 8. Store user info in request for later use
     (req as any).user = {
-      id: user.id,
-      email: user.email
+      id: user.database_id || user.id,  // Use database ID if different
+      email: user.email,
+      isAdmin: !!user.isAdmin
     };
     
     next();
@@ -147,6 +239,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = registerSchema.parse(req.body);
       
+      console.log('Registering new user:', validatedData.email);
+      
+      // First, sign up the user with Supabase Auth
       const { data, error } = await supabase.auth.signUp({
         email: validatedData.email,
         password: validatedData.password,
@@ -158,10 +253,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase Auth signup error:', error);
+        throw error;
+      }
       
+      if (!data.user) {
+        throw new Error('User registration failed');
+      }
+      
+      console.log('User registered in Auth system:', data.user.id);
+      
+      // Then, create the user in our database table
+      try {
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .insert({
+            id: data.user.id,
+            email: data.user.email,
+            username: validatedData.username,
+            fullName: validatedData.fullName,
+          })
+          .select()
+          .single();
+        
+        if (userError) {
+          console.error('Database user creation error:', userError);
+          
+          // If the user already exists (e.g., unique constraint violation),
+          // we'll try to update the record instead
+          if (userError.code === '23505') { // Duplicate key violation
+            console.log('User already exists in database, updating...');
+            
+            const { data: updatedUser, error: updateError } = await supabase
+              .from('users')
+              .update({
+                id: data.user.id, // Ensure ID matches auth
+                username: validatedData.username,
+                fullName: validatedData.fullName,
+              })
+              .eq('email', data.user.email) // Match by email
+              .select()
+              .single();
+              
+            if (updateError) {
+              console.error('User update error:', updateError);
+            } else {
+              console.log('User updated in database:', updatedUser.id);
+            }
+          }
+        } else {
+          console.log('User created in database:', userData.id);
+        }
+      } catch (dbError) {
+        console.error('Database operation error:', dbError);
+        // We'll still return success as the auth account was created
+      }
+      
+      // Return the auth data to the client
       res.status(201).json(data);
     } catch (error: any) {
+      console.error('Registration error:', error);
       res.status(400).json({ error: error.message });
     }
   });

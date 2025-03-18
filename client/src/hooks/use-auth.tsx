@@ -45,46 +45,90 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           
           if (session?.user) {
             try {
-              // Get user data from database
-              const { data: userData, error } = await supabase
+              // Try to get user by auth ID first
+              let { data: userData, error } = await supabase
                 .from('users')
                 .select('*')
                 .eq('id', session.user.id)
                 .single();
               
+              // If that fails, try by email
+              if (error && session.user.email) {
+                console.log("User not found by ID, trying email lookup");
+                const { data: emailUser, error: emailError } = await supabase
+                  .from('users')
+                  .select('*')
+                  .eq('email', session.user.email)
+                  .single();
+                
+                if (!emailError && emailUser) {
+                  console.log("Found user by email:", emailUser);
+                  userData = emailUser;
+                  error = null;
+                  
+                  // Update user ID to match auth if needed
+                  if (emailUser.id !== session.user.id) {
+                    console.log("Updating user ID to match auth ID");
+                    const { error: updateError } = await supabase
+                      .from('users')
+                      .update({ id: session.user.id })
+                      .eq('id', emailUser.id);
+                    
+                    if (updateError) {
+                      console.error("Error updating user ID:", updateError);
+                    }
+                  }
+                }
+              }
+              
+              // If user still not found, create new user record
               if (error) {
                 console.error("Error fetching user data:", error);
                 console.log("Error details:", error);
                 
-                // If user doesn't exist in database yet, we'll create them
-                if (error.code === 'PGRST116') {
+                if (session.user.email) {
                   console.log("User not found in database, creating user record");
+                  
+                  const username = session.user.email.split('@')[0] || 'user';
+                  const fullName = username;
                   
                   const { data: newUser, error: insertError } = await supabase
                     .from('users')
                     .insert({
                       id: session.user.id,
                       email: session.user.email,
-                      username: session.user.email?.split('@')[0] || 'user',
+                      username: username,
+                      fullName: fullName,
                     })
                     .select()
                     .single();
                   
                   if (insertError) {
                     console.error("Error creating user record:", insertError);
+                    
+                    // If insert failed (likely due to duplicate email), try a fetch with email again
+                    // This handles race conditions where the user exists but ID doesn't match
+                    if (insertError.code === '23505') { // Unique constraint violation
+                      const { data: existingUser, error: fetchError } = await supabase
+                        .from('users')
+                        .select('*')
+                        .eq('email', session.user.email)
+                        .single();
+                      
+                      if (!fetchError && existingUser) {
+                        userData = existingUser;
+                      }
+                    }
                   } else {
                     console.log("Created new user record:", newUser);
-                    setUser({
-                      id: session.user.id,
-                      email: session.user.email || '',
-                      username: newUser.username,
-                    });
-                    setIsAdmin(false);
-                    setIsLoading(false);
+                    userData = newUser;
                   }
                 }
-              } else {
-                console.log("Found user in database:", userData);
+              }
+              
+              // Set user state based on resolved userData
+              if (userData) {
+                console.log("Setting user data:", userData);
                 setUser({
                   id: session.user.id,
                   email: session.user.email || '',
@@ -92,10 +136,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                   avatarUrl: userData.avatarUrl,
                 });
                 setIsAdmin(!!userData.isAdmin);
-                setIsLoading(false);
+              } else {
+                // Fallback to basic user info if database sync failed
+                console.log("Using basic user info from auth");
+                setUser({
+                  id: session.user.id,
+                  email: session.user.email || '',
+                });
+                setIsAdmin(false);
               }
             } catch (error) {
               console.error("Error in auth state listener:", error);
+            } finally {
               setIsLoading(false);
             }
           }

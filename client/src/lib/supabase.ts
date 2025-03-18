@@ -79,17 +79,98 @@ export async function getSession() {
 
 // Database functions
 export async function fetchUserProfile(userId: string) {
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', userId)
-    .single();
+  console.log('Fetching user profile for ID:', userId);
   
-  if (error) {
-    throw error;
+  try {
+    // Try to get user by ID first
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    if (error) {
+      console.log('Error fetching user profile by ID:', error);
+      
+      // If not found, try to get current user from auth and use email to find profile
+      const { data: userData } = await supabase.auth.getUser();
+      
+      if (userData && userData.user && userData.user.email) {
+        console.log('Trying to find user by email:', userData.user.email);
+        
+        const { data: emailUser, error: emailError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', userData.user.email)
+          .single();
+        
+        if (emailError) {
+          console.log('Error fetching user profile by email:', emailError);
+          
+          // If still not found, create a new user profile
+          console.log('Creating new user profile for auth user');
+          
+          const { data: newUser, error: createError } = await supabase
+            .from('users')
+            .insert({
+              id: userId,
+              email: userData.user.email,
+              username: userData.user.email.split('@')[0],
+              fullName: userData.user.email.split('@')[0]
+            })
+            .select()
+            .single();
+          
+          if (createError) {
+            console.error('Error creating user profile:', createError);
+            throw createError;
+          }
+          
+          return newUser;
+        }
+        
+        // If found by email but ID doesn't match, update the ID
+        if (emailUser && emailUser.id !== userId) {
+          console.log('Found user by email but ID mismatch. Updating ID...');
+          
+          // Keep a copy of the user data
+          const userCopy = { ...emailUser };
+          
+          try {
+            // This may fail due to FK constraints if the user has related records
+            const { data: updatedUser, error: updateError } = await supabase
+              .from('users')
+              .update({ id: userId })
+              .eq('id', emailUser.id)
+              .select()
+              .single();
+            
+            if (updateError) {
+              console.error('Failed to update user ID:', updateError);
+              // Return the original user data anyway
+              return userCopy;
+            }
+            
+            return updatedUser;
+          } catch (updateError) {
+            console.error('Exception updating user ID:', updateError);
+            // Return the original user data anyway
+            return userCopy;
+          }
+        }
+        
+        return emailUser;
+      }
+      
+      throw error; // Rethrow original error if we can't find user by email
+    }
+    
+    console.log('User profile fetched successfully');
+    return data;
+  } catch (err) {
+    console.error('Error in fetchUserProfile:', err);
+    throw err;
   }
-  
-  return data;
 }
 
 // Realtime subscription helpers
