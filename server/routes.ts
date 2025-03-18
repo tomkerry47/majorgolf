@@ -91,25 +91,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.params.id;
       
-      const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(userId);
+      // Get user from database instead of auth.admin
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
       
       if (userError) throw userError;
-      if (!user) return res.status(404).json({ error: "User not found" });
+      if (!userData) return res.status(404).json({ error: "User not found" });
       
       // Get user statistics
       const { data: stats, error: statsError } = await supabase.rpc('get_user_stats', { user_id: userId });
       
-      const userData = {
-        id: user.id,
-        email: user.email,
-        username: user.user_metadata?.username || user.email?.split('@')[0],
-        fullName: user.user_metadata?.full_name || '',
-        avatar: user.user_metadata?.avatar || '',
-        stats: stats || {}
+      // Get user auth data for additional information
+      const { data: authData } = await supabase.auth.getUser(userId);
+      
+      const enrichedUserData = {
+        id: userData.id,
+        email: userData.email,
+        username: userData.username || userData.email?.split('@')[0],
+        fullName: userData.full_name || '',
+        avatar: userData.avatar_url || '',
+        stats: stats || {},
+        isAdmin: !!userData.is_admin
       };
       
-      res.status(200).json(userData);
+      console.log('Fetched user data:', { userId, enrichedUserData });
+      
+      res.status(200).json(enrichedUserData);
     } catch (error: any) {
+      console.error('Error in /api/users/:id route:', error);
       res.status(400).json({ error: error.message });
     }
   });
