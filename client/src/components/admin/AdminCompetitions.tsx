@@ -44,6 +44,7 @@ export default function AdminCompetitions() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedCompetition, setSelectedCompetition] = useState<any>(null);
   const [formAction, setFormAction] = useState<'create' | 'edit'>('create');
+  const [isCreatingTournaments, setIsCreatingTournaments] = useState(false);
   
   const { data: competitions, isLoading } = useQuery({
     queryKey: ['/api/admin/competitions'],
@@ -138,14 +139,130 @@ export default function AdminCompetitions() {
     }
   };
   
+  const createMajorTournaments = async () => {
+    try {
+      setIsCreatingTournaments(true);
+      
+      const tournaments = [
+        {
+          name: "The Masters",
+          venue: "Augusta National Golf Club",
+          startDate: new Date("2025-04-10T08:00:00"),
+          endDate: new Date("2025-04-13T20:00:00"),
+          selectionDeadline: new Date("2025-04-09T23:59:59"),
+          isActive: false,
+          isComplete: false,
+          description: "The Masters Tournament is played annually at Augusta National Golf Club in Augusta, Georgia. It is one of the four major championships in professional golf.",
+          imageUrl: "https://www.masters.com/images/pics/large/masters_logo_meta.jpg"
+        },
+        {
+          name: "PGA Championship",
+          venue: "Quail Hollow Club",
+          startDate: new Date("2025-05-15T08:00:00"),
+          endDate: new Date("2025-05-18T20:00:00"),
+          selectionDeadline: new Date("2025-05-14T23:59:59"),
+          isActive: false,
+          isComplete: false,
+          description: "The PGA Championship is one of golf's four major championships. Since 2019, it has been played in May, making it the second major of the golf season.",
+          imageUrl: "https://www.pgachampionship.com/assets/images/pgachampionship-logo.png"
+        },
+        {
+          name: "U.S. Open",
+          venue: "Pinehurst Resort",
+          startDate: new Date("2025-06-12T08:00:00"),
+          endDate: new Date("2025-06-15T20:00:00"),
+          selectionDeadline: new Date("2025-06-11T23:59:59"),
+          isActive: false,
+          isComplete: false,
+          description: "The United States Open Championship is the annual open national championship of golf in the United States. It is the third of the four major championships.",
+          imageUrl: "https://www.usopen.com/content/dam/usopen/logo/us-open-championship-logo.svg"
+        },
+        {
+          name: "The Open Championship",
+          venue: "Royal Liverpool Golf Club",
+          startDate: new Date("2025-07-17T08:00:00"),
+          endDate: new Date("2025-07-20T20:00:00"),
+          selectionDeadline: new Date("2025-07-16T23:59:59"),
+          isActive: false,
+          isComplete: false,
+          description: "The Open Championship, often referred to as The Open or the British Open, is the oldest golf tournament in the world. It is one of the four major championships.",
+          imageUrl: "https://www.theopen.com/assets/site/logos/the-open-logo-white.svg"
+        },
+        {
+          name: "The Players Championship",
+          venue: "TPC Sawgrass",
+          startDate: new Date("2025-03-13T08:00:00"),
+          endDate: new Date("2025-03-16T20:00:00"),
+          selectionDeadline: new Date("2025-03-12T23:59:59"),
+          isActive: true,
+          isComplete: false,
+          description: "The Players Championship is an annual golf tournament on the PGA Tour. Originally known as the Tournament Players Championship, it is often regarded as golf's fifth major.",
+          imageUrl: "https://www.theplayers.com/content/dam/pga/tournaments/tournament-sites/the-players-championship/the-players-logo.svg"
+        }
+      ];
+      
+      let successCount = 0;
+      
+      for (const tournament of tournaments) {
+        try {
+          // Convert dates to ISO strings for API submission
+          const formattedTournament = {
+            ...tournament,
+            startDate: tournament.startDate.toISOString(),
+            endDate: tournament.endDate.toISOString(),
+            selectionDeadline: tournament.selectionDeadline.toISOString()
+          };
+          
+          await apiRequest('POST', '/api/competitions', formattedTournament);
+          successCount++;
+        } catch (error: any) {
+          console.error(`Error creating ${tournament.name}:`, error);
+        }
+      }
+      
+      if (successCount > 0) {
+        toast({
+          title: "Tournaments Created",
+          description: `Successfully created ${successCount} of 5 major tournaments.`
+        });
+        
+        queryClient.invalidateQueries({ queryKey: ['/api/admin/competitions'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/competitions'] });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to create any tournaments. Please check the console for errors."
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "An error occurred while creating tournaments."
+      });
+    } finally {
+      setIsCreatingTournaments(false);
+    }
+  };
+  
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Manage Competitions</CardTitle>
-        <Button onClick={openCreateDialog}>
-          <i className="fas fa-plus mr-2"></i>
-          Add Competition
-        </Button>
+        <div className="flex space-x-2">
+          <Button 
+            variant="outline" 
+            onClick={createMajorTournaments} 
+            disabled={isCreatingTournaments}
+          >
+            {isCreatingTournaments ? 'Creating...' : 'Create 5 Major Tournaments'}
+          </Button>
+          <Button onClick={openCreateDialog}>
+            <i className="fas fa-plus mr-2"></i>
+            Add Competition
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
