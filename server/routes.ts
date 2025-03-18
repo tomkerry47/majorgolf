@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { supabase } from "../client/src/lib/supabase";
@@ -13,7 +13,65 @@ import {
   selectionFormSchema
 } from "@shared/schema";
 
+// Middleware to check JWT token from Authorization header
+const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Check if it's an admin route
+    if (req.path.startsWith('/api/admin/')) {
+      const authHeader = req.headers.authorization;
+      
+      if (!authHeader) {
+        return res.status(401).json({ error: "Authorization header missing" });
+      }
+      
+      // Extract token from Bearer format
+      const token = authHeader.split(' ')[1];
+      if (!token) {
+        return res.status(401).json({ error: "Invalid authorization format" });
+      }
+      
+      // Verify token with Supabase
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      
+      if (error || !user) {
+        console.error('JWT validation error:', error);
+        return res.status(401).json({ error: "Invalid or expired token" });
+      }
+      
+      // Check if user is admin
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('isAdmin')
+        .eq('id', user.id)
+        .single();
+        
+      if (userError) {
+        console.error('User data fetch error:', userError);
+        return res.status(401).json({ error: "Error fetching user permissions" });
+      }
+      
+      if (!userData?.isAdmin) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      // Store user info in request for later use
+      (req as any).user = {
+        id: user.id,
+        email: user.email,
+        isAdmin: userData.isAdmin
+      };
+    }
+    
+    next();
+  } catch (error: any) {
+    console.error('JWT validation exception:', error);
+    res.status(401).json({ error: error.message || "Authentication error" });
+  }
+};
+
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Apply JWT validation middleware
+  app.use(validateJWT);
   // Auth Routes
   app.post('/api/auth/register', async (req: Request, res: Response) => {
     try {
@@ -518,22 +576,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Admin Routes
   app.get('/api/admin/competitions', async (req: Request, res: Response) => {
     try {
-      // Get user from session to check admin status
-      const { data: session } = await supabase.auth.getSession();
-      if (!session.session) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
-      // Check if user is admin
-      const { data: user } = await supabase
-        .from('users')
-        .select('isAdmin')
-        .eq('id', session.session.user.id)
-        .single();
-      
-      if (!user?.isAdmin) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
+      // User authentication and admin check is handled by the validateJWT middleware
+      // No need to check here
       
       const { data, error } = await supabase
         .from('competitions')
@@ -553,22 +597,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const competitionId = req.params.id;
       const updateData = req.body;
       
-      // Get user from session to check admin status
-      const { data: session } = await supabase.auth.getSession();
-      if (!session.session) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
-      // Check if user is admin
-      const { data: user } = await supabase
-        .from('users')
-        .select('isAdmin')
-        .eq('id', session.session.user.id)
-        .single();
-      
-      if (!user?.isAdmin) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
+      // User authentication and admin check is handled by the validateJWT middleware
+      // No need to check here
       
       // Format dates if they exist
       if (updateData.startDate) {
@@ -598,22 +628,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.get('/api/admin/users', async (req: Request, res: Response) => {
     try {
-      // Get user from session to check admin status
-      const { data: session } = await supabase.auth.getSession();
-      if (!session.session) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
-      // Check if user is admin
-      const { data: user } = await supabase
-        .from('users')
-        .select('isAdmin')
-        .eq('id', session.session.user.id)
-        .single();
-      
-      if (!user?.isAdmin) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
+      // User authentication and admin check is handled by the validateJWT middleware
+      // No need to check here
       
       const { data, error } = await supabase
         .from('users')
@@ -632,22 +648,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const competitionId = req.params.id;
       
-      // Get user from session to check admin status
-      const { data: session } = await supabase.auth.getSession();
-      if (!session.session) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
-      // Check if user is admin
-      const { data: user } = await supabase
-        .from('users')
-        .select('isAdmin')
-        .eq('id', session.session.user.id)
-        .single();
-      
-      if (!user?.isAdmin) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
+      // User authentication and admin check is handled by the validateJWT middleware
+      // No need to check here
       
       const { data, error } = await supabase
         .from('selections')

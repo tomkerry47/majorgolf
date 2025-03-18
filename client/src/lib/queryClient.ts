@@ -57,7 +57,18 @@ export const getQueryFn: <T>(options: {
       headers["Authorization"] = `Bearer ${token}`;
     }
     
-    const res = await fetch(queryKey[0] as string, {
+    // Special handling for admin routes
+    const url = queryKey[0] as string;
+    if (url.startsWith('/api/admin/') && !token) {
+      console.error('No auth token available for admin route:', url);
+      if (unauthorizedBehavior === "returnNull") {
+        return null;
+      } else {
+        throw new Error('Authentication required for admin routes');
+      }
+    }
+    
+    const res = await fetch(url, {
       headers,
       credentials: "include",
     });
