@@ -1,12 +1,6 @@
 import { createContext, useState, useEffect, useContext, ReactNode } from "react";
-import { 
-  supabase, 
-  signUp as supabaseSignUp, 
-  signIn as supabaseSignIn,
-  signOut as supabaseSignOut,
-  getCurrentUser
-} from "@/lib/supabase";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface AuthContextType {
   user: {
@@ -17,8 +11,8 @@ interface AuthContextType {
   } | null;
   isAdmin: boolean;
   isLoading: boolean;
-  signUp: (email: string, password: string, username: string, fullName?: string) => Promise<void>;
-  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, username: string, fullName?: string) => Promise<any>;
+  signIn: (email: string, password: string) => Promise<any>;
   signOut: () => Promise<void>;
 }
 
@@ -26,8 +20,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   isAdmin: false,
   isLoading: true,
-  signUp: async () => {},
-  signIn: async () => {},
+  signUp: async () => null,
+  signIn: async () => null,
   signOut: async () => {},
 });
 
@@ -37,85 +31,109 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const queryClient = useQueryClient();
 
-  // Initialize user data
+  // Initialize user data on mount and listen for auth changes
   useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        // Get current user from Supabase Auth
-        const currentUser = await getCurrentUser();
-
-        if (currentUser) {
-          // Get additional user data from database
-          const { data: userData, error } = await supabase
-            .from('users')
-            .select('id, username, email, is_admin, avatar_url')
-            .eq('email', currentUser.email)
-            .single();
-
-          if (userData) {
-            setUser({
-              id: currentUser.id,
-              email: currentUser.email || '',
-              username: userData.username,
-              avatarUrl: userData.avatar_url,
-            });
-            setIsAdmin(!!userData.is_admin);
-          } else if (!error) {
-            // User exists in auth but not in DB
-            setUser({
-              id: currentUser.id,
-              email: currentUser.email || '',
-              username: currentUser.user_metadata.username,
-              avatarUrl: currentUser.user_metadata.avatar_url,
-            });
-          }
-        }
-      } catch (error) {
-        console.error("Error initializing auth:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
+    console.log("Setting up auth state listener");
+    
     // Set up auth state listener
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log("Auth state change event:", event, session ? "Has session" : "No session");
+        
         if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+          console.log("User signed in or updated:", session?.user?.email);
+          
           if (session?.user) {
-            const { data: userData } = await supabase
-              .from('users')
-              .select('id, username, email, is_admin, avatar_url')
-              .eq('email', session.user.email)
-              .single();
-
-            if (userData) {
-              setUser({
-                id: session.user.id,
-                email: session.user.email || '',
-                username: userData.username,
-                avatarUrl: userData.avatar_url,
-              });
-              setIsAdmin(!!userData.is_admin);
-            } else {
-              setUser({
-                id: session.user.id,
-                email: session.user.email || '',
-                username: session.user.user_metadata.username,
-                avatarUrl: session.user.user_metadata.avatar_url,
-              });
-              setIsAdmin(false);
+            try {
+              // Get user data from database
+              const { data: userData, error } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
+              
+              if (error) {
+                console.error("Error fetching user data:", error);
+                
+                // If user doesn't exist in database yet, we'll create them
+                if (error.code === 'PGRST116') {
+                  console.log("User not found in database, creating user record");
+                  
+                  const { data: newUser, error: insertError } = await supabase
+                    .from('users')
+                    .insert({
+                      id: session.user.id,
+                      email: session.user.email,
+                      username: session.user.email?.split('@')[0] || 'user',
+                    })
+                    .select()
+                    .single();
+                  
+                  if (insertError) {
+                    console.error("Error creating user record:", insertError);
+                  } else {
+                    console.log("Created new user record:", newUser);
+                    setUser({
+                      id: session.user.id,
+                      email: session.user.email || '',
+                      username: newUser.username,
+                    });
+                    setIsAdmin(false);
+                  }
+                }
+              } else {
+                console.log("Found user in database:", userData);
+                setUser({
+                  id: session.user.id,
+                  email: session.user.email || '',
+                  username: userData.username,
+                  avatarUrl: userData.avatar_url,
+                });
+                setIsAdmin(!!userData.is_admin);
+              }
+            } catch (error) {
+              console.error("Error in auth state listener:", error);
             }
           }
         } else if (event === 'SIGNED_OUT') {
+          console.log("User signed out");
           setUser(null);
           setIsAdmin(false);
-          // Clear all queries when signing out
           queryClient.clear();
+        } else if (event === 'TOKEN_REFRESHED') {
+          console.log("Token refreshed");
         }
       }
     );
 
-    initializeAuth();
+    // Check current session on load
+    const checkCurrentSession = async () => {
+      try {
+        console.log("Checking current session...");
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error("Error getting session:", error);
+          setIsLoading(false);
+          return;
+        }
+        
+        console.log("Current session:", data.session ? "Found" : "None");
+        
+        if (data.session) {
+          // Session exists, no need to do anything - the onAuthStateChange listener will handle it
+          console.log("Session user:", data.session.user.email);
+        } else {
+          // No session
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error("Error checking session:", error);
+        setIsLoading(false);
+      }
+    };
+
+    checkCurrentSession();
 
     return () => {
       if (authListener && authListener.subscription) {
@@ -124,139 +142,97 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [queryClient]);
 
-  // Sign up mutation with user creation in database
-  const signUpMutation = useMutation({
-    mutationFn: async ({
-      email,
-      password,
-      username,
-    }: {
-      email: string;
-      password: string;
-      username: string;
-    }) => {
-      try {
-        // Sign up with Supabase Auth
-        const response = await supabaseSignUp(email, password, { username, fullName: '' });
-        const authUser = response.user;
-
-        if (authUser) {
-          // Create user in database
-          const { data, error } = await supabase.from('users').insert([
+  // Simple authentication functions with detailed logging
+  const signUp = async (email: string, password: string, username: string, fullName: string = '') => {
+    try {
+      console.log("Attempting to sign up:", email);
+      
+      // Sign up with Supabase Auth
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { username, full_name: fullName }
+        }
+      });
+      
+      if (error) {
+        console.error("Sign-up error:", error);
+        throw error;
+      }
+      
+      console.log("Sign-up response:", data);
+      
+      // Note: We don't need to manually set user state here
+      // The onAuthStateChange listener will handle that
+      
+      if (data.user) {
+        // Create user in database
+        const { error: insertError } = await supabase
+          .from('users')
+          .insert([
             {
-              email,
+              id: data.user.id,
+              email: data.user.email,
               username,
-              id: authUser.id,
             },
           ]);
-
-          if (error) throw error;
-          return { user: authUser, data };
-        } else {
-          // If no user is returned but there's no error, this likely means
-          // confirmation email has been sent but the user isn't confirmed yet
-          return { 
-            user: null, 
-            message: "Confirmation email sent. Please check your inbox." 
-          };
+        
+        if (insertError) {
+          console.error("Error inserting user into database:", insertError);
+          throw insertError;
         }
-      } catch (error) {
-        // Re-throw any errors to be handled by the component
-        throw error;
       }
-    },
-  });
-
-  // Sign in mutation
-  const signInMutation = useMutation({
-    mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      console.log('Attempting to sign in via mutation with:', { email });
       
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (error) {
-          console.error('Sign-in error in mutation:', error);
-          throw error;
-        }
-        
-        if (!data.session || !data.user) {
-          console.error('Invalid response from auth service: missing session or user');
-          throw new Error('Invalid response from auth service');
-        }
-
-        console.log('Sign-in successful, fetching user data for:', data.user.id);
-        
-        // Fetch user data from database
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', data.user.id)
-          .single();
-
-        if (userError) {
-          console.error('Error fetching user data:', userError);
-          throw userError;
-        }
-
-        console.log('User data fetched successfully:', userData);
-        
-        // Return both auth data and user data
-        return { 
-          user: {
-            id: data.user.id,
-            email: data.user.email || '',
-            username: userData?.username || data.user.email?.split('@')[0] || '',
-            avatarUrl: userData?.avatar_url || '',
-          },
-          isAdmin: !!userData?.is_admin,
-          session: data.session
-        };
-      } catch (error) {
-        console.error('Complete sign-in error:', error);
-        throw error;
-      }
-    },
-    onSuccess: (data) => {
-      if (data?.user) {
-        setUser(data.user);
-        setIsAdmin(data.isAdmin || false);
-      }
+      return data;
+    } catch (error) {
+      console.error("Complete sign-up error:", error);
+      throw error;
     }
-  });
-
-  // Sign out mutation
-  const signOutMutation = useMutation({
-    mutationFn: async () => {
-      return await supabaseSignOut();
-    },
-    onSuccess: () => {
-      setUser(null);
-      setIsAdmin(false);
-      // Clear all queries
-      queryClient.clear();
-    },
-  });
-
-  const signUp = async (email: string, password: string, username: string, fullName: string = '') => {
-    await signUpMutation.mutateAsync({ email, password, username });
   };
 
   const signIn = async (email: string, password: string) => {
     try {
-      // Use the mutation to handle sign-in
-      await signInMutation.mutateAsync({ email, password });
+      console.log("Attempting to sign in:", email);
+      
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+      
+      if (error) {
+        console.error("Sign-in error:", error);
+        throw error;
+      }
+      
+      console.log("Sign-in successful, user:", data.user?.email);
+      
+      // User state will be set by the onAuthStateChange listener
+      return data;
     } catch (error) {
-      console.error("Error signing in:", error);
+      console.error("Complete sign-in error:", error);
       throw error;
     }
   };
 
   const signOut = async () => {
-    await signOutMutation.mutateAsync();
+    try {
+      console.log("Attempting to sign out");
+      
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error("Sign-out error:", error);
+        throw error;
+      }
+      
+      console.log("Sign-out successful");
+      
+      // User state will be cleared by the onAuthStateChange listener
+    } catch (error) {
+      console.error("Sign-out error:", error);
+      throw error;
+    }
   };
 
   return (
@@ -275,7 +251,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-// Create a custom hook for auth context
+// Create custom hook for auth context
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {

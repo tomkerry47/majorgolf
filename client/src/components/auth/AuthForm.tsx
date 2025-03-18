@@ -42,7 +42,6 @@ export default function AuthForm({ type }: AuthFormProps) {
         const { email, password } = data as LoginCredentials;
         console.log('Login attempt with:', { email });
         
-        // Use the auth hook instead of direct fetch
         await signIn(email, password);
         
         toast({
@@ -55,22 +54,42 @@ export default function AuthForm({ type }: AuthFormProps) {
         await signUp(email, password, username, fullName);
         toast({
           title: "Account created!",
-          description: "Check your email to confirm your registration.",
+          description: "Your account has been created successfully.",
         });
-        // Don't redirect after signup since email verification is needed
+        // Redirect to login after successful registration
+        setLocation("/login");
       }
     } catch (error: any) {
-      console.error("Authentication error:", error);
+      console.error("Authentication error in form submit:", error);
 
       let errorTitle = "Authentication failed";
       let errorMessage = "An error occurred during authentication.";
 
+      // Log detailed error info for debugging
+      console.log("Error details:", {
+        error,
+        message: error.message,
+        name: error.name,
+        code: error.code,
+        status: error.status,
+        isAuthError: error?.__isAuthError,
+      });
+
       // Handle specific error codes from Supabase
-      if (error.__isAuthError) {
+      if (error?.message) {
+        errorMessage = error.message;
+      }
+      
+      if (error?.__isAuthError) {
+        console.log("Handling Supabase auth error:", error.code);
         switch (error.code) {
           case "invalid_credentials":
             errorTitle = "Invalid credentials";
             errorMessage = "The email or password you entered is incorrect. Please try again.";
+            break;
+          case "user_not_found":
+            errorTitle = "User not found";
+            errorMessage = "No account exists with this email. Please check your email or register.";
             break;
           case "over_email_send_rate_limit":
             errorTitle = "Too many attempts";
@@ -78,14 +97,12 @@ export default function AuthForm({ type }: AuthFormProps) {
             break;
           case "user_already_exists":
             errorTitle = "Account exists";
-            errorMessage = "An account with this email already exists.";
+            errorMessage = "An account with this email already exists. Please log in instead.";
             break;
           case "email_not_confirmed":
             errorTitle = "Email not verified";
             errorMessage = "Please check your email and verify your account before logging in.";
             break;
-          default:
-            errorMessage = error.message || "An unexpected error occurred. Please try again.";
         }
       }
 
