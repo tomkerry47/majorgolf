@@ -16,36 +16,65 @@ import {
 // Middleware to check JWT token from Authorization header
 const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Check if it's an admin route or one that requires admin privileges
-    if (req.path.startsWith('/api/admin/') || 
+    // Skip authentication for auth endpoints, public routes and the frontend
+    if (req.path === '/' || 
+        req.path.startsWith('/assets/') ||
+        !req.path.startsWith('/api/') || 
+        req.path.startsWith('/api/auth/') || 
+        req.path.startsWith('/api/competitions/') && req.method === 'GET' ||
+        req.path === '/api/competitions' && req.method === 'GET' ||
+        req.path === '/api/golfers' && req.method === 'GET' ||
+        req.path.startsWith('/api/leaderboard') && req.method === 'GET') {
+      return next();
+    }
+    
+    // Check authorization header first
+    const authHeader = req.headers.authorization;
+    let user = null;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      
+      if (token) {
+        try {
+          // Verify token with Supabase
+          const { data, error } = await supabase.auth.getUser(token);
+          
+          if (!error && data.user) {
+            user = data.user;
+          }
+        } catch (tokenError) {
+          console.error('Token validation error:', tokenError);
+        }
+      }
+    }
+    
+    // If no user from auth header, try session
+    if (!user) {
+      const { data: session } = await supabase.auth.getSession();
+      
+      if (session && session.session && session.session.user) {
+        user = session.session.user;
+      }
+    }
+    
+    // If still no user, return unauthorized
+    if (!user) {
+      console.log('No authenticated user found for:', req.path);
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    // Check if admin access is required
+    const needsAdminAccess = req.path.startsWith('/api/admin/') || 
         (req.method === 'POST' && (
           req.path === '/api/competitions' || 
           req.path === '/api/golfers' || 
           req.path === '/api/results'
         )) ||
         (req.method === 'PATCH' && req.path.startsWith('/api/competitions/')) ||
-        (req.method === 'DELETE' && req.path.startsWith('/api/competitions/'))
-    ) {
-      const authHeader = req.headers.authorization;
-      
-      if (!authHeader) {
-        return res.status(401).json({ error: "Authorization header missing" });
-      }
-      
-      // Extract token from Bearer format
-      const token = authHeader.split(' ')[1];
-      if (!token) {
-        return res.status(401).json({ error: "Invalid authorization format" });
-      }
-      
-      // Verify token with Supabase
-      const { data: { user }, error } = await supabase.auth.getUser(token);
-      
-      if (error || !user) {
-        console.error('JWT validation error:', error);
-        return res.status(401).json({ error: "Invalid or expired token" });
-      }
-      
+        (req.method === 'DELETE' && req.path.startsWith('/api/competitions/'));
+        
+    if (needsAdminAccess) {
       // Check if user is admin
       const { data: userData, error: userError } = await supabase
         .from('users')
@@ -61,14 +90,13 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
       if (!userData?.isAdmin) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      
-      // Store user info in request for later use
-      (req as any).user = {
-        id: user.id,
-        email: user.email,
-        isAdmin: userData.isAdmin
-      };
     }
+    
+    // Store user info in request for later use
+    (req as any).user = {
+      id: user.id,
+      email: user.email
+    };
     
     next();
   } catch (error: any) {
@@ -151,11 +179,113 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(400).json({ error: error.message });
     }
   });
+  
+  // Dashboard stats endpoint
+  app.get('/api/dashboard/stats', async (req: Request, res: Response) => {
+    try {
+      // Get user from request (set by validateJWT middleware) or try to get from session
+      let userId;
+      
+      if ((req as any).user) {
+        userId = (req as any).user.id;
+      } else {
+        // Fallback to session
+        const { data: session } = await supabase.auth.getSession();
+        if (!session?.session) {
+          return res.status(401).json({ error: "Not authenticated" });
+        }
+        userId = session.session.user.id;
+      }
+      
+      // Get active competitions
+      const { data: activeCompetitions, error: activeCompError } = await supabase
+        .from('competitions')
+        .select('id, name')
+        .eq('isActive', true);
+        
+      if (activeCompError) throw activeCompError;
+      
+      // Get next competition deadline
+      const { data: nextCompetition, error: nextCompError } = await supabase
+        .from('competitions')
+        .select('selectionDeadline')
+        .eq('isComplete', false)
+        .order('selectionDeadline', { ascending: true })
+        .limit(1)
+        .single();
+        
+      // Get user's total points across all competitions
+      const { data: pointsData, error: pointsError } = await supabase.rpc(
+        'get_user_total_points',
+        { user_id: userId }
+      );
+      
+      // Get user's current rank in active competition
+      const { data: rankData, error: rankError } = await supabase.rpc(
+        'get_user_rank',
+        { user_id: userId }
+      );
+      
+      // Format the next deadline date
+      let nextDeadline = 'None';
+      if (nextCompetition && nextCompetition.selectionDeadline) {
+        const deadlineDate = new Date(nextCompetition.selectionDeadline);
+        nextDeadline = deadlineDate.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+      
+      const stats = {
+        activeCompetitions: activeCompetitions ? activeCompetitions.length : 0,
+        nextDeadline: nextDeadline,
+        totalPoints: pointsData || 0,
+        currentRank: rankData || 'N/A'
+      };
+      
+      res.status(200).json(stats);
+    } catch (error: any) {
+      console.error('Error fetching dashboard stats:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
 
   // User Routes
   app.get('/api/users/:id', async (req: Request, res: Response) => {
     try {
       const userId = req.params.id;
+      
+      // Verify user has access to view this profile (self or admin)
+      let currentUserId;
+      let isAdmin = false;
+      
+      if ((req as any).user) {
+        currentUserId = (req as any).user.id;
+        isAdmin = (req as any).user.isAdmin || false;
+      } else {
+        // Fallback to session
+        const { data: session } = await supabase.auth.getSession();
+        if (!session?.session) {
+          return res.status(401).json({ error: "Not authenticated" });
+        }
+        
+        // Get user data to check if admin
+        const { data: currentUser } = await supabase
+          .from('users')
+          .select('isAdmin')
+          .eq('id', session.session.user.id)
+          .single();
+          
+        currentUserId = session.session.user.id;
+        isAdmin = currentUser?.isAdmin || false;
+      }
+      
+      // Only allow users to access their own profile or admins to access any profile
+      if (userId !== currentUserId && !isAdmin) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       
       // Get user from database instead of auth.admin
       const { data: userData, error: userError } = await supabase
@@ -196,6 +326,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.params.id;
       const updateData = req.body;
+      
+      // Verify user has access to update this profile (self or admin)
+      let currentUserId;
+      let isAdmin = false;
+      
+      if ((req as any).user) {
+        currentUserId = (req as any).user.id;
+        isAdmin = (req as any).user.isAdmin || false;
+      } else {
+        // Fallback to session
+        const { data: session } = await supabase.auth.getSession();
+        if (!session?.session) {
+          return res.status(401).json({ error: "Not authenticated" });
+        }
+        
+        // Get user data to check if admin
+        const { data: currentUser } = await supabase
+          .from('users')
+          .select('isAdmin')
+          .eq('id', session.session.user.id)
+          .single();
+          
+        currentUserId = session.session.user.id;
+        isAdmin = currentUser?.isAdmin || false;
+      }
+      
+      // Only allow users to update their own profile or admins to update any profile
+      if (userId !== currentUserId && !isAdmin) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       
       const { data, error } = await supabase
         .from('users')
@@ -367,13 +527,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const competitionId = req.params.competitionId;
       const userId = req.query.userId;
       
-      // Get user from session
-      const { data: session } = await supabase.auth.getSession();
-      if (!session.session) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
+      // Get user from request (set by validateJWT middleware) or try to get from session
+      let currentUserId;
       
-      const currentUserId = session.session.user.id;
+      if ((req as any).user) {
+        currentUserId = (req as any).user.id;
+      } else {
+        // Fallback to session
+        const { data: session } = await supabase.auth.getSession();
+        if (!session?.session) {
+          return res.status(401).json({ error: "Not authenticated" });
+        }
+        currentUserId = session.session.user.id;
+      }
       
       // Query for user's selections for this competition
       const { data, error } = await supabase
@@ -402,10 +568,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = selectionFormSchema.parse(req.body);
       
-      // Get user from session
-      const { data: session } = await supabase.auth.getSession();
-      if (!session.session) {
-        return res.status(401).json({ error: "Not authenticated" });
+      // Get user from request (set by validateJWT middleware) or try to get from session
+      let currentUserId;
+      
+      if ((req as any).user) {
+        currentUserId = (req as any).user.id;
+      } else {
+        // Fallback to session
+        const { data: session } = await supabase.auth.getSession();
+        if (!session?.session) {
+          return res.status(401).json({ error: "Not authenticated" });
+        }
+        currentUserId = session.session.user.id;
       }
       
       // Check if selection deadline has passed
@@ -422,7 +596,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create selections
       const selectionData = {
         ...validatedData,
-        userId: session.session.user.id
+        userId: currentUserId
       };
       
       const { data, error } = await supabase
@@ -444,10 +618,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const competitionId = req.params.competitionId;
       const validatedData = selectionFormSchema.parse(req.body);
       
-      // Get user from session
-      const { data: session } = await supabase.auth.getSession();
-      if (!session.session) {
-        return res.status(401).json({ error: "Not authenticated" });
+      // Get user from request (set by validateJWT middleware) or try to get from session
+      let currentUserId;
+      
+      if ((req as any).user) {
+        currentUserId = (req as any).user.id;
+      } else {
+        // Fallback to session
+        const { data: session } = await supabase.auth.getSession();
+        if (!session?.session) {
+          return res.status(401).json({ error: "Not authenticated" });
+        }
+        currentUserId = session.session.user.id;
       }
       
       // Check if selection deadline has passed
@@ -470,7 +652,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           golfer3Id: validatedData.golfer3Id
         })
         .eq('competitionId', competitionId)
-        .eq('userId', session.session.user.id)
+        .eq('userId', currentUserId)
         .select()
         .single();
       

@@ -1,57 +1,115 @@
-// Script to add missing columns to competitions table
+import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
+import { createPool } from 'pg';
 
 // Initialize Supabase client
-const supabaseUrl = process.env.SUPABASE_URL || 'https://hvtnnefsbstvsbnfbrlm.supabase.co';
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2dG5uZWZzYnN0dnNibmZicmxtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTA3OTUwNzYsImV4cCI6MjAyNjM3MTA3Nn0.R5aLCUDxxw3rYXmFDVacZe2Fx11TBpEWHDW4fmQD0y4';
+const supabaseUrl = 'https://bgdctfdxjdpsecihqsfh.supabase.co';
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Initialize direct PostgreSQL pool for schema changes
+const pool = createPool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
 
-async function addMissingColumns() {
-  console.log('Starting database migration to add missing columns...');
-  
+async function executeSql(sql) {
+  const client = await pool.connect();
   try {
-    // Try to directly execute SQL with Supabase's functions API
-    // First try to add description column
-    const addDescriptionQuery = `
-      ALTER TABLE competitions 
-      ADD COLUMN IF NOT EXISTS description TEXT;
-    `;
-    
-    const { error: descError } = await supabase.functions.invoke('execute-sql', {
-      body: { query: addDescriptionQuery }
-    });
-    
-    if (descError) {
-      console.error('Error adding description column:', descError);
-    } else {
-      console.log('Successfully added description column');
-    }
-    
-    // Now try to add image_url column
-    const addImageUrlQuery = `
-      ALTER TABLE competitions 
-      ADD COLUMN IF NOT EXISTS image_url TEXT;
-    `;
-    
-    const { error: imgError } = await supabase.functions.invoke('execute-sql', {
-      body: { query: addImageUrlQuery }
-    });
-    
-    if (imgError) {
-      console.error('Error adding image_url column:', imgError);
-    } else {
-      console.log('Successfully added image_url column');
-    }
-    
-    console.log('Database migration complete.');
+    await client.query(sql);
   } catch (error) {
-    console.error('Error during migration:', error);
+    console.error(`Error executing SQL: ${sql}`, error);
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
-// Run the script
-addMissingColumns()
-  .catch(error => {
-    console.error('Error in script execution:', error);
-  });
+async function addMissingColumns() {
+  try {
+    console.log('Starting to add missing columns...');
+    
+    // Define the expected columns for each table
+    const tableColumns = {
+      'competitions': [
+        { name: 'description', type: 'TEXT' },
+        { name: 'imageUrl', type: 'TEXT' },
+        { name: 'status', type: 'TEXT' },
+        { name: 'maxEntrants', type: 'INTEGER' },
+        { name: 'entryFee', type: 'INTEGER' },
+        { name: 'prizeFund', type: 'INTEGER' }
+      ],
+      'users': [
+        { name: 'avatarUrl', type: 'TEXT' },
+        { name: 'isAdmin', type: 'BOOLEAN', default: 'FALSE' }
+      ],
+      'golfers': [
+        { name: 'avatarUrl', type: 'TEXT' }
+      ],
+      'results': [
+        { name: 'points', type: 'INTEGER', default: '0' }
+      ]
+    };
+    
+    // Process each table
+    for (const [tableName, columns] of Object.entries(tableColumns)) {
+      console.log(`Processing table: ${tableName}`);
+      
+      // Check if table exists
+      const { data: tableExists, error: tableError } = await supabase
+        .from('information_schema.tables')
+        .select('table_name')
+        .eq('table_schema', 'public')
+        .eq('table_name', tableName);
+        
+      if (tableError) {
+        console.error(`Error checking if table ${tableName} exists:`, tableError);
+        continue;
+      }
+      
+      if (!tableExists || tableExists.length === 0) {
+        console.log(`Table ${tableName} does not exist, skipping.`);
+        continue;
+      }
+      
+      // Get existing columns
+      const { data: existingColumns, error: columnsError } = await supabase
+        .from('information_schema.columns')
+        .select('column_name')
+        .eq('table_schema', 'public')
+        .eq('table_name', tableName);
+        
+      if (columnsError) {
+        console.error(`Error fetching columns for table ${tableName}:`, columnsError);
+        continue;
+      }
+      
+      const existingColumnNames = existingColumns.map(c => c.column_name);
+      
+      // Add missing columns
+      for (const column of columns) {
+        if (!existingColumnNames.includes(column.name)) {
+          console.log(`Adding column ${column.name} to table ${tableName}`);
+          
+          let sql = `ALTER TABLE "${tableName}" ADD COLUMN "${column.name}" ${column.type}`;
+          if (column.default) {
+            sql += ` DEFAULT ${column.default}`;
+          }
+          sql += ';';
+          
+          await executeSql(sql);
+        }
+      }
+    }
+    
+    console.log('Adding missing columns completed successfully.');
+  } catch (error) {
+    console.error('Error adding missing columns:', error);
+  } finally {
+    // Close the pool
+    await pool.end();
+  }
+}
+
+// Execute the function
+addMissingColumns();
