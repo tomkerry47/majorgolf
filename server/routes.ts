@@ -25,7 +25,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         options: {
           data: {
             username: validatedData.username,
-            full_name: validatedData.fullName,
+            fullName: validatedData.fullName,
           }
         }
       });
@@ -65,7 +65,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: data.user.id,
           email: data.user.email,
           username: userData?.username || data.user.email?.split('@')[0],
-          fullName: userData?.full_name || '',
+          fullName: userData?.fullName || '',
           isAdmin: userData?.isAdmin || false
         }
       });
@@ -111,8 +111,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: userData.id,
         email: userData.email,
         username: userData.username || userData.email?.split('@')[0],
-        fullName: userData.full_name || '',
-        avatar: userData.avatar_url || '',
+        fullName: userData.fullName || '',
+        avatar: userData.avatarUrl || '',
         stats: stats || {},
         isAdmin: !!userData.isAdmin
       };
@@ -314,9 +314,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from('selections')
         .select(`
           *,
-          golfer1:golfer1Id(id, name, avatar),
-          golfer2:golfer2Id(id, name, avatar),
-          golfer3:golfer3Id(id, name, avatar)
+          golfer1:golfer1Id(id, name, avatarUrl),
+          golfer2:golfer2Id(id, name, avatarUrl),
+          golfer3:golfer3Id(id, name, avatarUrl)
         `)
         .eq('competitionId', competitionId)
         .eq('userId', userId || currentUserId)
@@ -345,11 +345,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if selection deadline has passed
       const { data: competition } = await supabase
         .from('competitions')
-        .select('selection_deadline')
+        .select('selectionDeadline')
         .eq('id', validatedData.competitionId)
         .single();
       
-      if (competition && new Date(competition.selection_deadline) < new Date()) {
+      if (competition && new Date(competition.selectionDeadline) < new Date()) {
         return res.status(400).json({ error: "Selection deadline has passed" });
       }
       
@@ -387,11 +387,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if selection deadline has passed
       const { data: competition } = await supabase
         .from('competitions')
-        .select('selection_deadline')
+        .select('selectionDeadline')
         .eq('id', competitionId)
         .single();
       
-      if (competition && new Date(competition.selection_deadline) < new Date()) {
+      if (competition && new Date(competition.selectionDeadline) < new Date()) {
         return res.status(400).json({ error: "Selection deadline has passed" });
       }
       
@@ -425,7 +425,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from('results')
         .select(`
           *,
-          golfer:golfer_id(id, name, avatar)
+          golfer:golferId(id, name, avatarUrl)
         `)
         .eq('competitionId', competitionId)
         .order('position', { ascending: true });
@@ -484,7 +484,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { data: activeCompetition, error: competitionError } = await supabase
           .from('competitions')
           .select('id')
-          .eq('is_active', true)
+          .eq('isActive', true)
           .order('startDate', { ascending: true })
           .limit(1)
           .single();
