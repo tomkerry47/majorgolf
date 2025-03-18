@@ -72,8 +72,17 @@ export const insertUserSchema = createInsertSchema(users).omit({
   isAdmin: true
 });
 
-export const insertCompetitionSchema = createInsertSchema(competitions).omit({ 
-  id: true
+// Define a custom competition insert schema
+export const insertCompetitionSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  venue: z.string().min(1, "Venue is required"),
+  startDate: z.string().or(z.date()),
+  endDate: z.string().or(z.date()),
+  selectionDeadline: z.string().or(z.date()),
+  isActive: z.boolean().default(false),
+  isComplete: z.boolean().default(false),
+  description: z.string().optional(),
+  imageUrl: z.string().optional()
 });
 
 export const insertGolferSchema = createInsertSchema(golfers).omit({ 

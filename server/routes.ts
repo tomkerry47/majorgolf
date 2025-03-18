@@ -217,16 +217,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = insertCompetitionSchema.parse(req.body);
       
+      // Create a new competition object with parsed dates
+      const competitionData = {
+        ...validatedData,
+        startDate: new Date(validatedData.startDate),
+        endDate: new Date(validatedData.endDate),
+        selectionDeadline: new Date(validatedData.selectionDeadline)
+      };
+      
+      console.log('Creating competition:', competitionData);
+      
       const { data, error } = await supabase
         .from('competitions')
-        .insert([validatedData])
+        .insert([competitionData])
         .select()
         .single();
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error creating competition:', error);
+        throw error;
+      }
       
       res.status(201).json(data);
     } catch (error: any) {
+      console.error('Error in POST /api/competitions:', error);
       res.status(400).json({ error: error.message });
     }
   });
