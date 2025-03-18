@@ -161,6 +161,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(400).json({ error: error.message });
     }
   });
+  
+  // Also handle /api/competitions/all as an alias for /api/competitions
+  app.get('/api/competitions/all', async (req: Request, res: Response) => {
+    try {
+      const { data, error } = await supabase
+        .from('competitions')
+        .select('*')
+        .order('start_date', { ascending: true });
+      
+      if (error) throw error;
+      
+      res.status(200).json(data);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
 
   app.get('/api/competitions/active', async (req: Request, res: Response) => {
     try {
