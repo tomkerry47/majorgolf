@@ -152,7 +152,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { data, error } = await supabase
         .from('competitions')
         .select('*')
-        .order('start_date', { ascending: true });
+        .order('startDate', { ascending: true });
       
       if (error) throw error;
       
@@ -168,7 +168,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { data, error } = await supabase
         .from('competitions')
         .select('*')
-        .order('start_date', { ascending: true });
+        .order('startDate', { ascending: true });
       
       if (error) throw error;
       
@@ -183,8 +183,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { data, error } = await supabase
         .from('competitions')
         .select('*')
-        .eq('is_active', true)
-        .order('start_date', { ascending: true });
+        .eq('isActive', true)
+        .order('startDate', { ascending: true });
       
       if (error) throw error;
       
@@ -199,9 +199,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { data, error } = await supabase
         .from('competitions')
         .select('*')
-        .eq('is_active', false)
-        .eq('is_complete', false)
-        .order('start_date', { ascending: true });
+        .eq('isActive', false)
+        .eq('isComplete', false)
+        .order('startDate', { ascending: true });
       
       if (error) throw error;
       
