@@ -11,7 +11,7 @@ import {
   insertSelectionSchema, 
   insertResultSchema,
   selectionFormSchema
-} from "@shared/schema";
+} from "../shared/schema";
 
 // Define interface for Supabase User with our additional properties
 interface ExtendedUser {
@@ -1259,18 +1259,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // User authentication and admin check is handled by the validateJWT middleware
       // No need to check here
       
-      const { data, error } = await supabase
+      // First get all selections for this competition
+      const { data: selections, error: selectionsError } = await supabase
         .from('selections')
-        .select(`
-          *,
-          user:users!userId(id, username, email),
-          golfer1:golfers!golfer1Id(id, name),
-          golfer2:golfers!golfer2Id(id, name),
-          golfer3:golfers!golfer3Id(id, name)
-        `)
+        .select('*')
         .eq('competitionId', competitionId);
       
-      if (error) throw error;
+      if (selectionsError) throw selectionsError;
+      
+      if (!selections || selections.length === 0) {
+        return res.status(200).json([]);
+      }
+      
+      // Get all user IDs and golfer IDs
+      const userIds = selections.map(selection => selection.userId);
+      const golferIds = [
+        ...selections.map(selection => selection.golfer1Id),
+        ...selections.map(selection => selection.golfer2Id),
+        ...selections.map(selection => selection.golfer3Id)
+      ].filter(id => id !== null && id !== undefined);
+      
+      // Get user details (ensure we're not passing an empty array)
+      let users = [];
+      if (userIds.length > 0) {
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select('id, username, email')
+          .in('id', userIds);
+          
+        if (usersError) throw usersError;
+        users = usersData || [];
+      }
+      
+      // Get golfer details (ensure we're not passing an empty array)
+      let golfers = [];
+      if (golferIds.length > 0) {
+        const { data: golfersData, error: golfersError } = await supabase
+          .from('golfers')
+          .select('id, name')
+          .in('id', golferIds);
+          
+        if (golfersError) throw golfersError;
+        golfers = golfersData || [];
+      }
+      
+      // Create lookup maps
+      const userMap = Object.fromEntries(users.map(user => [user.id, user]));
+      const golferMap = Object.fromEntries(golfers.map(golfer => [golfer.id, golfer]));
+      
+      // Combine data
+      const data = selections.map(selection => ({
+        ...selection,
+        user: userMap[selection.userId],
+        golfer1: golferMap[selection.golfer1Id],
+        golfer2: golferMap[selection.golfer2Id],
+        golfer3: golferMap[selection.golfer3Id]
+      }));
       
       res.status(200).json(data);
     } catch (error: any) {

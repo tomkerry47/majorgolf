@@ -40,34 +40,50 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { selectionFormSchema, type InsertSelection } from "@shared/schema";
+import { selectionFormSchema, type InsertSelection, type Golfer, type Competition, type User } from "@shared/schema";
 
 export default function AdminSelections() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedSelection, setSelectedSelection] = useState<any>(null);
+  const [selectedSelection, setSelectedSelection] = useState<SelectionWithDetails | null>(null);
   const [selectedCompetition, setSelectedCompetition] = useState<number | null>(null);
   const [selectedUser, setSelectedUser] = useState<number | null>(null);
   
+  // Define type for selection with user and golfer data
+  interface SelectionWithDetails {
+    id: number;
+    competitionId: number;
+    userId: number;
+    golfer1Id: number;
+    golfer2Id: number;
+    golfer3Id: number;
+    createdAt: string;
+    updatedAt: string;
+    user?: { id: number; username: string; email: string };
+    golfer1?: { id: number; name: string };
+    golfer2?: { id: number; name: string };
+    golfer3?: { id: number; name: string };
+  }
+
   // Get all competitions
-  const { data: competitions, isLoading: isLoadingCompetitions } = useQuery({
+  const { data: competitions = [], isLoading: isLoadingCompetitions } = useQuery<Competition[]>({
     queryKey: ['/api/competitions'],
   });
   
   // Get all users
-  const { data: users, isLoading: isLoadingUsers } = useQuery({
+  const { data: users = [], isLoading: isLoadingUsers } = useQuery<User[]>({
     queryKey: ['/api/admin/users'],
   });
   
   // Get selections for selected competition
-  const { data: selections, isLoading: isLoadingSelections } = useQuery({
+  const { data: selections = [], isLoading: isLoadingSelections } = useQuery<SelectionWithDetails[]>({
     queryKey: [`/api/admin/competitions/${selectedCompetition}/selections`],
     enabled: !!selectedCompetition,
   });
   
   // Get all golfers for the form
-  const { data: golfers, isLoading: isLoadingGolfers } = useQuery({
+  const { data: golfers = [], isLoading: isLoadingGolfers } = useQuery<Golfer[]>({
     queryKey: ['/api/golfers'],
   });
   
@@ -84,7 +100,7 @@ export default function AdminSelections() {
     defaultValues
   });
   
-  const openEditDialog = (selection: any) => {
+  const openEditDialog = (selection: SelectionWithDetails) => {
     form.reset({
       competitionId: selection.competitionId,
       userId: selection.userId,
@@ -96,13 +112,22 @@ export default function AdminSelections() {
     setIsDialogOpen(true);
   };
   
-  const openDeleteDialog = (selection: any) => {
+  const openDeleteDialog = (selection: SelectionWithDetails) => {
     setSelectedSelection(selection);
     setIsDeleteDialogOpen(true);
   };
   
   const onSubmit = async (data: InsertSelection) => {
     try {
+      if (!selectedSelection) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "No selection selected."
+        });
+        return;
+      }
+
       await apiRequest('PATCH', `/api/admin/selections/${selectedSelection.id}`, data);
       toast({
         title: "Selection updated",
@@ -122,6 +147,15 @@ export default function AdminSelections() {
   
   const handleDelete = async () => {
     try {
+      if (!selectedSelection) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "No selection selected."
+        });
+        return;
+      }
+
       await apiRequest('DELETE', `/api/admin/selections/${selectedSelection.id}`, {});
       toast({
         title: "Selection deleted",
