@@ -30,7 +30,7 @@ export interface IStorage {
   
   // Results methods
   getResults(competitionId: number): Promise<Result[]>;
-  createResult(result: InsertResult): Promise<Result>;
+createResult(result: InsertResult): Promise<Result>;
 }
 
 // Implementation of IStorage interface using Supabase
@@ -201,9 +201,7 @@ export class SupabaseStorage implements IStorage {
     if (error) throw error;
     return data as Result[];
   }
-  
-  async createResult(result: InsertResult): Promise<Result> {
-    const { data, error } = await supabase
+async createResult(result: InsertResult): Promise<Result> {
       .from('results')
       .insert(result)
       .select()

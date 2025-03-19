@@ -1,36 +1,3 @@
-import { 
-  type User, type InsertUser, type Competition, type Golfer, 
-  type Selection, type Result, type InsertSelection, type InsertCompetition,
-  type InsertGolfer, type InsertResult
-} from "../shared/schema";
-import { supabase } from "./db";
-
-export interface IStorage {
-  // User methods
-  getUser(id: number): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  updateUser(id: number, userData: Partial<User>): Promise<User>;
-  
-  // Competition methods
-  getCompetitions(): Promise<Competition[]>;
-  getCompetitionById(id: number): Promise<Competition | undefined>;
-  createCompetition(competition: InsertCompetition): Promise<Competition>;
-  updateCompetition(id: number, competitionData: Partial<Competition>): Promise<Competition>;
-  
-  // Golfer methods
-  getGolfers(): Promise<Golfer[]>;
-  getGolferById(id: number): Promise<Golfer | undefined>;
-  createGolfer(golfer: InsertGolfer): Promise<Golfer>;
-  
-  // Selection methods
-  getUserSelections(userId: number, competitionId: number): Promise<Selection | undefined>;
-  createSelection(selection: InsertSelection): Promise<Selection>;
-  updateSelection(id: number, selectionData: Partial<Selection>): Promise<Selection>;
-  
-  // Results methods
-  getResults(competitionId: number): Promise<Result[]>;
-  createResult(result: InsertResult): Promise<Result>;
 }
 
 // Implementation of IStorage interface using Supabase
@@ -201,18 +168,3 @@ export class SupabaseStorage implements IStorage {
     if (error) throw error;
     return data as Result[];
   }
-  
-  async createResult(result: InsertResult): Promise<Result> {
-    const { data, error } = await supabase
-      .from('results')
-      .insert(result)
-      .select()
-      .single();
-      
-    if (error) throw error;
-    return data as Result;
-  }
-}
-
-// Export the storage instance
-export const storage = new SupabaseStorage();

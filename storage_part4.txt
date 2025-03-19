@@ -1,0 +1,12 @@
+      .from('results')
+      .insert(result)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data as Result;
+  }
+}
+
+// Export the storage instance
+export const storage = new SupabaseStorage();

@@ -1,0 +1,1 @@
+createResult(result: InsertResult): Promise<Result>;
