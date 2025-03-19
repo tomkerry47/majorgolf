@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-import { ArrowLeft, Loader2 } from 'lucide-react';
-import { getQueryFn } from '@/lib/queryClient';
+import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
+import { getQueryFn, apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
 import { 
   Card, 
   CardContent, 
@@ -23,11 +24,31 @@ import { Competition } from '@shared/schema';
 export default function TournamentResultsAdmin() {
   const [, setLocation] = useLocation();
   const [selectedCompetition, setSelectedCompetition] = useState<string>('');
+  const { toast } = useToast();
   
   // Fetch competitions
-  const { data: competitions, isPending } = useQuery({
+  const { data: competitions, isPending, refetch } = useQuery({
     queryKey: ['/api/admin/competitions'],
     queryFn: getQueryFn({ on401: 'throw' }),
+  });
+  
+  // Mutation for triggering result updates
+  const { mutate: updateResults, isPending: isUpdating } = useMutation({
+    mutationFn: () => apiRequest('/api/admin/update-results', 'POST'),
+    onSuccess: () => {
+      toast({
+        title: 'Success',
+        description: 'Tournament results update triggered successfully',
+      });
+      refetch(); // Refresh the competitions list
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update tournament results',
+        variant: 'destructive',
+      });
+    }
   });
 
   // Filter completed competitions
@@ -156,6 +177,38 @@ export default function TournamentResultsAdmin() {
           )}
         </CardContent>
       </Card>
+
+      <div className="mt-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>Update Tournament Results</CardTitle>
+            <CardDescription>
+              Fetch the latest results for all active tournaments and allocate points
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">
+                Click the button below to automatically update results for all active tournaments.
+                This will also allocate points based on player positions.
+              </p>
+              
+              <Button 
+                onClick={() => updateResults()} 
+                disabled={isUpdating || isPending}
+                className="w-full md:w-auto"
+              >
+                {isUpdating ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                {isUpdating ? 'Updating Results...' : 'Update Tournament Results'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

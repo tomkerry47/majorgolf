@@ -1571,6 +1571,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(400).json({ error: error.message });
     }
   });
+  
+  // Endpoint to manually trigger tournament results update and points allocation
+  app.post('/api/admin/update-results', async (req: Request, res: Response) => {
+    try {
+      // First check if user is admin - handled by validateJWT middleware already
+      
+      // Import the update function dynamically
+      const { updateResultsAndAllocatePoints } = await import('../scripts/update_results_and_allocate_points.js');
+      
+      // Trigger the update
+      await updateResultsAndAllocatePoints();
+      
+      // Return success
+      res.status(200).json({ 
+        success: true, 
+        message: 'Tournament results update triggered successfully' 
+      });
+    } catch (error: any) {
+      console.error('Error triggering tournament results update:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Unknown error occurred while updating tournament results'
+      });
+    }
+  });
 
   const httpServer = createServer(app);
   
