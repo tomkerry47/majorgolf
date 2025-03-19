@@ -1251,6 +1251,191 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(400).json({ error: error.message });
     }
   });
+  
+  // Point System Routes
+  app.get('/api/admin/point-system', async (req: Request, res: Response) => {
+    try {
+      // User authentication and admin check is handled by the validateJWT middleware
+      
+      const { data, error } = await supabase
+        .from('points_system')
+        .select('*');
+      
+      if (error) throw error;
+      
+      res.status(200).json(data);
+    } catch (error: any) {
+      console.error('Error fetching point system:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+  
+  app.patch('/api/admin/point-system/:position', async (req: Request, res: Response) => {
+    try {
+      const position = parseInt(req.params.position);
+      const { points } = req.body;
+      
+      if (isNaN(position) || isNaN(points)) {
+        return res.status(400).json({ error: 'Invalid position or points value' });
+      }
+      
+      const { data, error } = await supabase
+        .from('points_system')
+        .update({ points })
+        .eq('position', position)
+        .select();
+      
+      if (error) throw error;
+      
+      res.status(200).json(data[0]);
+    } catch (error: any) {
+      console.error('Error updating point system:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+  
+  // Tournament Results endpoints
+  app.get('/api/admin/tournament-results/:competitionId', async (req: Request, res: Response) => {
+    try {
+      const competitionId = req.params.competitionId;
+      
+      // Get the tournament results with golfer information
+      const { data, error } = await supabase
+        .from('results')
+        .select(`
+          id, 
+          competitionId, 
+          golferId, 
+          position, 
+          score, 
+          createdAt,
+          golfers:golfers(id, name)
+        `)
+        .eq('competitionId', competitionId)
+        .order('position');
+      
+      if (error) throw error;
+      
+      res.status(200).json(data);
+    } catch (error: any) {
+      console.error('Error fetching tournament results:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+  
+  app.post('/api/admin/tournament-results', async (req: Request, res: Response) => {
+    try {
+      const { competitionId, golferId, position, score } = req.body;
+      
+      if (!competitionId || !golferId || position === undefined || score === undefined) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+      
+      const { data, error } = await supabase
+        .from('results')
+        .insert({
+          competitionId,
+          golferId,
+          position,
+          score,
+          createdAt: new Date().toISOString()
+        })
+        .select();
+      
+      if (error) throw error;
+      
+      res.status(201).json(data[0]);
+    } catch (error: any) {
+      console.error('Error creating tournament result:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+  
+  app.patch('/api/admin/tournament-results/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { position, score } = req.body;
+      
+      if (position === undefined && score === undefined) {
+        return res.status(400).json({ error: 'At least one field (position or score) must be provided' });
+      }
+      
+      const updateData: { position?: number; score?: number } = {};
+      if (position !== undefined) updateData.position = position;
+      if (score !== undefined) updateData.score = score;
+      
+      const { data, error } = await supabase
+        .from('results')
+        .update(updateData)
+        .eq('id', id)
+        .select();
+      
+      if (error) throw error;
+      
+      res.status(200).json(data[0]);
+    } catch (error: any) {
+      console.error('Error updating tournament result:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+  
+  app.delete('/api/admin/tournament-results/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      
+      const { error } = await supabase
+        .from('results')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      res.status(204).send();
+    } catch (error: any) {
+      console.error('Error deleting tournament result:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+  
+  // Endpoint to complete tournament and calculate points
+  app.post('/api/admin/complete-tournament/:competitionId', async (req: Request, res: Response) => {
+    try {
+      const { competitionId } = req.params;
+      
+      // 1. Fetch the tournament results
+      const { data: results, error: resultsError } = await supabase
+        .from('results')
+        .select('*')
+        .eq('competitionId', competitionId);
+      
+      if (resultsError) throw resultsError;
+      
+      if (!results || results.length === 0) {
+        return res.status(400).json({ error: 'No results found for this tournament' });
+      }
+      
+      // 2. Mark the competition as complete
+      const { error: updateError } = await supabase
+        .from('competitions')
+        .update({ 
+          isComplete: true,
+          isActive: false
+        })
+        .eq('id', competitionId);
+      
+      if (updateError) throw updateError;
+      
+      // 3. Return success response
+      res.status(200).json({ 
+        message: 'Tournament completed successfully',
+        resultsProcessed: results.length
+      });
+      
+    } catch (error: any) {
+      console.error('Error completing tournament:', error);
+      res.status(400).json({ error: error.message });
+    }
+  });
 
   app.get('/api/admin/competitions/:id/selections', async (req: Request, res: Response) => {
     try {

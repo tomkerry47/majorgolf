@@ -11,6 +11,9 @@ import Leaderboard from "@/pages/Leaderboard";
 import Admin from "@/pages/Admin";
 import Profile from "@/pages/Profile";
 import NotFound from "@/pages/not-found";
+import PointSystemAdmin from "@/pages/admin/PointSystem";
+import TournamentResultsAdmin from "@/pages/admin/TournamentResults";
+import TournamentResultDetail from "@/pages/admin/TournamentResultDetail";
 import { AuthProvider } from "@/hooks/use-auth";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
@@ -36,6 +39,9 @@ function App() {
                   <Route path="/competitions/:id" component={Competition} />
                   <Route path="/leaderboard" component={Leaderboard} />
                   <Route path="/admin" component={Admin} />
+                  <Route path="/admin/point-system" component={PointSystemAdmin} />
+                  <Route path="/admin/tournament-results" component={TournamentResultsAdmin} />
+                  <Route path="/admin/tournament-results/:id" component={TournamentResultDetail} />
                   <Route path="/profile" component={Profile} />
                   <Route component={NotFound} />
                 </Switch>

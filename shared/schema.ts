@@ -56,7 +56,7 @@ export const results = pgTable("results", {
   createdAt: timestamp("createdAt").defaultNow().notNull()
 });
 
-export const pointSystem = pgTable("pointSystem", {
+export const pointSystem = pgTable("points_system", {
   id: serial("id").primaryKey(),
   position: integer("position").notNull(),
   points: integer("points").notNull()
@@ -114,6 +114,11 @@ export interface Result {
   position: number;
   score: number;
   createdAt: string;
+  // Join with the golfer 
+  golfers?: {
+    id: number;
+    name: string;
+  };
 }
 
 export interface PointSystem {

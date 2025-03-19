@@ -85,17 +85,41 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
               Profile
             </Link>
             {isAdmin && (
-              <Link 
-                href="/admin"
-                className={cn(
-                  "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
-                  isActivePath('/admin') ? "bg-primary" : "hover:bg-primary/20"
-                )}
-                onClick={closeSidebar}
-              >
-                <i className="fas fa-user-cog w-6 h-6 mr-3 text-white"></i>
-                Admin
-              </Link>
+              <>
+                <Link 
+                  href="/admin"
+                  className={cn(
+                    "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
+                    isActivePath('/admin') && !isActivePath('/admin/point-system') ? "bg-primary" : "hover:bg-primary/20"
+                  )}
+                  onClick={closeSidebar}
+                >
+                  <i className="fas fa-user-cog w-6 h-6 mr-3 text-white"></i>
+                  Admin
+                </Link>
+                <Link 
+                  href="/admin/point-system"
+                  className={cn(
+                    "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md ml-4",
+                    isActivePath('/admin/point-system') ? "bg-primary" : "hover:bg-primary/20"
+                  )}
+                  onClick={closeSidebar}
+                >
+                  <i className="fas fa-star w-6 h-6 mr-3 text-white"></i>
+                  Point System
+                </Link>
+                <Link 
+                  href="/admin/tournament-results"
+                  className={cn(
+                    "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md ml-4",
+                    isActivePath('/admin/tournament-results') ? "bg-primary" : "hover:bg-primary/20"
+                  )}
+                  onClick={closeSidebar}
+                >
+                  <i className="fas fa-trophy w-6 h-6 mr-3 text-white"></i>
+                  Tournament Results
+                </Link>
+              </>
             )}
           </nav>
 
