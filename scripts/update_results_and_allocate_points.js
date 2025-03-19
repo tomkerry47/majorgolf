@@ -22,21 +22,47 @@ export async function updateResultsAndAllocatePoints() {
       
     if (competitionsError) throw competitionsError;
     
-    if (!activeCompetitions || activeCompetitions.length === 0) {
-      console.log('No active competitions found.');
+    // 2. Get recently completed competitions (within the last month)
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+    const oneMonthAgoStr = oneMonthAgo.toISOString();
+    
+    const { data: recentCompetitions, error: recentCompError } = await supabase
+      .from('competitions')
+      .select('*')
+      .eq('isComplete', true)
+      .gte('endDate', oneMonthAgoStr)
+      .order('endDate', { ascending: false });
+      
+    if (recentCompError) throw recentCompError;
+    
+    // Combine active and recent competitions
+    let competitionsToProcess = [];
+    
+    if (activeCompetitions && activeCompetitions.length > 0) {
+      console.log(`Found ${activeCompetitions.length} active competitions.`);
+      competitionsToProcess = [...activeCompetitions];
+    }
+    
+    if (recentCompetitions && recentCompetitions.length > 0) {
+      console.log(`Found ${recentCompetitions.length} recently completed competitions.`);
+      competitionsToProcess = [...competitionsToProcess, ...recentCompetitions];
+    }
+    
+    if (competitionsToProcess.length === 0) {
+      console.log('No competitions found to process.');
       return;
     }
     
-    console.log(`Found ${activeCompetitions.length} active competitions.`);
-    
-    // 2. Process each active competition
-    for (const competition of activeCompetitions) {
+    // 3. Process each competition
+    for (const competition of competitionsToProcess) {
       await processCompetition(competition);
     }
     
     console.log('Tournament results update and point allocation completed successfully.');
   } catch (error) {
     console.error('Error in updateResultsAndAllocatePoints:', error);
+    throw error; // Re-throw to allow caller to handle
   }
 }
 
@@ -45,9 +71,30 @@ async function processCompetition(competition) {
   console.log(`Processing competition: ${competition.name} (ID: ${competition.id})`);
   
   try {
-    // In a real-world scenario, this is where you would fetch results from an external API
-    // For this example, we'll check if we should complete the tournament based on end date
+    // If competition is already complete, update the results and re-allocate points
+    if (competition.isComplete) {
+      console.log(`Competition ${competition.name} is already complete. Checking/updating results.`);
+      
+      // First, check if there are results
+      const { data: results, error: resultsError } = await supabase
+        .from('results')
+        .select('*')
+        .eq('competitionId', competition.id);
+      
+      if (resultsError) throw resultsError;
+      
+      if (!results || results.length === 0) {
+        console.log(`No results found for completed competition ${competition.id}. Generating results...`);
+        await completeCompetition(competition.id);
+      } else {
+        console.log(`Found ${results.length} results for competition ${competition.id}. Re-allocating points...`);
+        await allocatePoints(competition.id);
+      }
+      
+      return;
+    }
     
+    // For active competitions, check if they should be marked as complete
     const currentDate = new Date();
     const endDate = new Date(competition.endDate);
     
@@ -312,6 +359,7 @@ async function allocatePoints(competitionId) {
     // 4. Process each selection and calculate points
     for (const selection of selections) {
       let totalPoints = 0;
+      const pointDetails = [];
       
       // Check results for each golfer in the selection
       const golferIds = [selection.golfer1Id, selection.golfer2Id, selection.golfer3Id].filter(Boolean);
@@ -324,14 +372,64 @@ async function allocatePoints(competitionId) {
           const points = pointsLookup[position] || 0;
           
           console.log(`User ${selection.userId} earns ${points} points for golfer ${golferId} in position ${position}`);
+          pointDetails.push({
+            golferId,
+            position,
+            points
+          });
           totalPoints += points;
         }
       }
       
       console.log(`User ${selection.userId} earned a total of ${totalPoints} points for competition ${competitionId}`);
       
-      // In a real implementation, you might want to store these points in a separate table
-      // For this example, we'll just output the calculated points
+      // First check if this user already has points for this competition
+      const { data: existingPoints, error: existingPointsError } = await supabase
+        .from('user_points')
+        .select('*')
+        .eq('userId', selection.userId)
+        .eq('competitionId', competitionId);
+        
+      if (existingPointsError) {
+        console.error(`Error checking for existing points for user ${selection.userId}:`, existingPointsError);
+        continue;
+      }
+      
+      // Store points in the user_points table
+      if (existingPoints && existingPoints.length > 0) {
+        // Update existing record
+        const { error: updateError } = await supabase
+          .from('user_points')
+          .update({
+            points: totalPoints,
+            details: JSON.stringify(pointDetails),
+            updatedAt: new Date().toISOString()
+          })
+          .eq('id', existingPoints[0].id);
+          
+        if (updateError) {
+          console.error(`Error updating points for user ${selection.userId}:`, updateError);
+        } else {
+          console.log(`Updated points for user ${selection.userId} in competition ${competitionId}`);
+        }
+      } else {
+        // Create new record
+        const { error: insertError } = await supabase
+          .from('user_points')
+          .insert({
+            userId: selection.userId,
+            competitionId,
+            points: totalPoints,
+            details: JSON.stringify(pointDetails),
+            createdAt: new Date().toISOString()
+          });
+          
+        if (insertError) {
+          console.error(`Error inserting points for user ${selection.userId}:`, insertError);
+        } else {
+          console.log(`Inserted points for user ${selection.userId} in competition ${competitionId}`);
+        }
+      }
     }
     
     console.log(`Points allocation completed for competition ${competitionId}`);
@@ -341,7 +439,9 @@ async function allocatePoints(competitionId) {
 }
 
 // Execute the main function if this file is run directly
-if (require.main === module) {
+// Using import.meta.url check for ES modules instead of require.main
+const isMainModule = import.meta.url.endsWith(process.argv[1]);
+if (isMainModule) {
   updateResultsAndAllocatePoints()
     .then(() => {
       console.log('Script completed successfully');
