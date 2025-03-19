@@ -1,6 +1,68 @@
 import { z } from "zod";
+import { pgTable, serial, varchar, text, boolean, timestamp, integer, date } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
 
-// Define types based on Supabase tables
+// Define Drizzle schema for database tables
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull(),
+  username: varchar("username", { length: 50 }).notNull(),
+  fullName: varchar("fullName", { length: 100 }).notNull(),
+  password: text("password"),
+  avatarUrl: text("avatarUrl"),
+  isAdmin: boolean("isAdmin").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+
+export const competitions = pgTable("competitions", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  venue: varchar("venue", { length: 100 }).notNull(),
+  startDate: date("startDate").notNull(),
+  endDate: date("endDate").notNull(),
+  selectionDeadline: date("selectionDeadline").notNull(),
+  isActive: boolean("isActive").default(false).notNull(),
+  isComplete: boolean("isComplete").default(false).notNull(),
+  description: text("description"),
+  imageUrl: text("imageUrl")
+});
+
+export const golfers = pgTable("golfers", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  rank: integer("rank").notNull(),
+  country: varchar("country", { length: 50 }).notNull(),
+  avatarUrl: text("avatarUrl"),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+
+export const selections = pgTable("selections", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
+  competitionId: integer("competitionId").notNull(),
+  golfer1Id: integer("golfer1Id").notNull(),
+  golfer2Id: integer("golfer2Id").notNull(),
+  golfer3Id: integer("golfer3Id").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull()
+});
+
+export const results = pgTable("results", {
+  id: serial("id").primaryKey(),
+  competitionId: integer("competitionId").notNull(),
+  golferId: integer("golferId").notNull(),
+  position: integer("position").notNull(),
+  score: integer("score").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+});
+
+export const pointSystem = pgTable("pointSystem", {
+  id: serial("id").primaryKey(),
+  position: integer("position").notNull(),
+  points: integer("points").notNull()
+});
+
+// Define types based on Drizzle schema
 export interface User {
   id: number;
   email: string;
@@ -60,54 +122,29 @@ export interface PointSystem {
   points: number;
 }
 
-// Validation schemas for insert operations
-export const insertUserSchema = z.object({
-  email: z.string().email(),
-  username: z.string().min(3).max(20),
-  fullName: z.string().min(2).max(50),
-  password: z.string().min(6).optional(),
-  avatarUrl: z.string().url().optional(),
-  isAdmin: z.boolean().default(false),
-});
+// Validation schemas for insert operations using drizzle-zod
+export const insertUserSchema = createInsertSchema(users)
+  .omit({ id: true, createdAt: true });
 
-export const insertCompetitionSchema = z.object({
-  name: z.string().min(3).max(100),
-  venue: z.string().min(2).max(100),
-  startDate: z.string().or(z.date()),
-  endDate: z.string().or(z.date()),
-  selectionDeadline: z.string().or(z.date()),
-  isActive: z.boolean().default(false),
-  isComplete: z.boolean().default(false),
-  description: z.string().optional(),
-  imageUrl: z.string().url().optional(),
-});
+export const insertCompetitionSchema = createInsertSchema(competitions)
+  .omit({ id: true })
+  .extend({
+    startDate: z.string().or(z.date()),
+    endDate: z.string().or(z.date()),
+    selectionDeadline: z.string().or(z.date()),
+  });
 
-export const insertGolferSchema = z.object({
-  name: z.string().min(2).max(50),
-  rank: z.number().int().positive(),
-  country: z.string().min(2).max(50),
-  avatarUrl: z.string().url().optional(),
-});
+export const insertGolferSchema = createInsertSchema(golfers)
+  .omit({ id: true, createdAt: true });
 
-export const insertSelectionSchema = z.object({
-  userId: z.number().int().positive(),
-  competitionId: z.number().int().positive(),
-  golfer1Id: z.number().int().positive(),
-  golfer2Id: z.number().int().positive(),
-  golfer3Id: z.number().int().positive(),
-});
+export const insertSelectionSchema = createInsertSchema(selections)
+  .omit({ id: true, createdAt: true, updatedAt: true });
 
-export const insertResultSchema = z.object({
-  competitionId: z.number().int().positive(),
-  golferId: z.number().int().positive(),
-  position: z.number().int().nonnegative(),
-  score: z.number().int(),
-});
+export const insertResultSchema = createInsertSchema(results)
+  .omit({ id: true, createdAt: true });
 
-export const insertPointSystemSchema = z.object({
-  position: z.number().int().nonnegative(),
-  points: z.number().int().nonnegative(),
-});
+export const insertPointSystemSchema = createInsertSchema(pointSystem)
+  .omit({ id: true });
 
 // Type definitions for typescript usage
 export type InsertUser = z.infer<typeof insertUserSchema>;
