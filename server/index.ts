@@ -1,10 +1,63 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Add a test endpoint that returns simple HTML
+app.get('/test', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Golf Syndicate Tracker - Test Page</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f0f9ff; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; background-color: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #0369a1; }
+        button { background-color: #0ea5e9; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+        pre { background-color: #f1f5f9; padding: 10px; border-radius: 4px; overflow: auto; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Golf Syndicate Tracker - Test Page</h1>
+        <p>This is a test page to verify the server is working correctly.</p>
+        <p>Current time: ${new Date().toLocaleString()}</p>
+        
+        <h2>API Test</h2>
+        <button id="testBtn">Test API Connection</button>
+        <div id="results" style="margin-top: 16px;"></div>
+        
+        <script>
+          document.getElementById('testBtn').addEventListener('click', async () => {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p>Testing API connection...</p>';
+            
+            try {
+              const response = await fetch('/api/competitions');
+              const data = await response.json();
+              
+              resultsDiv.innerHTML = '<p>API connection successful!</p>';
+              resultsDiv.innerHTML += '<p>Status: ' + response.status + '</p>';
+              resultsDiv.innerHTML += '<p>Data:</p><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (error) {
+              resultsDiv.innerHTML = '<p>API connection failed: ' + error.message + '</p>';
+            }
+          });
+        </script>
+      </div>
+    </body>
+    </html>
+  `);
+});
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -51,8 +104,10 @@ app.use((req, res, next) => {
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
   if (app.get("env") === "development") {
+    console.log("Setting up Vite in development mode");
     await setupVite(app, server);
   } else {
+    console.log("Setting up static serving in production mode");
     serveStatic(app);
   }
 
@@ -66,5 +121,7 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+    console.log(`Server is running at http://localhost:${port}`);
+    console.log(`Test page available at http://localhost:${port}/test`);
   });
 })();
