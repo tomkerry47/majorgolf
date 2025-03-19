@@ -369,6 +369,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard stats endpoint
   app.get('/api/dashboard/stats', async (req: Request, res: Response) => {
     try {
+      console.time('dashboard-stats'); // Add timing for performance monitoring
+      
       // Get user from request (set by validateJWT middleware) or try to get from session
       let userId;
       
@@ -383,34 +385,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId = session.session.user.id;
       }
       
-      // Get active competitions
-      const { data: activeCompetitions, error: activeCompError } = await supabase
-        .from('competitions')
-        .select('id, name')
-        .eq('isActive', true);
+      // Run all database queries in parallel for better performance
+      const [
+        activeCompetitionsResponse,
+        nextCompetitionResponse,
+        pointsResponse,
+        rankResponse
+      ] = await Promise.all([
+        // Get active competitions
+        supabase
+          .from('competitions')
+          .select('id, name')
+          .eq('isActive', true),
+          
+        // Get next competition deadline - only fetch incomplete competitions
+        supabase
+          .from('competitions')
+          .select('selectionDeadline')
+          .eq('isComplete', false)
+          .order('selectionDeadline', { ascending: true })
+          .limit(1)
+          .single(),
         
-      if (activeCompError) throw activeCompError;
-      
-      // Get next competition deadline
-      const { data: nextCompetition, error: nextCompError } = await supabase
-        .from('competitions')
-        .select('selectionDeadline')
-        .eq('isComplete', false)
-        .order('selectionDeadline', { ascending: true })
-        .limit(1)
-        .single();
+        // Get user's total points across all competitions
+        supabase.rpc('get_user_total_points', { user_id: userId }),
         
-      // Get user's total points across all competitions
-      const { data: pointsData, error: pointsError } = await supabase.rpc(
-        'get_user_total_points',
-        { user_id: userId }
-      );
+        // Get user's current rank in active competition
+        supabase.rpc('get_user_rank', { user_id: userId })
+      ]);
       
-      // Get user's current rank in active competition
-      const { data: rankData, error: rankError } = await supabase.rpc(
-        'get_user_rank',
-        { user_id: userId }
-      );
+      // Extract data and handle errors
+      const activeCompetitions = activeCompetitionsResponse.data || [];
+      const nextCompetition = nextCompetitionResponse.data;
+      const pointsData = pointsResponse.data || 0;
+      const rankData = rankResponse.data || 'N/A';
       
       // Format the next deadline date
       let nextDeadline = 'None';
@@ -425,12 +433,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const stats = {
-        activeCompetitions: activeCompetitions ? activeCompetitions.length : 0,
+        activeCompetitions: activeCompetitions.length,
         nextDeadline: nextDeadline,
-        totalPoints: pointsData || 0,
-        currentRank: rankData || 'N/A'
+        totalPoints: pointsData,
+        currentRank: rankData
       };
       
+      console.timeEnd('dashboard-stats'); // Log total execution time
       res.status(200).json(stats);
     } catch (error: any) {
       console.error('Error fetching dashboard stats:', error);
