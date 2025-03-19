@@ -24,7 +24,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { GolfBall } from "lucide-react";
+import { Trophy } from "lucide-react";
 
 // Login form schema
 const loginSchema = z.object({
@@ -113,7 +113,7 @@ const Auth = () => {
         <div className="text-center">
           <div className="flex justify-center">
             <div className="h-12 w-12 rounded-full bg-primary-600 flex items-center justify-center text-white">
-              <GolfBall className="h-6 w-6" />
+              <Trophy className="h-6 w-6" />
             </div>
           </div>
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Golf Syndicate Tracker</h2>
