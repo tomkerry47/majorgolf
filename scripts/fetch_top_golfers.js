@@ -36,6 +36,101 @@ async function fetchGolferAvatar(name) {
   }
 }
 
+async function tryPGATourFallback() {
+  console.log('Trying PGA Tour website as alternative source...');
+  try {
+    // PGA Tour world rankings page
+    const response = await fetch('https://www.pgatour.com/rankings/official-world-golf-rankings', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      console.log('PGA Tour fallback failed with status:', response.status);
+      return null;
+    }
+    
+    const html = await response.text();
+    console.log('PGA Tour response received, length:', html.length);
+    
+    const $ = cheerio.load(html);
+    const golfers = [];
+    
+    // Common PGA Tour table selectors
+    const possibleSelectors = [
+      '.rankings-table tr',
+      '.table-rankings tr',
+      '.world-rankings-table tr',
+      '.player-table tr',
+      '.rankings-component table tr'
+    ];
+    
+    let tableSelector = '';
+    
+    // Find the right selector
+    for (const selector of possibleSelectors) {
+      if ($(selector).length > 0) {
+        console.log(`Found PGA Tour table with selector: ${selector}`);
+        tableSelector = selector;
+        break;
+      }
+    }
+    
+    if (!tableSelector) {
+      console.log('No PGA Tour rankings table found');
+      return null;
+    }
+    
+    // Log structure of first row to help debugging
+    const firstRow = $(tableSelector).first();
+    if (firstRow.length) {
+      const cells = [];
+      firstRow.find('td').each((i, el) => {
+        cells.push(`PGA Column ${i+1}: ${$(el).text().trim()}`);
+      });
+      console.log(cells.join('\n'));
+    }
+    
+    // Extract player data
+    $(tableSelector).each((i, el) => {
+      if (i >= 500) return false; // Limit to 500
+      
+      // Try to find rank and name
+      let rank, name;
+      
+      $(el).find('td').each((j, cell) => {
+        const text = $(cell).text().trim();
+        
+        // Look for rank (typically first column)
+        if (!rank && /^\d+$/.test(text) && parseInt(text) > 0) {
+          rank = parseInt(text);
+        }
+        
+        // Look for player name
+        if (!name && text.length > 3 && text.includes(' ') && !/^\d+$/.test(text)) {
+          name = text;
+        }
+      });
+      
+      if (rank && name) {
+        golfers.push({
+          name,
+          rank,
+          avatarUrl: null
+        });
+      }
+    });
+    
+    console.log(`PGA Tour fallback found ${golfers.length} golfers`);
+    return golfers.length > 0 ? golfers : null;
+    
+  } catch (error) {
+    console.error('PGA Tour fallback failed:', error);
+    return null;
+  }
+}
+
 async function fetchTopGolfers() {
   try {
     console.log('Starting to fetch top 500 golfers from OWGR...');
@@ -53,23 +148,42 @@ async function fetchTopGolfers() {
     
     console.log('Cleared existing golfers data.');
     
-    // Fetch OWGR data 
+    // Fetch OWGR data - updated URL
     console.log('Fetching data from OWGR website...');
-    const response = await fetch('https://www.owgr.com/ranking');
-    const html = await response.text();
-    const $ = cheerio.load(html);
+    let golfers = [];
+    let scrapingSuccess = false;
     
-    const golfers = [];
+    try {
+      const response = await fetch('https://www.owgr.com/current-world-ranking/', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        },
+        timeout: 15000 // 15 second timeout
+      });
+      const html = await response.text();
+      console.log('Response status:', response.status);
+      console.log('Response content (first 300 chars):', html.substring(0, 300));
+      const $ = cheerio.load(html);
     let tableSelector = '';
     
-    // Try different possible table selectors
+    // Try different possible table selectors - expanded with more potential selectors
     const possibleSelectors = [
       '.ranking-table tbody tr', 
       '.rankings-table tbody tr',
       '.owgr-table tbody tr', 
       'table.rankings tbody tr',
       'table.ranking tbody tr',
-      '.table-rankings tbody tr'
+      '.table-rankings tbody tr',
+      '.ranking-list tr',
+      '.world-rankings table tr',
+      '.world-ranking-table tr',
+      '.current-rankings tr',
+      '.players-table tr',
+      '.owgr-ranking tr',
+      '#rankings-table tr',
+      '#ranking-table tr',
+      '.data-table tr',
+      '.leaderboard-table tr'
     ];
     
     // Find the right selector by checking which one returns results
