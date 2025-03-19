@@ -34,6 +34,9 @@ interface SelectionFormProps {
 export default function SelectionForm({ competitionId, onSuccess }: SelectionFormProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [openPopover1, setOpenPopover1] = useState(false);
+  const [openPopover2, setOpenPopover2] = useState(false);
+  const [openPopover3, setOpenPopover3] = useState(false);
 
   // Fetch competition details
   const { data: competition, isLoading: isLoadingCompetition } = useQuery<Competition>({
@@ -137,11 +140,6 @@ export default function SelectionForm({ competitionId, onSuccess }: SelectionFor
   const hasDeadline = competition && competition.selectionDeadline ? true : false;
   const selectionDeadline = hasDeadline && competition ? String(competition.selectionDeadline) : '';
   const isDeadlinePassed = hasDeadline ? new Date(selectionDeadline) < new Date() : false;
-  
-  // State for handling Popover open/close for each select
-  const [openPopover1, setOpenPopover1] = useState<boolean>(false);
-  const [openPopover2, setOpenPopover2] = useState<boolean>(false);
-  const [openPopover3, setOpenPopover3] = useState<boolean>(false);
   
   // Sort golfers by rank
   const sortedGolfers = golfers ? [...golfers].sort((a: Golfer, b: Golfer) => {

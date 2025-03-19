@@ -35,6 +35,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     console.log("Setting up auth state listener");
     
+    // Mark auth state as loading first
+    setIsLoading(true);
+    
     // Set up auth state listener
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -45,6 +48,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           
           if (session?.user) {
             try {
+              console.log("Processing user data for:", session.user.email);
               // Try to get user by auth ID first
               let { data: userData, error } = await supabase
                 .from('users')
@@ -159,6 +163,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           queryClient.clear();
         } else if (event === 'TOKEN_REFRESHED') {
           console.log("Token refreshed");
+        } else {
+          // For all other events, ensure loading state is updated
+          setIsLoading(false);
         }
       }
     );
@@ -178,10 +185,57 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.log("Current session:", data.session ? "Found" : "None");
         
         if (data.session) {
-          // Session exists, no need to do anything - the onAuthStateChange listener will handle it
+          // Session exists, but we'll manually trigger the user data loading
+          // instead of relying solely on the listener
           console.log("Session user:", data.session.user.email);
+          
+          try {
+            // Try to get user by auth ID first
+            let { data: userData, error } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', data.session.user.id)
+              .single();
+            
+            if (error && data.session.user.email) {
+              console.log("Manual session check: User not found by ID, trying email");
+              const { data: emailUser, error: emailError } = await supabase
+                .from('users')
+                .select('*')
+                .eq('email', data.session.user.email)
+                .single();
+              
+              if (!emailError && emailUser) {
+                console.log("Manual session check: Found user by email");
+                userData = emailUser;
+              }
+            }
+            
+            if (userData) {
+              console.log("Manual session check: Setting user data");
+              setUser({
+                id: data.session.user.id,
+                email: data.session.user.email || '',
+                username: userData.username,
+                avatarUrl: userData.avatarUrl,
+              });
+              setIsAdmin(!!userData.isAdmin);
+            } else {
+              console.log("Manual session check: User data not found in database");
+              // Basic user info as fallback
+              setUser({
+                id: data.session.user.id,
+                email: data.session.user.email || '',
+              });
+            }
+          } catch (error) {
+            console.error("Manual session check: Error getting user data", error);
+          } finally {
+            setIsLoading(false);
+          }
         } else {
           // No session
+          console.log("No active session found");
           setIsLoading(false);
         }
       } catch (error) {
@@ -252,6 +306,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       console.log("Attempting to sign in:", email);
       
+      // Use simplified approach to avoid race conditions
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -263,6 +318,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       
       console.log("Sign-in successful, user:", data.user?.email);
+      
+      // Don't try to create user profile here - let onAuthStateChange handle it
+      // This avoids race conditions between different parts of the code
       
       // User state will be set by the onAuthStateChange listener
       return data;

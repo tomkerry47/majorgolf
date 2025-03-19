@@ -42,13 +42,19 @@ export default function AuthForm({ type }: AuthFormProps) {
         const { email, password } = data as LoginCredentials;
         console.log('Login attempt with:', { email });
         
-        await signIn(email, password);
+        console.log('Starting signIn process...');
+        const result = await signIn(email, password);
+        console.log('SignIn complete, result:', result ? 'Success' : 'Failed');
         
+        console.log('Showing success toast...');
         toast({
           title: "Welcome back!",
           description: "You have been successfully logged in.",
         });
+        
+        console.log('Attempting to navigate to dashboard...');
         setLocation("/");
+        console.log('Navigation command sent.');
       } else {
         const { email, password, username, fullName } = data as RegisterCredentials;
         await signUp(email, password, username, fullName);

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import StatCard from "@/components/dashboard/StatCard";
@@ -8,19 +8,60 @@ import UpcomingCompetitions from "@/components/dashboard/UpcomingCompetitions";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const [, setLocation] = useLocation();
+  const [connectionStatus, setConnectionStatus] = useState<string>("checking");
   
-  // Redirect to login if no user
+  // Check connection status
   useEffect(() => {
-    if (!user) {
+    const checkConnection = async () => {
+      try {
+        setConnectionStatus("checking");
+        const { data, error } = await supabase.from('users').select('count').limit(1);
+        if (error) {
+          console.error("Connection check error:", error);
+          setConnectionStatus("error");
+        } else {
+          console.log("Database connection successful");
+          setConnectionStatus("connected");
+        }
+      } catch (err) {
+        console.error("Connection check failed:", err);
+        setConnectionStatus("error");
+      }
+    };
+    
+    checkConnection();
+    
+    // Set up a periodic check
+    const interval = setInterval(() => {
+      checkConnection();
+    }, 30000); // Check every 30 seconds
+    
+    return () => clearInterval(interval);
+  }, []);
+  
+  // Redirect to login if no user and not loading
+  useEffect(() => {
+    console.log("Dashboard auth check:", { user, isLoading, connectionStatus });
+    if (!isLoading && !user) {
+      console.log("No user found, redirecting to login");
       setLocation("/login");
     }
-  }, [user, setLocation]);
+  }, [user, isLoading, connectionStatus, setLocation]);
   
-  const { data: dashboardStats, isLoading: isLoadingStats } = useQuery({
+  // Define dashboard stats type
+  interface DashboardStats {
+    activeCompetitions: number;
+    nextDeadline: string;
+    totalPoints: number;
+    currentRank: string | number;
+  }
+  
+  const { data: dashboardStats, isLoading: isLoadingStats } = useQuery<DashboardStats>({
     queryKey: ['/api/dashboard/stats'],
     enabled: !!user,
   });
@@ -38,7 +79,7 @@ export default function Dashboard() {
           <div className="mt-3 sm:mt-0">
             <Button asChild>
               <Link href="/competitions">
-                <i className="fas fa-plus -ml-1 mr-2 h-5 w-5"></i>
+                <span className="-ml-1 mr-2">➕</span>
                 New Selection
               </Link>
             </Button>
@@ -51,7 +92,7 @@ export default function Dashboard() {
           <StatCard
             title="Active Competitions"
             value={dashboardStats?.activeCompetitions || 0}
-            icon={<i className="fas fa-trophy text-primary h-6 w-6"></i>}
+            icon={<span className="text-primary h-6 w-6">🏆</span>}
             iconBgClass="bg-primary/10"
             loading={isLoadingStats}
           />
@@ -59,7 +100,7 @@ export default function Dashboard() {
           <StatCard
             title="Your Current Rank"
             value={dashboardStats?.currentRank || 'N/A'}
-            icon={<i className="fas fa-medal text-info h-6 w-6"></i>}
+            icon={<span className="text-info h-6 w-6">🏅</span>}
             iconBgClass="bg-info/10"
             loading={isLoadingStats}
           />
@@ -67,7 +108,7 @@ export default function Dashboard() {
           <StatCard
             title="Total Points"
             value={dashboardStats?.totalPoints || 0}
-            icon={<i className="fas fa-arrow-trend-up text-success h-6 w-6"></i>}
+            icon={<span className="text-success h-6 w-6">📈</span>}
             iconBgClass="bg-success/10"
             loading={isLoadingStats}
           />
@@ -75,7 +116,7 @@ export default function Dashboard() {
           <StatCard
             title="Next Deadline"
             value={dashboardStats?.nextDeadline || 'None'}
-            icon={<i className="fas fa-calendar-alt text-amber-500 h-6 w-6"></i>}
+            icon={<span className="text-amber-500 h-6 w-6">📅</span>}
             iconBgClass="bg-amber-500/10"
             loading={isLoadingStats}
           />
