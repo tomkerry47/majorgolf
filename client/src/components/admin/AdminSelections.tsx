@@ -172,14 +172,14 @@ export default function AdminSelections() {
           </Select>
           
           <Select
-            value={selectedUser?.toString() || ""}
-            onValueChange={(value) => setSelectedUser(value ? parseInt(value) : null)}
+            value={selectedUser?.toString() || "0"}
+            onValueChange={(value) => setSelectedUser(value === "0" ? null : parseInt(value))}
           >
             <SelectTrigger className="w-[240px]">
               <SelectValue placeholder="Filter by user (optional)" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Users</SelectItem>
+              <SelectItem value="0">All Users</SelectItem>
               {isLoadingUsers ? (
                 <div className="py-2 text-center text-sm text-gray-500">Loading...</div>
               ) : users?.length === 0 ? (
