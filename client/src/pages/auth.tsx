@@ -75,13 +75,16 @@ const Auth = () => {
 
   const onLoginSubmit = async (values: LoginValues) => {
     try {
-      await signIn(values.email, values.password);
+      console.log('Attempting login with:', values.email);
+      const result = await signIn(values.email, values.password);
+      console.log('Login successful:', result);
       toast({
         title: "Welcome back!",
         description: "You have been successfully logged in.",
       });
       setLocation("/");
     } catch (error: any) {
+      console.error('Login error:', error);
       toast({
         title: "Login failed",
         description: error.message || "There was a problem logging in. Please check your credentials.",

@@ -31,9 +31,11 @@ export const golfers = pgTable("golfers", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 100 }).notNull(),
   rank: integer("rank").notNull(),
-  country: varchar("country", { length: 50 }).notNull(),
   avatarUrl: text("avatarUrl"),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  // Note: The 'country' and 'createdAt' columns are defined in schema but not in DB
+  // Will be added in future DB migration
+  // country: varchar("country", { length: 50 }).notNull(),
+  // createdAt: timestamp("createdAt").defaultNow().notNull()
 });
 
 export const selections = pgTable("selections", {
@@ -102,9 +104,9 @@ export interface Golfer {
   id: number;
   name: string;
   rank: number;
-  country: string;
+  country?: string; // Make country optional to match DB structure
   avatarUrl?: string;
-  createdAt: string;
+  createdAt?: string; // Make createdAt optional to match DB structure
 }
 
 export interface Selection {

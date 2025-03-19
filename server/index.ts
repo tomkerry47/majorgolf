@@ -121,7 +121,8 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
-    console.log(`Server is running at http://localhost:${port}`);
-    console.log(`Test page available at http://localhost:${port}/test`);
+    console.log(`Server is running at http://0.0.0.0:${port}`);
+    console.log(`Access from outside: http://0.0.0.0:${port}`);
+    console.log(`Test page available at http://0.0.0.0:${port}/test`);
   });
 })();

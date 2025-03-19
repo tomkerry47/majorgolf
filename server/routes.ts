@@ -23,23 +23,29 @@ interface ExtendedUser {
 
 // Middleware to validate JWT
 const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
-  const route = `${req.path} ${req.method}`;
+  // Get the normalized path without the /api prefix
+  const path = req.path.replace(/^\/api/, '');
+  const method = req.method;
+  const route = `${path} ${method}`;
   console.log(`Validating auth for: ${route}`);
   
   try {
     // Skip validation for public routes
     if (
-      route === '/api/auth/login POST' ||
-      route === '/api/auth/register POST' ||
-      route === '/api/competitions GET' ||
-      route === '/api/competitions/all GET' ||
-      route === '/api/competitions/active GET' ||
-      route === '/api/competitions/upcoming GET' ||
-      route === '/api/golfers GET' ||
-      route === '/api/leaderboard GET' ||
-      route === '/api/leaderboard/:competitionId GET' ||
-      route === '/api/test-leaderboard GET'
+      route === '/auth/login POST' ||
+      route === '/auth/register POST' ||
+      route === '/competitions GET' ||
+      route === '/competitions/all GET' ||
+      route === '/competitions/active GET' ||
+      route === '/competitions/upcoming GET' ||
+      route === '/golfers GET' ||
+      route === '/leaderboard GET' ||
+      route === '/leaderboard/:competitionId GET' ||
+      route === '/test-leaderboard GET' ||
+      // Match dynamic routes better
+      path.match(/^\/leaderboard\/\d+$/) && method === 'GET'
     ) {
+      console.log('Public route detected, skipping auth');
       return next();
     }
     
@@ -183,27 +189,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
+      console.log('Login attempt received:', req.body.email);
       // Validate request body
       const { email, password } = loginSchema.parse(req.body);
+      console.log('Login validation passed for:', email);
       
       // Find user
       const user = await storage.getUserByEmail(email);
       if (!user) {
+        console.log('User not found for email:', email);
         return res.status(401).json({ error: 'Invalid credentials' });
       }
+      console.log('Found user:', { id: user.id, email: user.email, username: user.username });
       
       // Verify password
       if (!user.password) {
+        console.log('User has no password set:', user.id);
         return res.status(401).json({ error: 'Password not set' });
       }
       
+      console.log('Comparing passwords...');
       const isPasswordValid = await comparePassword(password, user.password);
+      
       if (!isPasswordValid) {
+        console.log('Password validation failed for user:', user.id);
         return res.status(401).json({ error: 'Invalid credentials' });
       }
+      console.log('Password validation successful for user:', user.id);
       
       // Generate token
       const token = generateToken(user.id, user.email, user.isAdmin);
+      console.log('JWT token generated for user:', user.id);
       
       // Set cookie
       res.cookie('authToken', token, {
@@ -211,9 +227,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         secure: process.env.NODE_ENV === 'production',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
+      console.log('Auth cookie set');
       
       // Return user data and token
-      res.json({
+      const responseData = {
         user: {
           id: user.id.toString(),
           email: user.email,
@@ -222,9 +239,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isAdmin: user.isAdmin
         },
         token
-      });
+      };
+      console.log('Login successful for user:', user.email);
+      res.json(responseData);
     } catch (error) {
       if (error instanceof ZodError) {
+        console.error('Login validation error:', error.errors);
         return res.status(400).json({ error: error.errors });
       }
       console.error('Login error:', error);

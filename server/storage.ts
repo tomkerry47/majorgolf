@@ -76,8 +76,19 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
-    return user || undefined;
+    console.log(`Looking up user by email: ${email}`);
+    try {
+      const [user] = await db.select().from(users).where(eq(users.email, email));
+      if (user) {
+        console.log(`User found: ${user.username} (ID: ${user.id})`);
+      } else {
+        console.log(`No user found for email: ${email}`);
+      }
+      return user || undefined;
+    } catch (error) {
+      console.error(`Error looking up user by email: ${email}`, error);
+      return undefined;
+    }
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
@@ -181,35 +192,87 @@ export class DatabaseStorage implements IStorage {
   
   // Golfer methods
   async getGolfers(): Promise<Golfer[]> {
-    return await db
-      .select()
+    // Select only columns that exist in the database
+    const results = await db
+      .select({
+        id: golfers.id,
+        name: golfers.name,
+        rank: golfers.rank,
+        avatarUrl: golfers.avatarUrl
+      })
       .from(golfers)
       .orderBy(golfers.rank);
+    
+    // Convert to Golfer type with optional fields
+    return results.map(golfer => ({
+      ...golfer,
+      country: undefined, // Add missing optional fields with undefined values
+      createdAt: undefined
+    }));
   }
   
   async getGolferById(id: number): Promise<Golfer | undefined> {
-    const [golfer] = await db
-      .select()
+    // Select only columns that exist in the database
+    const [result] = await db
+      .select({
+        id: golfers.id,
+        name: golfers.name,
+        rank: golfers.rank,
+        avatarUrl: golfers.avatarUrl
+      })
       .from(golfers)
       .where(eq(golfers.id, id));
-    return golfer || undefined;
+    
+    if (!result) return undefined;
+    
+    // Convert to Golfer type with optional fields
+    return {
+      ...result,
+      country: undefined, // Add missing optional fields with undefined values
+      createdAt: undefined
+    };
   }
   
   async createGolfer(golfer: InsertGolfer): Promise<Golfer> {
+    // Only include fields that exist in the database
+    const golferToInsert = {
+      name: golfer.name,
+      rank: golfer.rank,
+      avatarUrl: golfer.avatarUrl
+    };
+    
     const [newGolfer] = await db
       .insert(golfers)
-      .values(golfer)
+      .values(golferToInsert)
       .returning();
-    return newGolfer;
+    
+    // Convert to Golfer type with optional fields
+    return {
+      ...newGolfer,
+      country: undefined,
+      createdAt: undefined
+    };
   }
   
   async updateGolfer(id: number, golferData: Partial<Golfer>): Promise<Golfer> {
+    // Only include fields that exist in the database
+    const golferToUpdate: any = {};
+    if (golferData.name !== undefined) golferToUpdate.name = golferData.name;
+    if (golferData.rank !== undefined) golferToUpdate.rank = golferData.rank;
+    if (golferData.avatarUrl !== undefined) golferToUpdate.avatarUrl = golferData.avatarUrl;
+    
     const [updatedGolfer] = await db
       .update(golfers)
-      .set(golferData)
+      .set(golferToUpdate)
       .where(eq(golfers.id, id))
       .returning();
-    return updatedGolfer;
+    
+    // Convert to Golfer type with optional fields
+    return {
+      ...updatedGolfer,
+      country: undefined,
+      createdAt: undefined
+    };
   }
   
   // Selection methods
