@@ -1,17 +1,235 @@
 #!/bin/bash
-# This script fixes the return type issue in storage.ts
 
-# Create a sed script to replace 'Promise<r>' with 'Promise<Result>'
-cat > fix.sed << 'EOF'
-s/Promise<r>/Promise<Result>/g
+# Create a new storage.ts file with the correct syntax
+cat > storage.ts << 'EOF'
+import { 
+  type User, type InsertUser, type Competition, type Golfer, 
+  type Selection, type Result, type InsertSelection, type InsertCompetition,
+  type InsertGolfer, type InsertResult
+} from "../shared/schema";
+import { supabase } from "./db";
+
+export interface IStorage {
+  // User methods
+  getUser(id: number): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, userData: Partial<User>): Promise<User>;
+  
+  // Competition methods
+  getCompetitions(): Promise<Competition[]>;
+  getCompetitionById(id: number): Promise<Competition | undefined>;
+  createCompetition(competition: InsertCompetition): Promise<Competition>;
+  updateCompetition(id: number, competitionData: Partial<Competition>): Promise<Competition>;
+  
+  // Golfer methods
+  getGolfers(): Promise<Golfer[]>;
+  getGolferById(id: number): Promise<Golfer | undefined>;
+  createGolfer(golfer: InsertGolfer): Promise<Golfer>;
+  
+  // Selection methods
+  getUserSelections(userId: number, competitionId: number): Promise<Selection | undefined>;
+  createSelection(selection: InsertSelection): Promise<Selection>;
+  updateSelection(id: number, selectionData: Partial<Selection>): Promise<Selection>;
+  
+  // Results methods
+  getResults(competitionId: number): Promise<Result[]>;
+  createResult(result: InsertResult): Promise<Result>;
+}
+
+// Implementation of IStorage interface using Supabase
+export class SupabaseStorage implements IStorage {
+  async getUser(id: number): Promise<User | undefined> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .single();
+      
+    if (error || !data) return undefined;
+    return data as User;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('username', username)
+      .single();
+      
+    if (error || !data) return undefined;
+    return data as User;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const { data, error } = await supabase
+      .from('users')
+      .insert(insertUser)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data as User;
+  }
+  
+  async updateUser(id: number, userData: Partial<User>): Promise<User> {
+    const { data, error } = await supabase
+      .from('users')
+      .update(userData)
+      .eq('id', id)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data as User;
+  }
+  
+  async getCompetitions(): Promise<Competition[]> {
+    const { data, error } = await supabase
+      .from('competitions')
+      .select('*')
+      .order('startDate', { ascending: true });
+      
+    if (error) throw error;
+    return data as Competition[];
+  }
+  
+  async getCompetitionById(id: number): Promise<Competition | undefined> {
+    const { data, error } = await supabase
+      .from('competitions')
+      .select('*')
+      .eq('id', id)
+      .single();
+      
+    if (error || !data) return undefined;
+    return data as Competition;
+  }
+  
+  async createCompetition(competition: InsertCompetition): Promise<Competition> {
+    const { data, error } = await supabase
+      .from('competitions')
+      .insert(competition)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data as Competition;
+  }
+  
+  async updateCompetition(id: number, competitionData: Partial<Competition>): Promise<Competition> {
+    const { data, error } = await supabase
+      .from('competitions')
+      .update(competitionData)
+      .eq('id', id)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data as Competition;
+  }
+  
+  async getGolfers(): Promise<Golfer[]> {
+    const { data, error } = await supabase
+      .from('golfers')
+      .select('*')
+      .order('rank', { ascending: true });
+      
+    if (error) throw error;
+    return data as Golfer[];
+  }
+  
+  async getGolferById(id: number): Promise<Golfer | undefined> {
+    const { data, error } = await supabase
+      .from('golfers')
+      .select('*')
+      .eq('id', id)
+      .single();
+      
+    if (error || !data) return undefined;
+    return data as Golfer;
+  }
+  
+  async createGolfer(golfer: InsertGolfer): Promise<Golfer> {
+    const { data, error } = await supabase
+      .from('golfers')
+      .insert(golfer)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data as Golfer;
+  }
+  
+  async getUserSelections(userId: number, competitionId: number): Promise<Selection | undefined> {
+    const { data, error } = await supabase
+      .from('selections')
+      .select('*, golfer1:golfer1Id(id, name, rank, avatarUrl), golfer2:golfer2Id(id, name, rank, avatarUrl), golfer3:golfer3Id(id, name, rank, avatarUrl)')
+      .eq('userId', userId)
+      .eq('competitionId', competitionId)
+      .single();
+      
+    if (error || !data) return undefined;
+    return data as Selection;
+  }
+  
+  async createSelection(selection: InsertSelection): Promise<Selection> {
+    const { data, error } = await supabase
+      .from('selections')
+      .insert(selection)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data as Selection;
+  }
+  
+  async updateSelection(id: number, selectionData: Partial<Selection>): Promise<Selection> {
+    const { data, error } = await supabase
+      .from('selections')
+      .update(selectionData)
+      .eq('id', id)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data as Selection;
+  }
+  
+  async getResults(competitionId: number): Promise<Result[]> {
+    const { data, error } = await supabase
+      .from('results')
+      .select('*, golfer:golferId(id, name, rank, avatarUrl)')
+      .eq('competitionId', competitionId)
+      .order('position', { ascending: true });
+      
+    if (error) throw error;
+    return data as Result[];
+  }
+  
+  async createResult(result: InsertResult): Promise<Result> {
+    const { data, error } = await supabase
+      .from('results')
+      .insert(result)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data as Result;
+  }
+}
+
+// Export the storage instance
+export const storage = new SupabaseStorage();
 EOF
 
-# Apply the sed script to storage.ts
-sed -i -f fix.sed server/storage.ts
+# Make a backup of the current file
+cp server/storage.ts server/storage.ts.bak
 
-# Clean up
-rm fix.sed
+# Replace the storage.ts file with our fixed version
+cp storage.ts server/storage.ts
 
-# Verify changes
-echo "Verifying changes in storage.ts:"
-grep -A 2 "createResult" server/storage.ts
+# Verify the changes
+cat server/storage.ts | grep "createResult" | head -2
+
+# Clean up temporary files
+rm storage.ts

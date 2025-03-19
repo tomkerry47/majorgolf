@@ -30,3 +30,5 @@ export interface IStorage {
   
   // Results methods
   getResults(competitionId: number): Promise<Result[]>;
+  createResult(result: InsertResult): Promise<Result>;
+}

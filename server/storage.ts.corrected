@@ -201,7 +201,6 @@ export class SupabaseStorage implements IStorage {
     if (error) throw error;
     return data as Result[];
   }
-  
   async createResult(result: InsertResult): Promise<Result> {
     const { data, error } = await supabase
       .from('results')

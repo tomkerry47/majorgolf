@@ -1,4 +1,3 @@
-}
 
 // Implementation of IStorage interface using Supabase
 export class SupabaseStorage implements IStorage {

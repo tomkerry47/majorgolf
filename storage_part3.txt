@@ -1,1 +1,14 @@
+  async createResult(result: InsertResult): Promise<Result> {
     const { data, error } = await supabase
+      .from('results')
+      .insert(result)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data as Result;
+  }
+}
+
+// Export the storage instance
+export const storage = new SupabaseStorage();
