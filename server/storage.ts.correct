@@ -1,11 +1,11 @@
 import { 
-  users, competitions, golfers, selections, results,
+  users, competitions, golfers, selections, results, pointSystem,
   type User, type InsertUser, type Competition, type Golfer, 
   type Selection, type Result, type InsertSelection, type InsertCompetition,
   type InsertGolfer, type InsertResult
-} from "@shared/schema";
+} from "../shared/schema";
 import { db } from "./db";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -35,7 +35,7 @@ export interface IStorage {
   createResult(result: InsertResult): Promise<Result>;
 }
 
-// Implementation of IStorage interface using Drizzle ORM
+// Implementation of IStorage interface using Drizzle ORM with PostgreSQL
 export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
@@ -48,80 +48,60 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(insertUser)
-      .returning();
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
   }
   
   async updateUser(id: number, userData: Partial<User>): Promise<User> {
-    const [user] = await db
-      .update(users)
+    const [user] = await db.update(users)
       .set(userData)
       .where(eq(users.id, id))
       .returning();
+    
+    if (!user) throw new Error(`User not found with id ${id}`);
     return user;
   }
   
   async getCompetitions(): Promise<Competition[]> {
-    return await db
-      .select()
-      .from(competitions)
-      .orderBy(asc(competitions.startDate));
+    return db.select().from(competitions).orderBy(competitions.startDate);
   }
   
   async getCompetitionById(id: number): Promise<Competition | undefined> {
-    const [competition] = await db
-      .select()
-      .from(competitions)
-      .where(eq(competitions.id, id));
+    const [competition] = await db.select().from(competitions).where(eq(competitions.id, id));
     return competition || undefined;
   }
   
   async createCompetition(competition: InsertCompetition): Promise<Competition> {
-    const [result] = await db
-      .insert(competitions)
-      .values(competition)
-      .returning();
-    return result;
+    const [newCompetition] = await db.insert(competitions).values(competition).returning();
+    return newCompetition;
   }
   
   async updateCompetition(id: number, competitionData: Partial<Competition>): Promise<Competition> {
-    const [result] = await db
-      .update(competitions)
+    const [competition] = await db.update(competitions)
       .set(competitionData)
       .where(eq(competitions.id, id))
       .returning();
-    return result;
+    
+    if (!competition) throw new Error(`Competition not found with id ${id}`);
+    return competition;
   }
   
   async getGolfers(): Promise<Golfer[]> {
-    return await db
-      .select()
-      .from(golfers)
-      .orderBy(asc(golfers.rank));
+    return db.select().from(golfers).orderBy(golfers.rank);
   }
   
   async getGolferById(id: number): Promise<Golfer | undefined> {
-    const [golfer] = await db
-      .select()
-      .from(golfers)
-      .where(eq(golfers.id, id));
+    const [golfer] = await db.select().from(golfers).where(eq(golfers.id, id));
     return golfer || undefined;
   }
   
   async createGolfer(golfer: InsertGolfer): Promise<Golfer> {
-    const [result] = await db
-      .insert(golfers)
-      .values(golfer)
-      .returning();
-    return result;
+    const [newGolfer] = await db.insert(golfers).values(golfer).returning();
+    return newGolfer;
   }
   
   async getUserSelections(userId: number, competitionId: number): Promise<Selection | undefined> {
-    const [selection] = await db
-      .select()
+    const [selection] = await db.select()
       .from(selections)
       .where(
         and(
@@ -130,45 +110,33 @@ export class DatabaseStorage implements IStorage {
         )
       );
     
-    // Note: This doesn't include the nested golfer data that Supabase provides
-    // To get similar behavior, we would need to perform additional queries
-    
     return selection || undefined;
   }
   
   async createSelection(selection: InsertSelection): Promise<Selection> {
-    const [result] = await db
-      .insert(selections)
-      .values(selection)
-      .returning();
-    return result;
+    const [newSelection] = await db.insert(selections).values(selection).returning();
+    return newSelection;
   }
   
   async updateSelection(id: number, selectionData: Partial<Selection>): Promise<Selection> {
-    const [result] = await db
-      .update(selections)
+    const [selection] = await db.update(selections)
       .set(selectionData)
       .where(eq(selections.id, id))
       .returning();
-    return result;
+    
+    if (!selection) throw new Error(`Selection not found with id ${id}`);
+    return selection;
   }
   
   async getResults(competitionId: number): Promise<Result[]> {
-    return await db
-      .select()
+    return db.select()
       .from(results)
       .where(eq(results.competitionId, competitionId))
-      .orderBy(asc(results.position));
-    
-    // Note: This doesn't include the nested golfer data that Supabase provides
-    // To get similar behavior, we would need to perform additional queries
+      .orderBy(results.position);
   }
   
   async createResult(result: InsertResult): Promise<Result> {
-    const [newResult] = await db
-      .insert(results)
-      .values(result)
-      .returning();
+    const [newResult] = await db.insert(results).values(result).returning();
     return newResult;
   }
 }

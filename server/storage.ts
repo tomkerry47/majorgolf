@@ -35,186 +35,111 @@ export interface IStorage {
   createResult(result: InsertResult): Promise<Result>;
 }
 
-// Implementation of IStorage interface using Supabase
-export class SupabaseStorage implements IStorage {
+// Implementation of IStorage interface using Drizzle ORM with PostgreSQL
+export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (error || !data) return undefined;
-    return data as User;
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('username', username)
-      .single();
-    
-    if (error || !data) return undefined;
-    return data as User;
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const { data, error } = await supabase
-      .from('users')
-      .insert(insertUser)
-      .select()
-      .single();
-    
-    if (error) throw new Error(`Error creating user: ${error.message}`);
-    return data as User;
+    const [user] = await db.insert(users).values(insertUser).returning();
+    return user;
   }
   
   async updateUser(id: number, userData: Partial<User>): Promise<User> {
-    const { data, error } = await supabase
-      .from('users')
-      .update(userData)
-      .eq('id', id)
-      .select()
-      .single();
+    const [user] = await db.update(users)
+      .set(userData)
+      .where(eq(users.id, id))
+      .returning();
     
-    if (error) throw new Error(`Error updating user: ${error.message}`);
-    return data as User;
+    if (!user) throw new Error(`User not found with id ${id}`);
+    return user;
   }
   
   async getCompetitions(): Promise<Competition[]> {
-    const { data, error } = await supabase
-      .from('competitions')
-      .select('*')
-      .order('startDate', { ascending: true });
-    
-    if (error) throw new Error(`Error getting competitions: ${error.message}`);
-    return data as Competition[];
+    return db.select().from(competitions).orderBy(competitions.startDate);
   }
   
   async getCompetitionById(id: number): Promise<Competition | undefined> {
-    const { data, error } = await supabase
-      .from('competitions')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (error || !data) return undefined;
-    return data as Competition;
+    const [competition] = await db.select().from(competitions).where(eq(competitions.id, id));
+    return competition || undefined;
   }
   
   async createCompetition(competition: InsertCompetition): Promise<Competition> {
-    const { data, error } = await supabase
-      .from('competitions')
-      .insert(competition)
-      .select()
-      .single();
-    
-    if (error) throw new Error(`Error creating competition: ${error.message}`);
-    return data as Competition;
+    const [newCompetition] = await db.insert(competitions).values(competition).returning();
+    return newCompetition;
   }
   
   async updateCompetition(id: number, competitionData: Partial<Competition>): Promise<Competition> {
-    const { data, error } = await supabase
-      .from('competitions')
-      .update(competitionData)
-      .eq('id', id)
-      .select()
-      .single();
+    const [competition] = await db.update(competitions)
+      .set(competitionData)
+      .where(eq(competitions.id, id))
+      .returning();
     
-    if (error) throw new Error(`Error updating competition: ${error.message}`);
-    return data as Competition;
+    if (!competition) throw new Error(`Competition not found with id ${id}`);
+    return competition;
   }
   
   async getGolfers(): Promise<Golfer[]> {
-    const { data, error } = await supabase
-      .from('golfers')
-      .select('*')
-      .order('rank', { ascending: true });
-    
-    if (error) throw new Error(`Error getting golfers: ${error.message}`);
-    return data as Golfer[];
+    return db.select().from(golfers).orderBy(golfers.rank);
   }
   
   async getGolferById(id: number): Promise<Golfer | undefined> {
-    const { data, error } = await supabase
-      .from('golfers')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (error || !data) return undefined;
-    return data as Golfer;
+    const [golfer] = await db.select().from(golfers).where(eq(golfers.id, id));
+    return golfer || undefined;
   }
   
   async createGolfer(golfer: InsertGolfer): Promise<Golfer> {
-    const { data, error } = await supabase
-      .from('golfers')
-      .insert(golfer)
-      .select()
-      .single();
-    
-    if (error) throw new Error(`Error creating golfer: ${error.message}`);
-    return data as Golfer;
+    const [newGolfer] = await db.insert(golfers).values(golfer).returning();
+    return newGolfer;
   }
   
   async getUserSelections(userId: number, competitionId: number): Promise<Selection | undefined> {
-    const { data, error } = await supabase
-      .from('selections')
-      .select('*')
-      .eq('userId', userId)
-      .eq('competitionId', competitionId)
-      .single();
+    const [selection] = await db.select()
+      .from(selections)
+      .where(
+        and(
+          eq(selections.userId, userId),
+          eq(selections.competitionId, competitionId)
+        )
+      );
     
-    if (error || !data) return undefined;
-    return data as Selection;
+    return selection || undefined;
   }
   
   async createSelection(selection: InsertSelection): Promise<Selection> {
-    const { data, error } = await supabase
-      .from('selections')
-      .insert(selection)
-      .select()
-      .single();
-    
-    if (error) throw new Error(`Error creating selection: ${error.message}`);
-    return data as Selection;
+    const [newSelection] = await db.insert(selections).values(selection).returning();
+    return newSelection;
   }
   
   async updateSelection(id: number, selectionData: Partial<Selection>): Promise<Selection> {
-    const { data, error } = await supabase
-      .from('selections')
-      .update(selectionData)
-      .eq('id', id)
-      .select()
-      .single();
+    const [selection] = await db.update(selections)
+      .set(selectionData)
+      .where(eq(selections.id, id))
+      .returning();
     
-    if (error) throw new Error(`Error updating selection: ${error.message}`);
-    return data as Selection;
+    if (!selection) throw new Error(`Selection not found with id ${id}`);
+    return selection;
   }
   
   async getResults(competitionId: number): Promise<Result[]> {
-    const { data, error } = await supabase
-      .from('results')
-      .select('*')
-      .eq('competitionId', competitionId)
-      .order('position', { ascending: true });
-    
-    if (error) throw new Error(`Error getting results: ${error.message}`);
-    return data as Result[];
+    return db.select()
+      .from(results)
+      .where(eq(results.competitionId, competitionId))
+      .orderBy(results.position);
   }
   
   async createResult(result: InsertResult): Promise<Result> {
-    const { data, error } = await supabase
-      .from('results')
-      .insert(result)
-      .select()
-      .single();
-    
-    if (error) throw new Error(`Error creating result: ${error.message}`);
-    return data as Result;
+    const [newResult] = await db.insert(results).values(result).returning();
+    return newResult;
   }
 }
 
 // Export the storage instance
-export const storage = new SupabaseStorage();
+export const storage = new DatabaseStorage();
