@@ -1434,7 +1434,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (updateError) throw updateError;
       
-      // 3. Return success response
+      // 3. Calculate and allocate points for this competition
+      try {
+        // Import the allocatePoints function dynamically
+        const { allocatePoints } = await import('../scripts/update_results_and_allocate_points.js');
+        
+        // Call the function to allocate points for this competition
+        await allocatePoints(competitionId);
+        
+        console.log(`Points allocated for competition ${competitionId}`);
+      } catch (allocateError) {
+        console.error('Error allocating points:', allocateError);
+        // Don't throw this error, continue with completion
+      }
+      
+      // 4. Return success response
       res.status(200).json({ 
         message: 'Tournament completed successfully',
         resultsProcessed: results.length

@@ -53,13 +53,24 @@ export const results = pgTable("results", {
   golferId: integer("golferId").notNull(),
   position: integer("position").notNull(),
   score: integer("score").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  points: integer("points").default(0),
+  created_at: timestamp("created_at").defaultNow().notNull() // Use snake_case to match DB column name
 });
 
 export const pointSystem = pgTable("points_system", {
   id: serial("id").primaryKey(),
   position: integer("position").notNull(),
   points: integer("points").notNull()
+});
+
+export const userPoints = pgTable("user_points", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
+  competitionId: integer("competitionId").notNull(),
+  points: integer("points").notNull(),
+  details: text("details"), // JSON string containing point details
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 
 // Define types based on Drizzle schema
@@ -113,7 +124,8 @@ export interface Result {
   golferId: number;
   position: number;
   score: number;
-  createdAt: string;
+  points?: number;
+  created_at: string; // Use snake_case to match DB column name
   // Join with the golfer 
   golfers?: {
     id: number;
@@ -125,6 +137,16 @@ export interface PointSystem {
   id: number;
   position: number;
   points: number;
+}
+
+export interface UserPoints {
+  id: number;
+  userId: number;
+  competitionId: number;
+  points: number;
+  details?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Validation schemas for insert operations using drizzle-zod
@@ -146,10 +168,13 @@ export const insertSelectionSchema = createInsertSchema(selections)
   .omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertResultSchema = createInsertSchema(results)
-  .omit({ id: true, createdAt: true });
+  .omit({ id: true, created_at: true });
 
 export const insertPointSystemSchema = createInsertSchema(pointSystem)
   .omit({ id: true });
+
+export const insertUserPointsSchema = createInsertSchema(userPoints)
+  .omit({ id: true, createdAt: true, updatedAt: true });
 
 // Type definitions for typescript usage
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -158,6 +183,7 @@ export type InsertGolfer = z.infer<typeof insertGolferSchema>;
 export type InsertSelection = z.infer<typeof insertSelectionSchema>;
 export type InsertResult = z.infer<typeof insertResultSchema>;
 export type InsertPointSystem = z.infer<typeof insertPointSystemSchema>;
+export type InsertUserPoints = z.infer<typeof insertUserPointsSchema>;
 
 // Login and Registration schemas
 export const loginSchema = z.object({

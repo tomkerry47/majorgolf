@@ -150,11 +150,12 @@ async function updateCompetitionResults(competitionId) {
       const score = Math.floor(Math.random() * 10) - 5; // Random score between -5 and 4
       
       resultsToInsert.push({
-        competitionId,
-        golferId: golfer.id,
-        position,
-        score,
-        createdAt: new Date().toISOString()
+        "competitionId": competitionId,
+        "golferId": golfer.id,
+        "position": position,
+        "score": score,
+        "created_at": new Date().toISOString(),
+        "points": 0 // Add default points value
       });
     }
     
@@ -231,11 +232,12 @@ async function completeCompetition(competitionId) {
       
       // Generate final results for top golfers
       const finalResults = golfers.map((golfer, index) => ({
-        competitionId,
-        golferId: golfer.id,
-        position: index + 1,
-        score: Math.floor(Math.random() * 20) - 10, // Random score between -10 and 9
-        createdAt: new Date().toISOString()
+        "competitionId": competitionId,
+        "golferId": golfer.id,
+        "position": index + 1,
+        "score": Math.floor(Math.random() * 20) - 10, // Random score between -10 and 9
+        "created_at": new Date().toISOString(),
+        "points": 0 // Add default points value
       }));
       
       // Insert final results
@@ -401,9 +403,9 @@ async function allocatePoints(competitionId) {
         const { error: updateError } = await supabase
           .from('user_points')
           .update({
-            points: totalPoints,
-            details: JSON.stringify(pointDetails),
-            updatedAt: new Date().toISOString()
+            "points": totalPoints,
+            "details": JSON.stringify(pointDetails),
+            "updated_at": new Date().toISOString()
           })
           .eq('id', existingPoints[0].id);
           
@@ -417,11 +419,11 @@ async function allocatePoints(competitionId) {
         const { error: insertError } = await supabase
           .from('user_points')
           .insert({
-            userId: selection.userId,
-            competitionId,
-            points: totalPoints,
-            details: JSON.stringify(pointDetails),
-            createdAt: new Date().toISOString()
+            "userId": selection.userId,
+            "competitionId": competitionId,
+            "points": totalPoints,
+            "details": JSON.stringify(pointDetails),
+            "created_at": new Date().toISOString()
           });
           
         if (insertError) {
