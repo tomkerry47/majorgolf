@@ -1,20 +1,64 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { createClient } from '@supabase/supabase-js';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 
 // Initialize PostgreSQL client
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
 });
 
+// Create a simple direct query client
+export const pgClient = {
+  query: (text: string, params?: any[]) => pool.query(text, params)
+};
+
 // Export Drizzle ORM instance
 export const db = drizzle(pool);
 
-// Initialize Supabase client with hardcoded values for development
-const supabaseUrl = 'https://bgdctfdxjdpsecihqsfh.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJnZGN0ZmR4amRwc2VjaWhxc2ZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIyNDMzNjcsImV4cCI6MjA1NzgxOTM2N30.ZjwklXt1J4waKCE3-fq8duRkeUJnusiBu89k2zZ3Vc0';
+// JWT secret for token generation
+const JWT_SECRET = process.env.JWT_SECRET || 'your-default-jwt-secret-key';
 
-console.log('Server Supabase initialized');
+// Token generation for authentication
+export const generateToken = (userId: number, email: string, isAdmin: boolean) => {
+  return jwt.sign(
+    { 
+      id: userId, 
+      email, 
+      isAdmin,
+      database_id: userId // For backward compatibility
+    }, 
+    JWT_SECRET, 
+    { expiresIn: '7d' }
+  );
+};
 
-// Export the Supabase client for use throughout the application
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Token verification
+export const verifyToken = (token: string) => {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (error) {
+    return null;
+  }
+};
+
+// Password utilities
+export const hashPassword = async (password: string) => {
+  const salt = await bcrypt.genSalt(10);
+  return bcrypt.hash(password, salt);
+};
+
+export const comparePassword = async (password: string, hashedPassword: string) => {
+  return bcrypt.compare(password, hashedPassword);
+};
+
+// Export dummy Supabase client for backward compatibility
+export const supabase = {
+  auth: {
+    getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+    getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+    signOut: () => Promise.resolve({ error: null })
+  }
+};
+
+console.log('PostgreSQL direct connection initialized');
