@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { 
   Card, 
@@ -24,7 +24,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { GolfIcon } from "lucide-react";
+import { GolfBall } from "lucide-react";
 
 // Login form schema
 const loginSchema = z.object({
@@ -113,7 +113,7 @@ const Auth = () => {
         <div className="text-center">
           <div className="flex justify-center">
             <div className="h-12 w-12 rounded-full bg-primary-600 flex items-center justify-center text-white">
-              <GolfIcon className="h-6 w-6" />
+              <GolfBall className="h-6 w-6" />
             </div>
           </div>
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Golf Syndicate Tracker</h2>

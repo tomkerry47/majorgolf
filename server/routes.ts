@@ -999,5 +999,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  return app.listen(5000);
+  // Return a new server but don't start it
+  // This will be started in index.ts
+  const server = new Server(app);
+  return server;
 }

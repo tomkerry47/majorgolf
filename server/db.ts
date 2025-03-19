@@ -1,7 +1,9 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
+import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+
+const { Pool } = pg;
 
 // Initialize PostgreSQL client
 const pool = new Pool({

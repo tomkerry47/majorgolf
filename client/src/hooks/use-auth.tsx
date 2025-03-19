@@ -1,376 +1,123 @@
-import { createContext, useState, useEffect, useContext, ReactNode } from "react";
-import { supabase } from "@/lib/supabase";
-import { useQueryClient } from "@tanstack/react-query";
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { getStoredUser, fetchUserProfile, logout, login, register, isAuthenticated } from '@/lib/auth';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useLocation } from 'wouter';
 
 interface AuthContextType {
-  user: {
-    id: string;
-    email: string;
-    username?: string;
-    avatarUrl?: string;
-  } | null;
+  user: any | null;
+  profile: any | null;
   isAdmin: boolean;
   isLoading: boolean;
-  signUp: (email: string, password: string, username: string, fullName?: string) => Promise<any>;
   signIn: (email: string, password: string) => Promise<any>;
+  signUp: (email: string, password: string, username: string, fullName?: string) => Promise<any>;
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  isAdmin: false,
-  isLoading: true,
-  signUp: async () => null,
-  signIn: async () => null,
-  signOut: async () => {},
-});
+const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<AuthContextType["user"]>(null);
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const queryClient = useQueryClient();
+  const [user, setUser] = useState<any | null>(null);
+  const [profile, setProfile] = useState<any | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [, setLocation] = useLocation();
 
-  // Initialize user data on mount and listen for auth changes
   useEffect(() => {
-    console.log("Setting up auth state listener");
-    
-    // Mark auth state as loading first
-    setIsLoading(true);
-    
-    // Set up auth state listener
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log("Auth state change event:", event, session ? "Has session" : "No session");
-        
-        if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-          console.log("User signed in or updated:", session?.user?.email);
-          
-          if (session?.user) {
-            try {
-              console.log("Processing user data for:", session.user.email);
-              // Try to get user by auth ID first
-              let { data: userData, error } = await supabase
-                .from('users')
-                .select('*')
-                .eq('id', session.user.id)
-                .single();
-              
-              // If that fails, try by email
-              if (error && session.user.email) {
-                console.log("User not found by ID, trying email lookup");
-                const { data: emailUser, error: emailError } = await supabase
-                  .from('users')
-                  .select('*')
-                  .eq('email', session.user.email)
-                  .single();
-                
-                if (!emailError && emailUser) {
-                  console.log("Found user by email:", emailUser);
-                  userData = emailUser;
-                  error = null;
-                  
-                  // Update user ID to match auth if needed
-                  if (emailUser.id !== session.user.id) {
-                    console.log("Updating user ID to match auth ID");
-                    const { error: updateError } = await supabase
-                      .from('users')
-                      .update({ id: session.user.id })
-                      .eq('id', emailUser.id);
-                    
-                    if (updateError) {
-                      console.error("Error updating user ID:", updateError);
-                    }
-                  }
-                }
-              }
-              
-              // If user still not found, create new user record
-              if (error) {
-                console.error("Error fetching user data:", error);
-                console.log("Error details:", error);
-                
-                if (session.user.email) {
-                  console.log("User not found in database, creating user record");
-                  
-                  const username = session.user.email.split('@')[0] || 'user';
-                  const fullName = username;
-                  
-                  const { data: newUser, error: insertError } = await supabase
-                    .from('users')
-                    .insert({
-                      id: session.user.id,
-                      email: session.user.email,
-                      username: username,
-                      fullName: fullName,
-                    })
-                    .select()
-                    .single();
-                  
-                  if (insertError) {
-                    console.error("Error creating user record:", insertError);
-                    
-                    // If insert failed (likely due to duplicate email), try a fetch with email again
-                    // This handles race conditions where the user exists but ID doesn't match
-                    if (insertError.code === '23505') { // Unique constraint violation
-                      const { data: existingUser, error: fetchError } = await supabase
-                        .from('users')
-                        .select('*')
-                        .eq('email', session.user.email)
-                        .single();
-                      
-                      if (!fetchError && existingUser) {
-                        userData = existingUser;
-                      }
-                    }
-                  } else {
-                    console.log("Created new user record:", newUser);
-                    userData = newUser;
-                  }
-                }
-              }
-              
-              // Set user state based on resolved userData
-              if (userData) {
-                console.log("Setting user data:", userData);
-                setUser({
-                  id: session.user.id,
-                  email: session.user.email || '',
-                  username: userData.username,
-                  avatarUrl: userData.avatarUrl,
-                });
-                setIsAdmin(!!userData.isAdmin);
-              } else {
-                // Fallback to basic user info if database sync failed
-                console.log("Using basic user info from auth");
-                setUser({
-                  id: session.user.id,
-                  email: session.user.email || '',
-                });
-                setIsAdmin(false);
-              }
-            } catch (error) {
-              console.error("Error in auth state listener:", error);
-            } finally {
-              setIsLoading(false);
-            }
-          }
-        } else if (event === 'SIGNED_OUT') {
-          console.log("User signed out");
-          setUser(null);
-          setIsAdmin(false);
-          setIsLoading(false);
-          queryClient.clear();
-        } else if (event === 'TOKEN_REFRESHED') {
-          console.log("Token refreshed");
-        } else {
-          // For all other events, ensure loading state is updated
-          setIsLoading(false);
-        }
-      }
-    );
-
-    // Check current session on load
-    const checkCurrentSession = async () => {
+    // Check for active session using localStorage
+    const initAuth = async () => {
       try {
-        console.log("Checking current session...");
-        const { data, error } = await supabase.auth.getSession();
+        setIsLoading(true);
         
-        if (error) {
-          console.error("Error getting session:", error);
-          setIsLoading(false);
-          return;
-        }
-        
-        console.log("Current session:", data.session ? "Found" : "None");
-        
-        if (data.session) {
-          // Session exists, but we'll manually trigger the user data loading
-          // instead of relying solely on the listener
-          console.log("Session user:", data.session.user.email);
+        if (isAuthenticated()) {
+          const storedUser = getStoredUser();
+          setUser(storedUser);
           
-          try {
-            // Try to get user by auth ID first
-            let { data: userData, error } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', data.session.user.id)
-              .single();
-            
-            if (error && data.session.user.email) {
-              console.log("Manual session check: User not found by ID, trying email");
-              const { data: emailUser, error: emailError } = await supabase
-                .from('users')
-                .select('*')
-                .eq('email', data.session.user.email)
-                .single();
-              
-              if (!emailError && emailUser) {
-                console.log("Manual session check: Found user by email");
-                userData = emailUser;
-              }
+          if (storedUser && storedUser.id) {
+            try {
+              const userProfile = await fetchUserProfile(storedUser.id);
+              setProfile(userProfile);
+            } catch (error) {
+              console.error('Error fetching user profile:', error);
+              // If we can't fetch the profile, the token may be invalid
+              // Clear the auth data and redirect to login
+              await logout();
+              setUser(null);
+              setProfile(null);
+              setLocation('/login');
             }
-            
-            if (userData) {
-              console.log("Manual session check: Setting user data");
-              setUser({
-                id: data.session.user.id,
-                email: data.session.user.email || '',
-                username: userData.username,
-                avatarUrl: userData.avatarUrl,
-              });
-              setIsAdmin(!!userData.isAdmin);
-            } else {
-              console.log("Manual session check: User data not found in database");
-              // Basic user info as fallback
-              setUser({
-                id: data.session.user.id,
-                email: data.session.user.email || '',
-              });
-            }
-          } catch (error) {
-            console.error("Manual session check: Error getting user data", error);
-          } finally {
-            setIsLoading(false);
           }
-        } else {
-          // No session
-          console.log("No active session found");
-          setIsLoading(false);
         }
       } catch (error) {
-        console.error("Error checking session:", error);
+        console.error('Error initializing auth:', error);
+      } finally {
         setIsLoading(false);
       }
     };
 
-    checkCurrentSession();
-
-    return () => {
-      if (authListener && authListener.subscription) {
-        authListener.subscription.unsubscribe();
-      }
-    };
-  }, [queryClient]);
-
-  // Simple authentication functions with detailed logging
-  const signUp = async (email: string, password: string, username: string, fullName: string = '') => {
-    try {
-      console.log("Attempting to sign up:", email);
-      
-      // Sign up with Supabase Auth
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { username, full_name: fullName }
-        }
-      });
-      
-      if (error) {
-        console.error("Sign-up error:", error);
-        throw error;
-      }
-      
-      console.log("Sign-up response:", data);
-      
-      // Note: We don't need to manually set user state here
-      // The onAuthStateChange listener will handle that
-      
-      if (data.user) {
-        // Create user in database
-        const { error: insertError } = await supabase
-          .from('users')
-          .insert([
-            {
-              id: data.user.id,
-              email: data.user.email,
-              username,
-            },
-          ]);
-        
-        if (insertError) {
-          console.error("Error inserting user into database:", insertError);
-          throw insertError;
-        }
-      }
-      
-      return data;
-    } catch (error) {
-      console.error("Complete sign-up error:", error);
-      throw error;
-    }
-  };
+    initAuth();
+  }, [setLocation]);
 
   const signIn = async (email: string, password: string) => {
-    try {
-      console.log("Attempting to sign in:", email);
-      
-      // Use simplified approach to avoid race conditions
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-      
-      if (error) {
-        console.error("Sign-in error:", error);
-        throw error;
-      }
-      
-      console.log("Sign-in successful, user:", data.user?.email);
-      
-      // Don't try to create user profile here - let onAuthStateChange handle it
-      // This avoids race conditions between different parts of the code
-      
-      // User state will be set by the onAuthStateChange listener
-      return data;
-    } catch (error) {
-      console.error("Complete sign-in error:", error);
-      throw error;
-    }
+    const result = await login(email, password);
+    setUser(result.user);
+    setProfile(result.user);
+    return result;
+  };
+
+  const signUp = async (email: string, password: string, username: string, fullName: string = username) => {
+    const result = await register({
+      email,
+      password,
+      username,
+      fullName
+    });
+    return result;
   };
 
   const signOut = async () => {
     try {
-      console.log("Attempting to sign out");
-      
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        console.error("Sign-out error:", error);
-        throw error;
-      }
-      
-      console.log("Sign-out successful");
-      
-      // User state will be cleared by the onAuthStateChange listener
+      await logout();
+      setUser(null);
+      setProfile(null);
+      setLocation('/login');
     } catch (error) {
-      console.error("Sign-out error:", error);
-      throw error;
+      console.error('Error signing out:', error);
     }
   };
 
+  // If still loading, show a simple loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="space-y-2 w-[300px]">
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-6 w-full" />
+          <Skeleton className="h-6 w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  const isAdmin = profile?.isAdmin || false;
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAdmin,
-        isLoading,
-        signUp,
-        signIn,
-        signOut,
-      }}
-    >
+    <AuthContext.Provider value={{ 
+      user, 
+      profile, 
+      isAdmin, 
+      isLoading, 
+      signIn, 
+      signUp, 
+      signOut 
+    }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-// Create custom hook for auth context
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}
+};

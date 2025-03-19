@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase, getSession, getCurrentUser, fetchUserProfile } from '@/lib/supabase';
+import { getStoredUser, fetchUserProfile, logout, login, register, isAuthenticated } from '@/lib/auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLocation } from 'wouter';
 
@@ -8,6 +8,8 @@ interface AuthContextType {
   profile: any | null;
   isAdmin: boolean;
   isLoading: boolean;
+  signIn: (email: string, password: string) => Promise<any>;
+  signUp: (email: string, password: string, username: string, fullName?: string) => Promise<any>;
   signOut: () => Promise<void>;
 }
 
@@ -20,19 +22,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    // Check for active session
+    // Check for active session using localStorage
     const initAuth = async () => {
       try {
         setIsLoading(true);
-        const session = await getSession();
         
-        if (session) {
-          const currentUser = await getCurrentUser();
-          setUser(currentUser);
+        if (isAuthenticated()) {
+          const storedUser = getStoredUser();
+          setUser(storedUser);
           
-          if (currentUser) {
-            const userProfile = await fetchUserProfile(currentUser.id);
-            setProfile(userProfile);
+          if (storedUser && storedUser.id) {
+            try {
+              const userProfile = await fetchUserProfile(storedUser.id);
+              setProfile(userProfile);
+            } catch (error) {
+              console.error('Error fetching user profile:', error);
+              // If we can't fetch the profile, the token may be invalid
+              // Clear the auth data and redirect to login
+              await logout();
+              setUser(null);
+              setProfile(null);
+              setLocation('/login');
+            }
           }
         }
       } catch (error) {
@@ -43,33 +54,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     initAuth();
+  }, [setLocation]);
 
-    // Subscribe to auth changes
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setUser(session?.user || null);
-      
-      if (session?.user) {
-        try {
-          const userProfile = await fetchUserProfile(session.user.id);
-          setProfile(userProfile);
-        } catch (error) {
-          console.error('Error fetching user profile:', error);
-        }
-      } else {
-        setProfile(null);
-      }
-      
-      setIsLoading(false);
-    });
+  const signInUser = async (email: string, password: string) => {
+    try {
+      const result = await login(email, password);
+      setUser(result.user);
+      setProfile(result.user);
+      return result;
+    } catch (error) {
+      console.error('Error signing in:', error);
+      throw error;
+    }
+  };
 
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, []);
+  const signUpUser = async (email: string, password: string, username: string, fullName: string = username) => {
+    try {
+      const result = await register({
+        email,
+        password,
+        username,
+        fullName
+      });
+      return result;
+    } catch (error) {
+      console.error('Error signing up:', error);
+      throw error;
+    }
+  };
 
   const signOutUser = async () => {
     try {
-      await supabase.auth.signOut();
+      await logout();
       setUser(null);
       setProfile(null);
       setLocation('/login');
@@ -94,7 +110,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAdmin = profile?.isAdmin || false;
 
   return (
-    <AuthContext.Provider value={{ user, profile, isAdmin, isLoading, signOut: signOutUser }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      profile, 
+      isAdmin, 
+      isLoading, 
+      signIn: signInUser,
+      signUp: signUpUser, 
+      signOut: signOutUser 
+    }}>
       {children}
     </AuthContext.Provider>
   );

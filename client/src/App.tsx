@@ -14,7 +14,7 @@ import NotFound from "@/pages/not-found";
 import PointSystemAdmin from "@/pages/admin/PointSystem";
 import TournamentResultsAdmin from "@/pages/admin/TournamentResults";
 import TournamentResultDetail from "@/pages/admin/TournamentResultDetail";
-import { AuthProvider } from "@/hooks/use-auth";
+import { AuthProvider } from "@/context/AuthContext";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { useState, useEffect } from "react";

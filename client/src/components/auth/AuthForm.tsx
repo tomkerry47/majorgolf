@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@/context/AuthContext";
 import { registerSchema, loginSchema, type LoginCredentials, type RegisterCredentials } from "@shared/schema";
 
 interface AuthFormProps {
@@ -76,39 +76,23 @@ export default function AuthForm({ type }: AuthFormProps) {
         error,
         message: error.message,
         name: error.name,
-        code: error.code,
-        status: error.status,
-        isAuthError: error?.__isAuthError,
+        status: error.status
       });
 
-      // Handle specific error codes from Supabase
+      // Handle error message
       if (error?.message) {
         errorMessage = error.message;
-      }
-      
-      if (error?.__isAuthError) {
-        console.log("Handling Supabase auth error:", error.code);
-        switch (error.code) {
-          case "invalid_credentials":
-            errorTitle = "Invalid credentials";
-            errorMessage = "The email or password you entered is incorrect. Please try again.";
-            break;
-          case "user_not_found":
-            errorTitle = "User not found";
-            errorMessage = "No account exists with this email. Please check your email or register.";
-            break;
-          case "over_email_send_rate_limit":
-            errorTitle = "Too many attempts";
-            errorMessage = "Please wait a few minutes before trying again.";
-            break;
-          case "user_already_exists":
-            errorTitle = "Account exists";
-            errorMessage = "An account with this email already exists. Please log in instead.";
-            break;
-          case "email_not_confirmed":
-            errorTitle = "Email not verified";
-            errorMessage = "Please check your email and verify your account before logging in.";
-            break;
+        
+        // Check for specific error messages
+        if (error.message.includes("credentials") || error.message.includes("password")) {
+          errorTitle = "Invalid credentials";
+          errorMessage = "The email or password you entered is incorrect. Please try again.";
+        } else if (error.message.includes("not found") || error.message.includes("no user")) {
+          errorTitle = "User not found";
+          errorMessage = "No account exists with this email. Please check your email or register.";
+        } else if (error.message.includes("exists") || error.message.includes("in use")) {
+          errorTitle = "Account exists";
+          errorMessage = "An account with this email already exists. Please log in instead.";
         }
       }
 
