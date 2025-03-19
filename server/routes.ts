@@ -244,7 +244,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // First, sign up the user with Supabase Auth
       const { data, error } = await supabase.auth.signUp({
         email: validatedData.email,
-        password: validatedData.password,
+        password: validatedData.password || '', // Ensure password is never undefined
         options: {
           data: {
             username: validatedData.username,
@@ -324,7 +324,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email: validatedData.email,
-        password: validatedData.password
+        password: validatedData.password || '' // Ensure password is never undefined
       });
       
       if (error) throw error;
@@ -1280,7 +1280,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ].filter(id => id !== null && id !== undefined);
       
       // Get user details (ensure we're not passing an empty array)
-      let users = [];
+      interface UserData {
+        id: number;
+        username: string;
+        email: string;
+      }
+      let users: UserData[] = [];
       if (userIds.length > 0) {
         const { data: usersData, error: usersError } = await supabase
           .from('users')
@@ -1292,7 +1297,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Get golfer details (ensure we're not passing an empty array)
-      let golfers = [];
+      interface GolferData {
+        id: number;
+        name: string;
+      }
+      let golfers: GolferData[] = [];
       if (golferIds.length > 0) {
         const { data: golfersData, error: golfersError } = await supabase
           .from('golfers')
