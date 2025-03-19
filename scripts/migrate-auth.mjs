@@ -54,8 +54,8 @@ async function getSupabaseAuthUsers() {
     const { data, error } = await supabase.auth.admin.listUsers();
     if (error) throw error;
     return data.users;
-  } catch (error) {
-    console.error('Error getting Supabase auth users:', error);
+  } catch (err) {
+    console.error('Error getting Supabase auth users:', err);
     console.log('Falling back to getting users from database table');
     
     // Fallback to getting users from the database table

@@ -1,8 +1,7 @@
-// Migration script to transfer data from Supabase to direct PostgreSQL
+// Script to migrate data from Supabase to direct PostgreSQL
 import dotenv from 'dotenv';
 import pg from 'pg';
 import { createClient } from '@supabase/supabase-js';
-import bcrypt from 'bcryptjs';
 
 dotenv.config();
 
@@ -16,157 +15,237 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL
 });
 
-// Create database clients
-const db = {
-  query: (text, params) => pool.query(text, params)
-};
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-// Tables to migrate
-const TABLES = [
-  { name: 'users', primaryKey: 'id' },
-  { name: 'competitions', primaryKey: 'id' },
-  { name: 'golfers', primaryKey: 'id' },
-  { name: 'selections', primaryKey: 'id' },
-  { name: 'results', primaryKey: 'id' },
-  { name: 'points_system', primaryKey: 'id' },
-  { name: 'user_points', primaryKey: 'id' }
-];
-
-// Function to hash passwords for users
-async function hashUserPassword(password) {
-  const salt = await bcrypt.genSalt(10);
-  return bcrypt.hash(password, salt);
-}
-
-// Function to migrate a single table
-async function migrateTable(tableName, primaryKey) {
+// Check if the database connection is successful
+async function testConnection() {
   try {
-    console.log(`\n=== Migrating table: ${tableName} ===`);
+    // Test PostgreSQL connection
+    const pgResult = await pool.query('SELECT NOW()');
+    console.log('PostgreSQL connection successful:', pgResult.rows[0].now);
     
-    // 1. Get data from Supabase
-    const { data: supabaseData, error } = await supabase
-      .from(tableName)
-      .select('*');
+    // Test Supabase connection
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    const { data, error } = await supabase.from('users').select('count');
     
     if (error) {
-      console.error(`Error fetching data from Supabase for ${tableName}:`, error);
+      console.error('Database connection check failed:', error);
       return false;
     }
     
-    console.log(`Found ${supabaseData.length} records in Supabase ${tableName}`);
-    
-    // 2. Check if data exists in PostgreSQL
-    const pgResult = await db.query(`SELECT COUNT(*) FROM ${tableName}`);
-    const pgCount = parseInt(pgResult.rows[0].count);
-    
-    console.log(`Found ${pgCount} records in PostgreSQL ${tableName}`);
-    
-    // 3. Handle users table specially to hash passwords
-    if (tableName === 'users') {
-      for (const user of supabaseData) {
-        if (user.password) {
-          user.password = await hashUserPassword(user.password);
-        }
-      }
-    }
-    
-    // 4. Clear existing data if any and if we have Supabase data
-    if (supabaseData.length > 0 && pgCount > 0) {
-      console.log(`Clearing existing data from PostgreSQL ${tableName}...`);
-      await db.query(`TRUNCATE ${tableName} RESTART IDENTITY CASCADE`);
-    } else if (supabaseData.length === 0) {
-      console.log(`No data to migrate for ${tableName}, skipping...`);
-      return true;
-    }
-    
-    // 5. Insert data into PostgreSQL
-    let successCount = 0;
-    for (const record of supabaseData) {
-      // Extract fields and values
-      const fields = Object.keys(record).filter(key => record[key] !== null);
-      const values = fields.map(field => record[field]);
-      const placeholders = fields.map((_, i) => `$${i + 1}`).join(', ');
-      
-      const insertQuery = `
-        INSERT INTO ${tableName} (${fields.join(', ')})
-        VALUES (${placeholders})
-        ON CONFLICT (${primaryKey}) DO UPDATE
-        SET ${fields.map((field, i) => `${field} = $${i + 1}`).join(', ')}
-      `;
-      
-      try {
-        await db.query(insertQuery, values);
-        successCount++;
-      } catch (insertError) {
-        console.error(`Error inserting record into PostgreSQL ${tableName}:`, insertError);
-        console.error('Record:', record);
-      }
-    }
-    
-    console.log(`Successfully migrated ${successCount}/${supabaseData.length} records for ${tableName}`);
+    console.log('Supabase connection successful:', data);
     return true;
-    
-  } catch (error) {
-    console.error(`Error migrating table ${tableName}:`, error);
+  } catch (err) {
+    console.error('Database connection check failed:', err);
     return false;
   }
 }
 
-// Function to check if database connection is working
-async function checkDatabaseConnection() {
+// Migrate data from Supabase to PostgreSQL
+async function migrateTable(tableName) {
   try {
-    // Check PostgreSQL connection
-    const pgResult = await db.query('SELECT NOW()');
-    console.log('PostgreSQL connection successful:', pgResult.rows[0].now);
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
     
-    // Check Supabase connection
-    const { data, error } = await supabase.from('users').select('count(*)');
-    if (error) throw error;
-    console.log('Supabase connection successful');
+    // Fetch all data from Supabase
+    const { data, error } = await supabase.from(tableName).select('*');
     
+    if (error) {
+      console.error(`Error fetching data from ${tableName}:`, error);
+      return false;
+    }
+    
+    console.log(`Found ${data.length} records in ${tableName}`);
+    
+    if (data.length === 0) {
+      console.log(`Skipping empty table: ${tableName}`);
+      return true;
+    }
+    
+    // Skip clearing existing data to preserve relationships
+    // await pool.query(`DELETE FROM ${tableName}`);
+    
+    // Get column names from the first record
+    const columns = Object.keys(data[0]);
+    const columnNames = columns.map(col => `"${col}"`).join(', ');
+    
+    // Prepare values for insertion
+    for (const record of data) {
+      const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+      const values = columns.map(col => record[col]);
+      
+      // Insert into PostgreSQL
+      await pool.query(
+        `INSERT INTO ${tableName} (${columnNames}) VALUES (${placeholders})`,
+        values
+      );
+    }
+    
+    console.log(`Successfully migrated ${data.length} records to ${tableName}`);
     return true;
-  } catch (error) {
-    console.error('Database connection check failed:', error);
+  } catch (err) {
+    console.error(`Error migrating table ${tableName}:`, err);
+    return false;
+  }
+}
+
+// Disable foreign key constraints
+async function disableForeignKeys() {
+  try {
+    await pool.query('SET session_replication_role = replica;');
+    console.log('Foreign key constraints disabled');
+    return true;
+  } catch (err) {
+    console.error('Failed to disable foreign key constraints:', err);
+    return false;
+  }
+}
+
+// Enable foreign key constraints
+async function enableForeignKeys() {
+  try {
+    await pool.query('SET session_replication_role = DEFAULT;');
+    console.log('Foreign key constraints enabled');
+    return true;
+  } catch (err) {
+    console.error('Failed to enable foreign key constraints:', err);
+    return false;
+  }
+}
+
+// Alternative approach: Upsert data
+async function upsertTable(tableName) {
+  try {
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    
+    // Fetch all data from Supabase
+    const { data, error } = await supabase.from(tableName).select('*');
+    
+    if (error) {
+      console.error(`Error fetching data from ${tableName}:`, error);
+      return false;
+    }
+    
+    console.log(`Found ${data.length} records in ${tableName}`);
+    
+    if (data.length === 0) {
+      console.log(`Skipping empty table: ${tableName}`);
+      return true;
+    }
+    
+    // Get column names from the first record
+    const columns = Object.keys(data[0]);
+    const columnNames = columns.map(col => `"${col}"`).join(', ');
+    
+    // Process records in batches to avoid overwhelming the database
+    const batchSize = 100;
+    for (let i = 0; i < data.length; i += batchSize) {
+      const batch = data.slice(i, i + batchSize);
+      
+      for (const record of batch) {
+        const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+        const values = columns.map(col => record[col]);
+        
+        const updateSet = columns
+          .map((col, i) => `"${col}" = $${i + 1}`)
+          .join(', ');
+        
+        // Upsert query
+        try {
+          await pool.query(
+            `INSERT INTO ${tableName} (${columnNames}) 
+             VALUES (${placeholders})
+             ON CONFLICT (id) 
+             DO UPDATE SET ${updateSet}`,
+            values
+          );
+        } catch (err) {
+          if (err.code !== '42P10') { // Not uniqueness violation
+            throw err;
+          }
+          // Alternative approach for tables without UNIQUE constraint on id
+          try {
+            await pool.query(
+              `INSERT INTO ${tableName} (${columnNames}) VALUES (${placeholders})`,
+              values
+            );
+          } catch (innerErr) {
+            if (innerErr.code === '23505') { // UNIQUE violation
+              // Try updating instead
+              const idValue = record.id;
+              await pool.query(
+                `UPDATE ${tableName} SET ${updateSet} WHERE id = $${columns.length + 1}`,
+                [...values, idValue]
+              );
+            } else {
+              throw innerErr;
+            }
+          }
+        }
+      }
+      
+      console.log(`Processed batch ${i / batchSize + 1} for ${tableName}`);
+    }
+    
+    console.log(`Successfully migrated ${data.length} records to ${tableName}`);
+    return true;
+  } catch (err) {
+    console.error(`Error migrating table ${tableName}:`, err);
     return false;
   }
 }
 
 // Main migration function
-async function runMigration() {
+async function migrateData() {
   try {
     console.log('Starting migration from Supabase to PostgreSQL...');
     
-    // 1. Check database connections
-    const connectionStatus = await checkDatabaseConnection();
-    if (!connectionStatus) {
+    // Test connection
+    const connectionOk = await testConnection();
+    if (!connectionOk) {
       console.error('Database connection check failed, aborting migration.');
       return;
     }
     
-    // 2. Migrate each table
-    const results = [];
-    for (const table of TABLES) {
-      const success = await migrateTable(table.name, table.primaryKey);
-      results.push({ table: table.name, success });
+    // Disable foreign key constraints
+    await disableForeignKeys();
+    
+    // Tables to migrate in an order that respects dependencies
+    const tables = [
+      'points_system',  // No dependencies
+      'users',          // No dependencies
+      'competitions',   // No dependencies
+      'golfers',        // No dependencies
+      'selections',     // Depends on users, competitions, golfers
+      'results',        // Depends on competitions, golfers
+      'user_points'     // Depends on users, competitions
+    ];
+    
+    // Migrate each table
+    for (const table of tables) {
+      console.log(`Migrating table: ${table}`);
+      const success = await upsertTable(table);
+      
+      if (!success) {
+        console.error(`Failed to migrate table: ${table}`);
+      }
     }
     
-    // 3. Print summary
-    console.log('\n=== Migration Summary ===');
-    for (const result of results) {
-      console.log(`${result.table}: ${result.success ? 'SUCCESS' : 'FAILED'}`);
-    }
+    // Re-enable foreign key constraints
+    await enableForeignKeys();
     
-    console.log('\nMigration completed!');
+    console.log('Migration completed successfully!');
   } catch (error) {
     console.error('Migration failed:', error);
   } finally {
-    // Close database connections
+    // Re-enable foreign key constraints if needed
+    try {
+      await enableForeignKeys();
+    } catch (err) {
+      console.error('Error re-enabling foreign keys:', err);
+    }
+    
+    // Close database connection
     await pool.end();
-    process.exit(0);
   }
 }
 
 // Run the migration
-runMigration();
+migrateData();
