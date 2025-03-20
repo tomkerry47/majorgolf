@@ -1,0 +1,168 @@
+Time
+Deployment
+Source
+Log
+2025-03-20 19:36:11.17
+633d929d
+User
+npm notice New major version of npm available! 10.8.2 -> 11.2.0
+2025-03-20 19:41:52.80
+474b5085
+User
+npm notice To update run: npm install -g npm@11.2.0
+2025-03-20 19:41:52.80
+474b5085
+User
+npm notice
+2025-03-20 19:41:52.81
+474b5085
+System
+command finished with error [sh -c npm run start]: exit status 1
+2025-03-20 19:41:53.11
+474b5085
+User
+> rest-express@1.0.0 start
+2025-03-20 19:41:53.11
+474b5085
+User
+> NODE_ENV=production node dist/index.js
+2025-03-20 19:41:53.79
+474b5085
+User
+PostgreSQL direct connection initialized
+2025-03-20 19:41:53.80
+474b5085
+User
+Current env: development
+2025-03-20 19:41:53.80
+474b5085
+User
+Node ENV: development
+2025-03-20 19:41:53.80
+474b5085
+User
+Setting up Vite in development mode
+2025-03-20 19:41:53.88
+474b5085
+User
+Vite setup completed successfully
+2025-03-20 19:41:53.91
+474b5085
+User
+7:41:53 PM [express] serving on port 5000
+2025-03-20 19:41:53.91
+474b5085
+User
+Server is running at http://0.0.0.0:5000
+2025-03-20 19:41:53.91
+474b5085
+User
+Access from outside: http://0.0.0.0:5000
+2025-03-20 19:41:53.91
+474b5085
+User
+Test page available at http://0.0.0.0:5000/test
+2025-03-20 19:41:54.65
+474b5085
+User
+7:41:54 PM [vite] Pre-transform error: Failed to load url /src/main.tsx?v=aZOdRueT9SzlTxA_Ci2rm (resolved id: /src/main.tsx?v=aZOdRueT9SzlTxA_Ci2rm). Does the file exist?
+2025-03-20 19:41:54.70
+474b5085
+System
+command finished with error [sh -c npm run start]: exit status 1
+2025-03-20 19:41:54.97
+474b5085
+User
+> rest-express@1.0.0 start
+2025-03-20 19:41:54.97
+474b5085
+User
+> NODE_ENV=production node dist/index.js
+2025-03-20 19:41:55.64
+474b5085
+User
+PostgreSQL direct connection initialized
+2025-03-20 19:41:55.65
+474b5085
+User
+Current env: development
+2025-03-20 19:41:55.65
+474b5085
+User
+Node ENV: development
+2025-03-20 19:41:55.65
+474b5085
+User
+Setting up Vite in development mode
+2025-03-20 19:41:55.73
+474b5085
+User
+Vite setup completed successfully
+2025-03-20 19:41:55.75
+474b5085
+User
+7:41:55 PM [express] serving on port 5000
+2025-03-20 19:41:55.75
+474b5085
+User
+Server is running at http://0.0.0.0:5000
+2025-03-20 19:41:55.75
+474b5085
+User
+Access from outside: http://0.0.0.0:5000
+2025-03-20 19:41:55.75
+474b5085
+User
+Test page available at http://0.0.0.0:5000/test
+2025-03-20 19:42:07.80
+474b5085
+User
+7:42:07 PM [vite] Pre-transform error: Failed to load url /src/main.tsx?v=GF_wRKZbYdA8TQraqPkBr (resolved id: /src/main.tsx?v=GF_wRKZbYdA8TQraqPkBr). Does the file exist?
+2025-03-20 19:42:08.84
+474b5085
+System
+command finished with error [sh -c npm run start]: exit status 1
+2025-03-20 19:42:12.46
+474b5085
+User
+> rest-express@1.0.0 start
+2025-03-20 19:42:12.46
+474b5085
+User
+> NODE_ENV=production node dist/index.js
+2025-03-20 19:43:00.84
+474b5085
+User
+PostgreSQL direct connection initialized
+2025-03-20 19:43:03.14
+474b5085
+User
+Current env: development
+2025-03-20 19:43:03.14
+474b5085
+User
+Node ENV: development
+2025-03-20 19:43:03.14
+474b5085
+User
+Setting up Vite in development mode
+2025-03-20 19:43:04.40
+633d929d
+System
+system: received signal terminated
+2025-03-20 19:43:04.42
+633d929d
+System
+command finished with error [sh -c npm run start]: signal: terminated
+2025-03-20 19:43:04.44
+633d929d
+System
+main done, exiting
+2025-03-20 19:43:06.42
+633d929d
+System
+system: received signal terminated
+2025-03-20 19:43:06.45
+633d929d
+System
+command finished with error [sh -c npm run start]: signal: terminated
