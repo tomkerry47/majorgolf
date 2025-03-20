@@ -11,6 +11,7 @@ export const users = pgTable("users", {
   password: text("password"),
   avatarUrl: text("avatarUrl"),
   isAdmin: boolean("isAdmin").default(false).notNull(),
+  hasUsedWaiverChip: boolean("hasUsedWaiverChip").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull()
 });
 
@@ -104,6 +105,7 @@ export interface User {
   password?: string;
   avatarUrl?: string;
   isAdmin: boolean;
+  hasUsedWaiverChip: boolean;
   createdAt: string;
 }
 

@@ -9,6 +9,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import AdminHoleInOne from "@/components/admin/AdminHoleInOne";
+import AdminWaiverChips from "@/components/admin/AdminWaiverChips";
 import {
   Card,
   CardContent,
@@ -192,6 +193,7 @@ const Admin = () => {
           <TabsTrigger value="players">Golf Players</TabsTrigger>
           <TabsTrigger value="results">Tournament Results</TabsTrigger>
           <TabsTrigger value="hole-in-ones">Hole-in-Ones</TabsTrigger>
+          <TabsTrigger value="waiver-chips">Waiver Chips</TabsTrigger>
         </TabsList>
         
         <TabsContent value="player-selections">
@@ -463,6 +465,10 @@ const Admin = () => {
         
         <TabsContent value="hole-in-ones">
           <AdminHoleInOne />
+        </TabsContent>
+
+        <TabsContent value="waiver-chips">
+          <AdminWaiverChips />
         </TabsContent>
       </Tabs>
     </div>

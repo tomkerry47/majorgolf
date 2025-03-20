@@ -465,6 +465,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to check captain\'s chip usage' });
     }
   });
+  
+  // Endpoint to check if a user has used their waiver chip
+  app.get('/api/users/:id/has-used-waiver-chip', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      const requestedUserId = parseInt(req.params.id);
+      
+      // Only allow users to check their own status or admins to check any user
+      if (tokenUser.database_id !== requestedUserId && !tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Unauthorized to access this resource' });
+      }
+      
+      const hasUsed = await storage.hasUsedWaiverChip(requestedUserId);
+      res.json({ hasUsedWaiverChip: hasUsed });
+    } catch (error) {
+      console.error('Error checking waiver chip usage:', error);
+      res.status(500).json({ error: 'Failed to check waiver chip usage' });
+    }
+  });
+  
+  // Endpoint for admin to mark a user's waiver chip as used
+  app.post('/api/admin/users/:id/mark-waiver-used', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Forbidden: Admin access required' });
+      }
+      
+      const userId = parseInt(req.params.id);
+      const updatedUser = await storage.markWaiverChipAsUsed(userId);
+      
+      res.status(200).json({
+        message: 'Waiver chip marked as used successfully',
+        user: updatedUser
+      });
+    } catch (error) {
+      console.error('Error marking waiver chip as used:', error);
+      res.status(500).json({ error: 'Failed to mark waiver chip as used' });
+    }
+  });
 
   app.patch('/api/users/:id', async (req: Request, res: Response) => {
     try {

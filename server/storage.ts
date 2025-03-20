@@ -20,6 +20,8 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, userData: Partial<User>): Promise<User>;
   getAllUsers(): Promise<User[]>;
+  hasUsedWaiverChip(userId: number): Promise<boolean>;
+  markWaiverChipAsUsed(userId: number): Promise<User>;
   
   // Competition methods
   getCompetitions(): Promise<Competition[]>;
@@ -372,6 +374,29 @@ export class DatabaseStorage implements IStorage {
       );
     
     return result[0].count > 0;
+  }
+  
+  async hasUsedWaiverChip(userId: number): Promise<boolean> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId));
+    
+    return user?.hasUsedWaiverChip || false;
+  }
+  
+  async markWaiverChipAsUsed(userId: number): Promise<User> {
+    const [updatedUser] = await db
+      .update(users)
+      .set({ hasUsedWaiverChip: true })
+      .where(eq(users.id, userId))
+      .returning();
+    
+    // Convert Date to string for User interface
+    return {
+      ...updatedUser,
+      createdAt: updatedUser.createdAt instanceof Date ? updatedUser.createdAt.toISOString() : updatedUser.createdAt
+    } as User;
   }
   
   async getAllSelections(competitionId: number): Promise<Selection[]> {
