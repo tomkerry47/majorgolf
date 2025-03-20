@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -48,10 +48,23 @@ const registerSchema = z.object({
 type RegisterValues = z.infer<typeof registerSchema>;
 
 const Auth = () => {
+  console.log("Auth component rendered");
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
   const { signIn, signUp } = useAuth();
   const { toast } = useToast();
   const [_, setLocation] = useLocation();
+  
+  useEffect(() => {
+    console.log("Auth component mounted");
+    // Preflight check to ensure API connectivity
+    fetch('/api/competitions')
+      .then(response => {
+        console.log("API connectivity test result:", response.status);
+      })
+      .catch(error => {
+        console.error("API connectivity test failed:", error);
+      });
+  }, []);
 
   // Login form
   const loginForm = useForm<LoginValues>({

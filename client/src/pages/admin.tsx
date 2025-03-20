@@ -41,7 +41,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
-import { redirect } from "wouter/use-location";
+import { useLocation } from "wouter";
 
 // Admin selection update form schema
 const adminSelectionFormSchema = z.object({
@@ -68,8 +68,9 @@ const Admin = () => {
   const [selectedTournamentId, setSelectedTournamentId] = useState<string>("");
 
   // Redirect non-admin users
+  const [, setLocation] = useLocation();
   if (user && !isAdmin) {
-    redirect("/");
+    setLocation("/");
     return null;
   }
 
@@ -110,7 +111,7 @@ const Admin = () => {
   });
 
   // Update form when selection data changes
-  useState(() => {
+  useEffect(() => {
     if (selectedUserId) form.setValue("userId", selectedUserId);
     if (selectedTournamentId) form.setValue("tournamentId", selectedTournamentId);
     
