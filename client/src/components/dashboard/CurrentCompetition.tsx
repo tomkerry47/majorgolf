@@ -3,9 +3,9 @@ import { Link } from "wouter";
 import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/lib/supabase";
 
 interface GolferSelectionProps {
   name: string;
@@ -36,35 +36,52 @@ function GolferSelection({ name, position, points, avatar }: GolferSelectionProp
 }
 
 export default function CurrentCompetition() {
-  const { data: activeCompetition, isLoading } = useQuery({
+  interface Competition {
+    id: number;
+    name: string;
+    venue: string;
+    startDate: string;
+    endDate: string;
+    selectionDeadline: string;
+    isActive: boolean;
+  }
+
+  interface Selection {
+    id: number;
+    golfer: {
+      name: string;
+      avatar?: string;
+    };
+    position?: number;
+    points: number;
+  }
+
+  const { data: activeCompetition, isLoading } = useQuery<Competition>({
     queryKey: ['/api/competitions/active'],
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
-  const { data: userSelections, isLoading: isLoadingSelections } = useQuery({
+  const { data: userSelections, isLoading: isLoadingSelections } = useQuery<Selection[]>({
     queryKey: ['/api/selections/my', activeCompetition?.id],
     enabled: !!activeCompetition?.id,
   });
 
-  // Subscribe to realtime updates for results
+  // Setup polling for results updates instead of realtime subscription
   useEffect(() => {
     if (!activeCompetition?.id) return;
 
-    const channel = supabase
-      .channel(`results-${activeCompetition.id}`)
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'results',
-        filter: `competition_id=eq.${activeCompetition.id}`
-      }, () => {
-        // Invalidate queries when data changes
-        // This will refetch the data automatically
-      })
-      .subscribe();
+    // Poll for updates every 30 seconds
+    const intervalId = setInterval(() => {
+      queryClient.invalidateQueries({
+        queryKey: ['/api/selections/my', activeCompetition.id],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['/api/results', activeCompetition.id],
+      });
+    }, 30000); // 30 seconds
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(intervalId);
     };
   }, [activeCompetition?.id]);
 

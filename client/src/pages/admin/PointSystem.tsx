@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@/context/AuthContext";
 import { useLocation } from "wouter";
 import AdminPointSystem from "@/components/admin/AdminPointSystem";
 

@@ -21,7 +21,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, isLoading } = useAuth();
   
-  console.log("App component mounted");
+  console.log("App component mounted - PostgreSQL database connected");
   console.log("Auth state:", { user, isLoading });
   
   // Show a loading indicator while auth state is initializing

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@/context/AuthContext";
 import StatCard from "@/components/stat-card";
 import TournamentCard from "@/components/tournament-card";
 import { CalendarIcon } from "lucide-react";

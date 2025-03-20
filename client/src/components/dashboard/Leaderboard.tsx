@@ -18,38 +18,52 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/lib/supabase";
+import { queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Leaderboard() {
+  interface Competition {
+    id: number;
+    name: string;
+    venue: string;
+    startDate: string;
+    endDate: string;
+  }
+  
+  interface LeaderboardEntry {
+    userId: number;
+    username: string;
+    fullName?: string;
+    avatar?: string;
+    competitionsPlayed: number;
+    totalCompetitions: number;
+    totalPoints: number;
+  }
+  
   const { user } = useAuth();
   const [selectedCompetition, setSelectedCompetition] = useState<number | 'all'>('all');
   
-  const { data: competitions } = useQuery({
+  const { data: competitions } = useQuery<Competition[]>({
     queryKey: ['/api/competitions'],
   });
   
-  const { data: leaderboard, isLoading } = useQuery({
+  const { data: leaderboard, isLoading } = useQuery<LeaderboardEntry[]>({
     queryKey: ['/api/leaderboard', selectedCompetition],
   });
   
-  // Subscribe to realtime updates
+  // Set up polling for leaderboard updates
   useEffect(() => {
-    const channel = supabase
-      .channel('leaderboard_changes')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'results'
-      }, () => {
-        // Invalidate the query to refresh data
-      })
-      .subscribe();
-      
+    // Poll for updates every 30 seconds
+    const intervalId = setInterval(() => {
+      queryClient.invalidateQueries({
+        queryKey: ['/api/leaderboard', selectedCompetition],
+      });
+    }, 30000); // 30 seconds
+    
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(intervalId);
     };
-  }, []);
+  }, [selectedCompetition]);
   
   const currentUserId = user?.id;
   

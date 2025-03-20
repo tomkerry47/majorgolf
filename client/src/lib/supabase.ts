@@ -1,11 +1,10 @@
-// This file now serves as a compatibility layer for auth functionality
-// It used to use Supabase but now delegates to our direct PostgreSQL implementation
+// This file serves as a compatibility layer for components that were previously using Supabase
+// We've migrated to direct PostgreSQL but maintain this interface for backward compatibility
 
 import { login, register, logout, fetchUserProfile as fetchProfile } from '@/lib/auth';
 
-console.log('Supabase client initialized'); // Keep for compatibility
-
-// Empty client object for compatibility with existing code
+// This is a stub to maintain compatibility during the transition
+// No actual Supabase functionality is used anymore - all operations use direct PostgreSQL
 export const supabase = {
   auth: {
     signUp: () => Promise.resolve({ data: null, error: null }),
@@ -34,11 +33,12 @@ export const supabase = {
       })
     })
   }),
-  channel: () => ({
-    on: () => ({
-      subscribe: () => ({})
+  channel: (channelName?: string) => ({
+    on: (eventType: string, config: any, callback: any) => ({
+      subscribe: () => ({ })
     })
-  })
+  }),
+  removeChannel: (channel: any) => { }
 };
 
 // Utility functions for auth - now using our direct PostgreSQL implementation
@@ -110,26 +110,19 @@ export async function fetchUserProfile(userId: string) {
   }
 }
 
-// Realtime subscription helpers
+// These realtime subscription helpers are deprecated
+// They have been replaced with query invalidation in the UI components
+// Keeping the stubs here for backward compatibility
 export function subscribeToCompetition(competitionId: number, callback: (payload: any) => void) {
-  return supabase
-    .channel(`competition:${competitionId}`)
-    .on('postgres_changes', { 
-      event: '*', 
-      schema: 'public', 
-      table: 'results',
-      filter: `competitionId=eq.${competitionId}`
-    }, callback)
-    .subscribe();
+  console.log('Realtime subscription replaced with polling, competitionId:', competitionId);
+  return {
+    unsubscribe: () => {}
+  };
 }
 
 export function subscribeToLeaderboard(callback: (payload: any) => void) {
-  return supabase
-    .channel('leaderboard')
-    .on('postgres_changes', { 
-      event: '*', 
-      schema: 'public', 
-      table: 'results'
-    }, callback)
-    .subscribe();
+  console.log('Realtime subscription replaced with polling for leaderboard');
+  return {
+    unsubscribe: () => {}
+  };
 }

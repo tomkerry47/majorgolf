@@ -54,13 +54,7 @@ export const comparePassword = async (password: string, hashedPassword: string) 
   return bcrypt.compare(password, hashedPassword);
 };
 
-// Export dummy Supabase client for backward compatibility
-export const supabase = {
-  auth: {
-    getUser: () => Promise.resolve({ data: { user: null }, error: null }),
-    getSession: () => Promise.resolve({ data: { session: null }, error: null }),
-    signOut: () => Promise.resolve({ error: null })
-  }
-};
+// No need for Supabase compatibility layer anymore - the transition is complete
+// All operations now directly use PostgreSQL
 
 console.log('PostgreSQL direct connection initialized');
