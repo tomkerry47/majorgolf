@@ -85,6 +85,16 @@ export const wildcardGolfers = pgTable("wildcard_golfers", {
   updatedAt: timestamp("updatedAt").defaultNow().notNull()
 });
 
+export const holeInOnes = pgTable("hole_in_ones", {
+  id: serial("id").primaryKey(),
+  competitionId: integer("competitionId").notNull(),
+  golferId: integer("golferId").notNull(),
+  holeNumber: integer("holeNumber").notNull(),
+  roundNumber: integer("roundNumber").notNull(), // 1-4 for typical tournaments
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull()
+});
+
 // Define types based on Drizzle schema
 export interface User {
   id: number;
@@ -171,6 +181,16 @@ export interface WildcardGolfer {
   updatedAt: string;
 }
 
+export interface HoleInOne {
+  id: number;
+  competitionId: number;
+  golferId: number;
+  holeNumber: number;
+  roundNumber: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Validation schemas for insert operations using drizzle-zod
 export const insertUserSchema = createInsertSchema(users)
   .omit({ id: true, createdAt: true });
@@ -200,6 +220,9 @@ export const insertUserPointsSchema = createInsertSchema(userPoints)
 
 export const insertWildcardGolferSchema = createInsertSchema(wildcardGolfers)
   .omit({ id: true, createdAt: true, updatedAt: true });
+  
+export const insertHoleInOneSchema = createInsertSchema(holeInOnes)
+  .omit({ id: true, createdAt: true, updatedAt: true });
 
 // Type definitions for typescript usage
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -210,6 +233,16 @@ export type InsertResult = z.infer<typeof insertResultSchema>;
 export type InsertPointSystem = z.infer<typeof insertPointSystemSchema>;
 export type InsertUserPoints = z.infer<typeof insertUserPointsSchema>;
 export type InsertWildcardGolfer = z.infer<typeof insertWildcardGolferSchema>;
+export type InsertHoleInOne = z.infer<typeof insertHoleInOneSchema>;
+
+// Hole in One form schema with validation
+export const holeInOneFormSchema = insertHoleInOneSchema
+  .extend({
+    competitionId: z.number(),
+    golferId: z.number().refine(val => val > 0, "Please select a golfer"),
+    holeNumber: z.number().min(1).max(18, "Hole number must be between 1 and 18"),
+    roundNumber: z.number().min(1).max(4, "Round number must be between 1 and 4")
+  });
 
 // Login and Registration schemas
 export const loginSchema = z.object({

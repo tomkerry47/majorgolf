@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import AdminHoleInOne from "@/components/admin/AdminHoleInOne";
 import {
   Card,
   CardContent,
@@ -190,6 +191,7 @@ const Admin = () => {
           <TabsTrigger value="tournaments">Tournaments</TabsTrigger>
           <TabsTrigger value="players">Golf Players</TabsTrigger>
           <TabsTrigger value="results">Tournament Results</TabsTrigger>
+          <TabsTrigger value="hole-in-ones">Hole-in-Ones</TabsTrigger>
         </TabsList>
         
         <TabsContent value="player-selections">
@@ -457,6 +459,10 @@ const Admin = () => {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+        
+        <TabsContent value="hole-in-ones">
+          <AdminHoleInOne />
         </TabsContent>
       </Tabs>
     </div>

@@ -6,7 +6,8 @@ import {
   registerSchema,
   selectionFormSchema,
   insertResultSchema,
-  insertCompetitionSchema
+  insertCompetitionSchema,
+  holeInOneFormSchema
 } from '@shared/schema';
 import { generateToken, verifyToken, comparePassword } from './db';
 import { ZodError } from 'zod';
@@ -1204,6 +1205,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Delete wildcard golfer error:', error);
       res.status(500).json({ error: 'Failed to delete wildcard golfer' });
+    }
+  });
+
+  // Hole In One endpoints
+  app.get('/api/admin/hole-in-ones/:competitionId', async (req: Request, res: Response) => {
+    try {
+      const competitionId = parseInt(req.params.competitionId);
+      const holeInOnes = await storage.getHoleInOnes(competitionId);
+      
+      // Get golfer details for each hole-in-one
+      const golferMap = new Map();
+      const golfers = await storage.getGolfers();
+      golfers.forEach(golfer => golferMap.set(golfer.id, golfer));
+      
+      const holeInOnesWithGolferDetails = holeInOnes.map(hio => ({
+        ...hio,
+        golfer: golferMap.get(hio.golferId)
+      }));
+      
+      res.json(holeInOnesWithGolferDetails);
+    } catch (error) {
+      console.error('Error fetching hole-in-ones:', error);
+      res.status(500).json({ error: 'Failed to fetch hole-in-ones' });
+    }
+  });
+  
+  app.post('/api/admin/hole-in-ones', async (req: Request, res: Response) => {
+    try {
+      const validationResult = holeInOneFormSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: 'Invalid hole-in-one data', 
+          details: validationResult.error.format()
+        });
+      }
+      
+      const holeInOneData = validationResult.data;
+      
+      // Add timestamp fields if not provided
+      if (!holeInOneData.createdAt) {
+        holeInOneData.createdAt = new Date().toISOString();
+      }
+      if (!holeInOneData.updatedAt) {
+        holeInOneData.updatedAt = new Date().toISOString();
+      }
+      
+      const holeInOne = await storage.createHoleInOne(holeInOneData);
+      res.status(201).json(holeInOne);
+    } catch (error) {
+      console.error('Error creating hole-in-one:', error);
+      res.status(500).json({ error: 'Failed to create hole-in-one' });
+    }
+  });
+  
+  app.patch('/api/admin/hole-in-ones/:id', async (req: Request, res: Response) => {
+    try {
+      const holeInOneId = parseInt(req.params.id);
+      
+      // We don't validate the entire object since this is a partial update
+      const holeInOneData = req.body;
+      
+      // Add updated timestamp
+      holeInOneData.updatedAt = new Date().toISOString();
+      
+      const updatedHoleInOne = await storage.updateHoleInOne(holeInOneId, holeInOneData);
+      res.json(updatedHoleInOne);
+    } catch (error) {
+      console.error('Error updating hole-in-one:', error);
+      res.status(500).json({ error: 'Failed to update hole-in-one' });
+    }
+  });
+  
+  app.delete('/api/admin/hole-in-ones/:id', async (req: Request, res: Response) => {
+    try {
+      const holeInOneId = parseInt(req.params.id);
+      await storage.deleteHoleInOne(holeInOneId);
+      res.status(200).json({ message: 'Hole-in-one deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting hole-in-one:', error);
+      res.status(500).json({ error: 'Failed to delete hole-in-one' });
+    }
+  });
+  
+  // User-facing API endpoint to see hole-in-ones for a competition
+  app.get('/api/competitions/:competitionId/hole-in-ones', async (req: Request, res: Response) => {
+    try {
+      const competitionId = parseInt(req.params.competitionId);
+      const holeInOnes = await storage.getHoleInOnes(competitionId);
+      
+      // Get golfer details for each hole-in-one
+      const golferMap = new Map();
+      const golfers = await storage.getGolfers();
+      golfers.forEach(golfer => golferMap.set(golfer.id, golfer));
+      
+      const holeInOnesWithGolferDetails = holeInOnes.map(hio => ({
+        ...hio,
+        golfer: golferMap.get(hio.golferId)
+      }));
+      
+      res.json(holeInOnesWithGolferDetails);
+    } catch (error) {
+      console.error('Error fetching hole-in-ones:', error);
+      res.status(500).json({ error: 'Failed to fetch hole-in-ones' });
     }
   });
 

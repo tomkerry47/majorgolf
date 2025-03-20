@@ -6,7 +6,8 @@ import {
   results, type Result, type InsertResult,
   userPoints, type UserPoints, type InsertUserPoints,
   pointSystem, type PointSystem, type InsertPointSystem,
-  wildcardGolfers, type WildcardGolfer, type InsertWildcardGolfer
+  wildcardGolfers, type WildcardGolfer, type InsertWildcardGolfer,
+  holeInOnes, type HoleInOne, type InsertHoleInOne
 } from "@shared/schema";
 import { db, pgClient, hashPassword } from "./db";
 import { eq, and, sql, desc, asc, count } from "drizzle-orm";
@@ -70,6 +71,14 @@ export interface IStorage {
   
   // Leaderboard methods
   getLeaderboard(competitionId?: number): Promise<any[]>;
+  
+  // Hole In One methods
+  getHoleInOnes(competitionId: number): Promise<HoleInOne[]>;
+  getHoleInOneById(id: number): Promise<HoleInOne | undefined>;
+  getGolferHoleInOnes(competitionId: number, golferId: number): Promise<HoleInOne[]>;
+  createHoleInOne(holeInOne: InsertHoleInOne): Promise<HoleInOne>;
+  updateHoleInOne(id: number, holeInOneData: Partial<HoleInOne>): Promise<HoleInOne>;
+  deleteHoleInOne(id: number): Promise<void>;
 }
 
 // Implementation of IStorage using Drizzle ORM with PostgreSQL
@@ -762,6 +771,113 @@ export class DatabaseStorage implements IStorage {
     
     const result = await pgClient.query(overallLeaderboardQuery);
     return result.rows;
+  }
+
+  // Hole In One methods
+  async getHoleInOnes(competitionId: number): Promise<HoleInOne[]> {
+    const holeInOnesData = await db
+      .select()
+      .from(holeInOnes)
+      .where(eq(holeInOnes.competitionId, competitionId))
+      .orderBy(holeInOnes.roundNumber, holeInOnes.holeNumber);
+      
+    // Convert Date to string for HoleInOne interface
+    return holeInOnesData.map(h => ({
+      ...h,
+      createdAt: h.createdAt instanceof Date ? h.createdAt.toISOString() : h.createdAt,
+      updatedAt: h.updatedAt instanceof Date ? h.updatedAt.toISOString() : h.updatedAt
+    })) as HoleInOne[];
+  }
+  
+  async getHoleInOneById(id: number): Promise<HoleInOne | undefined> {
+    const [holeInOne] = await db
+      .select()
+      .from(holeInOnes)
+      .where(eq(holeInOnes.id, id));
+    
+    if (!holeInOne) return undefined;
+    
+    // Convert Date to string for HoleInOne interface
+    return {
+      ...holeInOne,
+      createdAt: holeInOne.createdAt instanceof Date ? holeInOne.createdAt.toISOString() : holeInOne.createdAt,
+      updatedAt: holeInOne.updatedAt instanceof Date ? holeInOne.updatedAt.toISOString() : holeInOne.updatedAt
+    } as HoleInOne;
+  }
+  
+  async getGolferHoleInOnes(competitionId: number, golferId: number): Promise<HoleInOne[]> {
+    const holeInOnesData = await db
+      .select()
+      .from(holeInOnes)
+      .where(
+        and(
+          eq(holeInOnes.competitionId, competitionId),
+          eq(holeInOnes.golferId, golferId)
+        )
+      )
+      .orderBy(holeInOnes.roundNumber, holeInOnes.holeNumber);
+      
+    // Convert Date to string for HoleInOne interface
+    return holeInOnesData.map(h => ({
+      ...h,
+      createdAt: h.createdAt instanceof Date ? h.createdAt.toISOString() : h.createdAt,
+      updatedAt: h.updatedAt instanceof Date ? h.updatedAt.toISOString() : h.updatedAt
+    })) as HoleInOne[];
+  }
+  
+  async createHoleInOne(holeInOne: InsertHoleInOne): Promise<HoleInOne> {
+    // Convert string dates to Date objects for database
+    const holeInOneToInsert: any = { ...holeInOne };
+    
+    if (typeof holeInOneToInsert.createdAt === 'string') {
+      holeInOneToInsert.createdAt = new Date(holeInOneToInsert.createdAt);
+    }
+    if (typeof holeInOneToInsert.updatedAt === 'string') {
+      holeInOneToInsert.updatedAt = new Date(holeInOneToInsert.updatedAt);
+    }
+    
+    const [newHoleInOne] = await db
+      .insert(holeInOnes)
+      .values(holeInOneToInsert)
+      .returning();
+    
+    // Convert Date to string for HoleInOne interface
+    return {
+      ...newHoleInOne,
+      createdAt: newHoleInOne.createdAt instanceof Date ? newHoleInOne.createdAt.toISOString() : newHoleInOne.createdAt,
+      updatedAt: newHoleInOne.updatedAt instanceof Date ? newHoleInOne.updatedAt.toISOString() : newHoleInOne.updatedAt
+    } as HoleInOne;
+  }
+  
+  async updateHoleInOne(id: number, holeInOneData: Partial<HoleInOne>): Promise<HoleInOne> {
+    // Convert string dates to Date objects for database
+    const dataToUpdate: any = { ...holeInOneData };
+    
+    if (typeof dataToUpdate.createdAt === 'string') {
+      dataToUpdate.createdAt = new Date(dataToUpdate.createdAt);
+    }
+    if (typeof dataToUpdate.updatedAt === 'string') {
+      dataToUpdate.updatedAt = new Date(dataToUpdate.updatedAt);
+    }
+    
+    const [holeInOne] = await db
+      .update(holeInOnes)
+      .set(dataToUpdate)
+      .where(eq(holeInOnes.id, id))
+      .returning();
+    
+    // Convert Date to string for HoleInOne interface
+    return {
+      ...holeInOne,
+      createdAt: holeInOne.createdAt instanceof Date ? holeInOne.createdAt.toISOString() : holeInOne.createdAt,
+      updatedAt: holeInOne.updatedAt instanceof Date ? holeInOne.updatedAt.toISOString() : holeInOne.updatedAt
+    } as HoleInOne;
+  }
+  
+  async deleteHoleInOne(id: number): Promise<void> {
+    await db
+      .delete(holeInOnes)
+      .where(eq(holeInOnes.id, id));
   }
 }
 
