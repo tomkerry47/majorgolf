@@ -1,6 +1,6 @@
 import { 
   users, type User, type InsertUser, 
-  competitions as competitionsTable, type Competition, type InsertCompetition,
+  competitions, type Competition, type InsertCompetition,
   golfers, type Golfer, type InsertGolfer,
   selections, type Selection, type InsertSelection,
   results, type Result, type InsertResult,
@@ -77,24 +77,12 @@ export class DatabaseStorage implements IStorage {
   // User methods
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
-    if (user) {
-      return {
-        ...user,
-        createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
-      } as User;
-    }
-    return undefined;
+    return user as User | undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
-    if (user) {
-      return {
-        ...user,
-        createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
-      } as User;
-    }
-    return undefined;
+    return user as User | undefined;
   }
   
   async getUserByEmail(email: string): Promise<User | undefined> {
@@ -103,14 +91,10 @@ export class DatabaseStorage implements IStorage {
       const [user] = await db.select().from(users).where(eq(users.email, email));
       if (user) {
         console.log(`User found: ${user.username} (ID: ${user.id})`);
-        return {
-          ...user,
-          createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
-        } as User;
       } else {
         console.log(`No user found for email: ${email}`);
       }
-      return undefined;
+      return user as User | undefined;
     } catch (error) {
       console.error(`Error looking up user by email: ${email}`, error);
       return undefined;
@@ -127,11 +111,7 @@ export class DatabaseStorage implements IStorage {
       .insert(users)
       .values(insertUser)
       .returning();
-    
-    return {
-      ...user,
-      createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
-    } as User;
+    return user as User;
   }
   
   async updateUser(id: number, userData: Partial<User>): Promise<User> {
@@ -151,41 +131,34 @@ export class DatabaseStorage implements IStorage {
       .set(dataToUpdate)
       .where(eq(users.id, id))
       .returning();
-    
-    return {
-      ...user,
-      createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
-    } as User;
+    return user as User;
   }
   
   async getAllUsers(): Promise<User[]> {
     const userList = await db.select().from(users).orderBy(users.username);
-    return userList.map(user => ({
-      ...user,
-      createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
-    })) as User[];
+    return userList as User[];
   }
   
   // Competition methods
   async getCompetitions(): Promise<Competition[]> {
-    const competitionsResult = await db
+    const competitionsList = await db
       .select()
-      .from(competitionsTable)
-      .orderBy(competitionsTable.startDate);
-    return competitionsResult as unknown as Competition[];
+      .from(competitions)
+      .orderBy(competitions.startDate);
+    return competitionsList as unknown as Competition[];
   }
   
   async getActiveCompetitions(): Promise<Competition[]> {
     const activeCompetitions = await db
       .select()
-      .from(competitionsTable)
+      .from(competitions)
       .where(
         and(
-          eq(competitionsTable.isActive, true),
-          eq(competitionsTable.isComplete, false)
+          eq(competitions.isActive, true),
+          eq(competitions.isComplete, false)
         )
       )
-      .orderBy(competitionsTable.startDate);
+      .orderBy(competitions.startDate);
     return activeCompetitions as unknown as Competition[];
   }
   
@@ -193,31 +166,31 @@ export class DatabaseStorage implements IStorage {
     const currentDate = new Date();
     const upcomingCompetitions = await db
       .select()
-      .from(competitionsTable)
+      .from(competitions)
       .where(
         and(
-          eq(competitionsTable.isActive, false),
-          eq(competitionsTable.isComplete, false)
+          eq(competitions.isActive, false),
+          eq(competitions.isComplete, false)
         )
       )
-      .orderBy(competitionsTable.startDate);
+      .orderBy(competitions.startDate);
     return upcomingCompetitions as unknown as Competition[];
   }
   
   async getCompletedCompetitions(): Promise<Competition[]> {
     const completedCompetitions = await db
       .select()
-      .from(competitionsTable)
-      .where(eq(competitionsTable.isComplete, true))
-      .orderBy(desc(competitionsTable.endDate));
+      .from(competitions)
+      .where(eq(competitions.isComplete, true))
+      .orderBy(desc(competitions.endDate));
     return completedCompetitions as unknown as Competition[];
   }
   
   async getCompetitionById(id: number): Promise<Competition | undefined> {
     const [competition] = await db
       .select()
-      .from(competitionsTable)
-      .where(eq(competitionsTable.id, id));
+      .from(competitions)
+      .where(eq(competitions.id, id));
     return competition as unknown as Competition | undefined;
   }
   
@@ -236,7 +209,7 @@ export class DatabaseStorage implements IStorage {
     }
     
     const [newCompetition] = await db
-      .insert(competitionsTable)
+      .insert(competitions)
       .values(competitionToInsert)
       .returning();
     return newCompetition as unknown as Competition;
@@ -244,9 +217,9 @@ export class DatabaseStorage implements IStorage {
   
   async updateCompetition(id: number, competitionData: Partial<Competition>): Promise<Competition> {
     const [competition] = await db
-      .update(competitionsTable)
+      .update(competitions)
       .set(competitionData)
-      .where(eq(competitionsTable.id, id))
+      .where(eq(competitions.id, id))
       .returning();
     return competition as unknown as Competition;
   }

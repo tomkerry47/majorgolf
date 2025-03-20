@@ -42,8 +42,10 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
       route === '/leaderboard GET' ||
       route === '/leaderboard/:competitionId GET' ||
       route === '/test-leaderboard GET' ||
+      route === '/dashboard/stats GET' ||
       // Match dynamic routes better
-      path.match(/^\/leaderboard\/\d+$/) && method === 'GET'
+      (path.match(/^\/leaderboard\/\d+$/) && method === 'GET') ||
+      (path.match(/^\/competitions\/\d+$/) && method === 'GET')
     ) {
       console.log('Public route detected, skipping auth');
       return next();
@@ -258,14 +260,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ success: true });
   });
 
-  // Apply JWT validation middleware
-  app.use('/api', validateJWT);
+  // Competitions without auth
+  app.get('/api/competitions', async (req: Request, res: Response) => {
+    try {
+      const competitions = await storage.getCompetitions();
+      res.json(competitions);
+    } catch (error) {
+      console.error('Get competitions error:', error);
+      res.status(500).json({ error: 'Failed to fetch competitions' });
+    }
+  });
 
-  // User dashboard
+  app.get('/api/competitions/all', async (req: Request, res: Response) => {
+    try {
+      const competitions = await storage.getCompetitions();
+      res.json(competitions);
+    } catch (error) {
+      console.error('Get all competitions error:', error);
+      res.status(500).json({ error: 'Failed to fetch competitions' });
+    }
+  });
+
+  app.get('/api/competitions/active', async (req: Request, res: Response) => {
+    try {
+      const activeCompetitions = await storage.getActiveCompetitions();
+      res.json(activeCompetitions);
+    } catch (error) {
+      console.error('Get active competitions error:', error);
+      res.status(500).json({ error: 'Failed to fetch active competitions' });
+    }
+  });
+
+  app.get('/api/competitions/upcoming', async (req: Request, res: Response) => {
+    try {
+      const upcomingCompetitions = await storage.getUpcomingCompetitions();
+      res.json(upcomingCompetitions);
+    } catch (error) {
+      console.error('Get upcoming competitions error:', error);
+      res.status(500).json({ error: 'Failed to fetch upcoming competitions' });
+    }
+  });
+
+  app.get('/api/competitions/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const competition = await storage.getCompetitionById(parseInt(id));
+      
+      if (!competition) {
+        return res.status(404).json({ error: 'Competition not found' });
+      }
+      
+      res.json(competition);
+    } catch (error) {
+      console.error('Get competition error:', error);
+      res.status(500).json({ error: 'Failed to fetch competition' });
+    }
+  });
+
+  app.get('/api/golfers', async (req: Request, res: Response) => {
+    try {
+      const golfers = await storage.getGolfers();
+      res.json(golfers);
+    } catch (error) {
+      console.error('Get golfers error:', error);
+      res.status(500).json({ error: 'Failed to fetch golfers' });
+    }
+  });
+
   app.get('/api/dashboard/stats', async (req: Request, res: Response) => {
     try {
+      // This is a special case where we need to detect if a user is logged in
+      // If not, we'll return empty statistics
+      const authHeader = req.headers.authorization;
+      let token = '';
+      
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      } else if (req.cookies && req.cookies.authToken) {
+        token = req.cookies.authToken;
+      }
+      
+      // If no token, return default stats
+      if (!token) {
+        return res.json({
+          activeCompetitions: 0,
+          nextDeadline: "",
+          totalPoints: 0,
+          currentRank: 'N/A'
+        });
+      }
+      
+      // Try to verify token
+      const decodedToken = verifyToken(token) as any;
+      if (!decodedToken) {
+        return res.json({
+          activeCompetitions: 0,
+          nextDeadline: "",
+          totalPoints: 0,
+          currentRank: 'N/A'
+        });
+      }
+      
+      // Find user
+      const user = await storage.getUserByEmail(decodedToken.email);
+      if (!user) {
+        return res.json({
+          activeCompetitions: 0,
+          nextDeadline: "",
+          totalPoints: 0,
+          currentRank: 'N/A'
+        });
+      }
+      
       console.time('dashboard-stats');
-      const userId = (req as any).user.database_id;
+      const userId = user.id;
       
       // Get active competitions
       const activeCompetitions = await storage.getActiveCompetitions();
@@ -314,6 +422,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to fetch dashboard stats' });
     }
   });
+
+  // Apply JWT validation middleware for protected routes
+  app.use('/api', validateJWT);
+
+  // Protected routes below this line
 
   // User profile
   app.get('/api/users/:id', async (req: Request, res: Response) => {
@@ -380,62 +493,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Competitions
-  app.get('/api/competitions', async (req: Request, res: Response) => {
-    try {
-      const competitions = await storage.getCompetitions();
-      res.json(competitions);
-    } catch (error) {
-      console.error('Get competitions error:', error);
-      res.status(500).json({ error: 'Failed to fetch competitions' });
-    }
-  });
-
-  app.get('/api/competitions/all', async (req: Request, res: Response) => {
-    try {
-      const competitions = await storage.getCompetitions();
-      res.json(competitions);
-    } catch (error) {
-      console.error('Get all competitions error:', error);
-      res.status(500).json({ error: 'Failed to fetch competitions' });
-    }
-  });
-
-  app.get('/api/competitions/active', async (req: Request, res: Response) => {
-    try {
-      const activeCompetitions = await storage.getActiveCompetitions();
-      res.json(activeCompetitions);
-    } catch (error) {
-      console.error('Get active competitions error:', error);
-      res.status(500).json({ error: 'Failed to fetch active competitions' });
-    }
-  });
-
-  app.get('/api/competitions/upcoming', async (req: Request, res: Response) => {
-    try {
-      const upcomingCompetitions = await storage.getUpcomingCompetitions();
-      res.json(upcomingCompetitions);
-    } catch (error) {
-      console.error('Get upcoming competitions error:', error);
-      res.status(500).json({ error: 'Failed to fetch upcoming competitions' });
-    }
-  });
-
-  app.get('/api/competitions/:id', async (req: Request, res: Response) => {
-    try {
-      const { id } = req.params;
-      const competition = await storage.getCompetitionById(parseInt(id));
-      
-      if (!competition) {
-        return res.status(404).json({ error: 'Competition not found' });
-      }
-      
-      res.json(competition);
-    } catch (error) {
-      console.error('Get competition error:', error);
-      res.status(500).json({ error: 'Failed to fetch competition' });
-    }
-  });
+  // Protected competition endpoints
 
   app.post('/api/competitions', async (req: Request, res: Response) => {
     try {
