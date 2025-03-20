@@ -1084,6 +1084,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Wildcard Golfers API endpoints
+  app.get('/api/admin/wildcard-golfers/:competitionId', async (req: Request, res: Response) => {
+    try {
+      const { competitionId } = req.params;
+      const compId = parseInt(competitionId);
+      
+      // Get wildcard golfers for the competition
+      const wildcardGolfers = await storage.getWildcardGolfers(compId);
+      
+      res.json(wildcardGolfers);
+    } catch (error) {
+      console.error('Get wildcard golfers error:', error);
+      res.status(500).json({ error: 'Failed to get wildcard golfers' });
+    }
+  });
+
+  app.post('/api/admin/wildcard-golfers', async (req: Request, res: Response) => {
+    try {
+      const { competitionId, golferId, isWildcard } = req.body;
+      
+      if (!competitionId || !golferId) {
+        return res.status(400).json({ error: 'Competition ID and Golfer ID are required' });
+      }
+      
+      // Check if the wildcard entry already exists
+      const existingWildcard = await storage.getWildcardGolfer(competitionId, golferId);
+      
+      let wildcardGolfer;
+      
+      if (existingWildcard) {
+        // Update existing wildcard
+        wildcardGolfer = await storage.updateWildcardGolfer(existingWildcard.id, {
+          isWildcard: isWildcard !== undefined ? isWildcard : true
+        });
+      } else {
+        // Create new wildcard
+        wildcardGolfer = await storage.createWildcardGolfer({
+          competitionId,
+          golferId,
+          isWildcard: isWildcard !== undefined ? isWildcard : true
+        });
+      }
+      
+      res.status(201).json(wildcardGolfer);
+    } catch (error) {
+      console.error('Create/update wildcard golfer error:', error);
+      res.status(500).json({ error: 'Failed to create/update wildcard golfer' });
+    }
+  });
+
+  app.delete('/api/admin/wildcard-golfers/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const wildcardId = parseInt(id);
+      
+      // Delete the wildcard
+      await storage.deleteWildcardGolfer(wildcardId);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Delete wildcard golfer error:', error);
+      res.status(500).json({ error: 'Failed to delete wildcard golfer' });
+    }
+  });
+
   // Return a new server but don't start it
   // This will be started in index.ts
   const server = new Server(app);

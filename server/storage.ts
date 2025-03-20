@@ -1,11 +1,12 @@
 import { 
   users, type User, type InsertUser, 
-  competitions, type Competition, type InsertCompetition,
+  competitions as competitionsTable, type Competition, type InsertCompetition,
   golfers, type Golfer, type InsertGolfer,
   selections, type Selection, type InsertSelection,
   results, type Result, type InsertResult,
   userPoints, type UserPoints, type InsertUserPoints,
-  pointSystem, type PointSystem, type InsertPointSystem
+  pointSystem, type PointSystem, type InsertPointSystem,
+  wildcardGolfers, type WildcardGolfer, type InsertWildcardGolfer
 } from "@shared/schema";
 import { db, pgClient, hashPassword } from "./db";
 import { eq, and, sql, desc, asc, count } from "drizzle-orm";
@@ -60,6 +61,13 @@ export interface IStorage {
   getPointSystem(): Promise<PointSystem[]>;
   updatePointSystem(position: number, points: number): Promise<PointSystem>;
   
+  // Wildcard Golfer methods
+  getWildcardGolfers(competitionId: number): Promise<WildcardGolfer[]>;
+  getWildcardGolfer(competitionId: number, golferId: number): Promise<WildcardGolfer | undefined>;
+  createWildcardGolfer(wildcardGolfer: InsertWildcardGolfer): Promise<WildcardGolfer>;
+  updateWildcardGolfer(id: number, wildcardGolferData: Partial<WildcardGolfer>): Promise<WildcardGolfer>;
+  deleteWildcardGolfer(id: number): Promise<void>;
+  
   // Leaderboard methods
   getLeaderboard(competitionId?: number): Promise<any[]>;
 }
@@ -69,12 +77,24 @@ export class DatabaseStorage implements IStorage {
   // User methods
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user || undefined;
+    if (user) {
+      return {
+        ...user,
+        createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
+      } as User;
+    }
+    return undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user || undefined;
+    if (user) {
+      return {
+        ...user,
+        createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
+      } as User;
+    }
+    return undefined;
   }
   
   async getUserByEmail(email: string): Promise<User | undefined> {
@@ -83,10 +103,14 @@ export class DatabaseStorage implements IStorage {
       const [user] = await db.select().from(users).where(eq(users.email, email));
       if (user) {
         console.log(`User found: ${user.username} (ID: ${user.id})`);
+        return {
+          ...user,
+          createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
+        } as User;
       } else {
         console.log(`No user found for email: ${email}`);
       }
-      return user || undefined;
+      return undefined;
     } catch (error) {
       console.error(`Error looking up user by email: ${email}`, error);
       return undefined;
@@ -103,7 +127,11 @@ export class DatabaseStorage implements IStorage {
       .insert(users)
       .values(insertUser)
       .returning();
-    return user;
+    
+    return {
+      ...user,
+      createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
+    } as User;
   }
   
   async updateUser(id: number, userData: Partial<User>): Promise<User> {
@@ -112,84 +140,115 @@ export class DatabaseStorage implements IStorage {
       userData.password = await hashPassword(userData.password);
     }
     
+    // Convert string dates to Date objects if needed
+    const dataToUpdate: any = { ...userData };
+    if (typeof dataToUpdate.createdAt === 'string') {
+      dataToUpdate.createdAt = new Date(dataToUpdate.createdAt);
+    }
+    
     const [user] = await db
       .update(users)
-      .set(userData)
+      .set(dataToUpdate)
       .where(eq(users.id, id))
       .returning();
-    return user;
+    
+    return {
+      ...user,
+      createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
+    } as User;
   }
   
   async getAllUsers(): Promise<User[]> {
-    return db.select().from(users).orderBy(users.username);
+    const userList = await db.select().from(users).orderBy(users.username);
+    return userList.map(user => ({
+      ...user,
+      createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
+    })) as User[];
   }
   
   // Competition methods
   async getCompetitions(): Promise<Competition[]> {
-    return await db
+    const competitionsResult = await db
       .select()
-      .from(competitions)
-      .orderBy(competitions.startDate);
+      .from(competitionsTable)
+      .orderBy(competitionsTable.startDate);
+    return competitionsResult as unknown as Competition[];
   }
   
   async getActiveCompetitions(): Promise<Competition[]> {
-    return await db
+    const activeCompetitions = await db
       .select()
-      .from(competitions)
+      .from(competitionsTable)
       .where(
         and(
-          eq(competitions.isActive, true),
-          eq(competitions.isComplete, false)
+          eq(competitionsTable.isActive, true),
+          eq(competitionsTable.isComplete, false)
         )
       )
-      .orderBy(competitions.startDate);
+      .orderBy(competitionsTable.startDate);
+    return activeCompetitions as unknown as Competition[];
   }
   
   async getUpcomingCompetitions(): Promise<Competition[]> {
     const currentDate = new Date();
-    return await db
+    const upcomingCompetitions = await db
       .select()
-      .from(competitions)
+      .from(competitionsTable)
       .where(
         and(
-          eq(competitions.isActive, false),
-          eq(competitions.isComplete, false)
+          eq(competitionsTable.isActive, false),
+          eq(competitionsTable.isComplete, false)
         )
       )
-      .orderBy(competitions.startDate);
+      .orderBy(competitionsTable.startDate);
+    return upcomingCompetitions as unknown as Competition[];
   }
   
   async getCompletedCompetitions(): Promise<Competition[]> {
-    return await db
+    const completedCompetitions = await db
       .select()
-      .from(competitions)
-      .where(eq(competitions.isComplete, true))
-      .orderBy(desc(competitions.endDate));
+      .from(competitionsTable)
+      .where(eq(competitionsTable.isComplete, true))
+      .orderBy(desc(competitionsTable.endDate));
+    return completedCompetitions as unknown as Competition[];
   }
   
   async getCompetitionById(id: number): Promise<Competition | undefined> {
     const [competition] = await db
       .select()
-      .from(competitions)
-      .where(eq(competitions.id, id));
-    return competition || undefined;
+      .from(competitionsTable)
+      .where(eq(competitionsTable.id, id));
+    return competition as unknown as Competition | undefined;
   }
   
   async createCompetition(competition: InsertCompetition): Promise<Competition> {
+    // Convert string dates to Date objects if needed
+    const competitionToInsert: any = { ...competition };
+    
+    if (typeof competitionToInsert.startDate === 'string') {
+      competitionToInsert.startDate = new Date(competitionToInsert.startDate);
+    }
+    if (typeof competitionToInsert.endDate === 'string') {
+      competitionToInsert.endDate = new Date(competitionToInsert.endDate);
+    }
+    if (typeof competitionToInsert.selectionDeadline === 'string') {
+      competitionToInsert.selectionDeadline = new Date(competitionToInsert.selectionDeadline);
+    }
+    
     const [newCompetition] = await db
-      .insert(competitions)
-      .values(competition)
+      .insert(competitionsTable)
+      .values(competitionToInsert)
       .returning();
-    return newCompetition;
+    return newCompetition as unknown as Competition;
   }
   
   async updateCompetition(id: number, competitionData: Partial<Competition>): Promise<Competition> {
     const [competition] = await db
-      .update(competitions)
+      .update(competitionsTable)
       .set(competitionData)
-      .where(eq(competitions.id, id))
+      .where(eq(competitionsTable.id, id))
       .returning();
-    return competition;
+    return competition as unknown as Competition;
   }
   
   // Golfer methods
@@ -209,8 +268,9 @@ export class DatabaseStorage implements IStorage {
     return results.map(golfer => ({
       ...golfer,
       country: undefined, // Add missing optional fields with undefined values
-      createdAt: undefined
-    }));
+      createdAt: undefined,
+      avatarUrl: golfer.avatarUrl || undefined
+    })) as Golfer[];
   }
   
   async getGolferById(id: number): Promise<Golfer | undefined> {
@@ -231,8 +291,9 @@ export class DatabaseStorage implements IStorage {
     return {
       ...result,
       country: undefined, // Add missing optional fields with undefined values
-      createdAt: undefined
-    };
+      createdAt: undefined,
+      avatarUrl: result.avatarUrl || undefined
+    } as Golfer;
   }
   
   async createGolfer(golfer: InsertGolfer): Promise<Golfer> {
@@ -252,8 +313,9 @@ export class DatabaseStorage implements IStorage {
     return {
       ...newGolfer,
       country: undefined,
-      createdAt: undefined
-    };
+      createdAt: undefined,
+      avatarUrl: newGolfer.avatarUrl || undefined
+    } as Golfer;
   }
   
   async updateGolfer(id: number, golferData: Partial<Golfer>): Promise<Golfer> {
@@ -273,8 +335,9 @@ export class DatabaseStorage implements IStorage {
     return {
       ...updatedGolfer,
       country: undefined,
-      createdAt: undefined
-    };
+      createdAt: undefined,
+      avatarUrl: updatedGolfer.avatarUrl || undefined
+    } as Golfer;
   }
   
   // Selection methods
@@ -288,7 +351,15 @@ export class DatabaseStorage implements IStorage {
           eq(selections.competitionId, competitionId)
         )
       );
-    return selection || undefined;
+    
+    if (!selection) return undefined;
+    
+    // Convert Date to string for Selection interface
+    return {
+      ...selection,
+      createdAt: selection.createdAt instanceof Date ? selection.createdAt.toISOString() : selection.createdAt,
+      updatedAt: selection.updatedAt instanceof Date ? selection.updatedAt.toISOString() : selection.updatedAt
+    } as Selection;
   }
   
   async getSelectionById(id: number): Promise<Selection | undefined> {
@@ -296,7 +367,15 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(selections)
       .where(eq(selections.id, id));
-    return selection || undefined;
+    
+    if (!selection) return undefined;
+    
+    // Convert Date to string for Selection interface
+    return {
+      ...selection,
+      createdAt: selection.createdAt instanceof Date ? selection.createdAt.toISOString() : selection.createdAt,
+      updatedAt: selection.updatedAt instanceof Date ? selection.updatedAt.toISOString() : selection.updatedAt
+    } as Selection;
   }
   
   async hasUsedCaptainsChip(userId: number): Promise<boolean> {
@@ -314,27 +393,66 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getAllSelections(competitionId: number): Promise<Selection[]> {
-    return await db
+    const allSelections = await db
       .select()
       .from(selections)
       .where(eq(selections.competitionId, competitionId));
+      
+    // Convert Date to string for Selection interface
+    return allSelections.map(s => ({
+      ...s,
+      createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt,
+      updatedAt: s.updatedAt instanceof Date ? s.updatedAt.toISOString() : s.updatedAt
+    })) as Selection[];
   }
   
   async createSelection(selection: InsertSelection): Promise<Selection> {
+    // Convert string dates to Date objects for database
+    const selectionToInsert: any = { ...selection };
+    
+    if (typeof selectionToInsert.createdAt === 'string') {
+      selectionToInsert.createdAt = new Date(selectionToInsert.createdAt);
+    }
+    if (typeof selectionToInsert.updatedAt === 'string') {
+      selectionToInsert.updatedAt = new Date(selectionToInsert.updatedAt);
+    }
+    
     const [newSelection] = await db
       .insert(selections)
-      .values(selection)
+      .values(selectionToInsert)
       .returning();
-    return newSelection;
+    
+    // Convert Date to string for Selection interface
+    return {
+      ...newSelection,
+      createdAt: newSelection.createdAt instanceof Date ? newSelection.createdAt.toISOString() : newSelection.createdAt,
+      updatedAt: newSelection.updatedAt instanceof Date ? newSelection.updatedAt.toISOString() : newSelection.updatedAt
+    } as Selection;
   }
   
   async updateSelection(id: number, selectionData: Partial<Selection>): Promise<Selection> {
+    // Convert string dates to Date objects for database
+    const dataToUpdate: any = { ...selectionData };
+    
+    if (typeof dataToUpdate.createdAt === 'string') {
+      dataToUpdate.createdAt = new Date(dataToUpdate.createdAt);
+    }
+    if (typeof dataToUpdate.updatedAt === 'string') {
+      dataToUpdate.updatedAt = new Date(dataToUpdate.updatedAt);
+    }
+    
     const [selection] = await db
       .update(selections)
-      .set(selectionData)
+      .set(dataToUpdate)
       .where(eq(selections.id, id))
       .returning();
-    return selection;
+    
+    // Convert Date to string for Selection interface
+    return {
+      ...selection,
+      createdAt: selection.createdAt instanceof Date ? selection.createdAt.toISOString() : selection.createdAt,
+      updatedAt: selection.updatedAt instanceof Date ? selection.updatedAt.toISOString() : selection.updatedAt
+    } as Selection;
   }
   
   async deleteSelection(id: number): Promise<void> {
@@ -345,11 +463,18 @@ export class DatabaseStorage implements IStorage {
   
   // Results methods
   async getResults(competitionId: number): Promise<Result[]> {
-    return await db
+    const resultsData = await db
       .select()
       .from(results)
       .where(eq(results.competitionId, competitionId))
       .orderBy(results.position);
+      
+    // Format for Result interface
+    return resultsData.map(r => ({
+      ...r,
+      points: r.points || undefined,
+      created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at
+    })) as Result[];
   }
   
   async getResultById(id: number): Promise<Result | undefined> {
@@ -357,24 +482,58 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(results)
       .where(eq(results.id, id));
-    return result || undefined;
+    
+    if (!result) return undefined;
+    
+    // Format for Result interface
+    return {
+      ...result,
+      points: result.points || undefined,
+      created_at: result.created_at instanceof Date ? result.created_at.toISOString() : result.created_at
+    } as Result;
   }
   
   async createResult(result: InsertResult): Promise<Result> {
+    // Convert string date to Date object for database
+    const resultToInsert: any = { ...result };
+    
+    if (typeof resultToInsert.created_at === 'string') {
+      resultToInsert.created_at = new Date(resultToInsert.created_at);
+    }
+    
     const [newResult] = await db
       .insert(results)
-      .values(result)
+      .values(resultToInsert)
       .returning();
-    return newResult;
+    
+    // Format for Result interface
+    return {
+      ...newResult,
+      points: newResult.points || undefined,
+      created_at: newResult.created_at instanceof Date ? newResult.created_at.toISOString() : newResult.created_at
+    } as Result;
   }
   
   async updateResult(id: number, resultData: Partial<Result>): Promise<Result> {
+    // Convert string date to Date object for database
+    const dataToUpdate: any = { ...resultData };
+    
+    if (typeof dataToUpdate.created_at === 'string') {
+      dataToUpdate.created_at = new Date(dataToUpdate.created_at);
+    }
+    
     const [updatedResult] = await db
       .update(results)
-      .set(resultData)
+      .set(dataToUpdate)
       .where(eq(results.id, id))
       .returning();
-    return updatedResult;
+    
+    // Format for Result interface
+    return {
+      ...updatedResult,
+      points: updatedResult.points || undefined,
+      created_at: updatedResult.created_at instanceof Date ? updatedResult.created_at.toISOString() : updatedResult.created_at
+    } as Result;
   }
   
   async deleteResult(id: number): Promise<void> {
@@ -394,32 +553,83 @@ export class DatabaseStorage implements IStorage {
           eq(userPoints.competitionId, competitionId)
         )
       );
-    return userPoint || undefined;
+    
+    if (!userPoint) return undefined;
+    
+    // Format for UserPoints interface
+    return {
+      ...userPoint,
+      details: userPoint.details || undefined,
+      createdAt: userPoint.createdAt instanceof Date ? userPoint.createdAt.toISOString() : userPoint.createdAt,
+      updatedAt: userPoint.updatedAt instanceof Date ? userPoint.updatedAt.toISOString() : userPoint.updatedAt
+    } as UserPoints;
   }
   
   async getAllUserPoints(competitionId: number): Promise<UserPoints[]> {
-    return await db
+    const allUserPoints = await db
       .select()
       .from(userPoints)
       .where(eq(userPoints.competitionId, competitionId))
       .orderBy(desc(userPoints.points));
+    
+    // Format for UserPoints interface
+    return allUserPoints.map(up => ({
+      ...up,
+      details: up.details || undefined,
+      createdAt: up.createdAt instanceof Date ? up.createdAt.toISOString() : up.createdAt,
+      updatedAt: up.updatedAt instanceof Date ? up.updatedAt.toISOString() : up.updatedAt
+    })) as UserPoints[];
   }
   
   async createUserPoints(userPointsData: InsertUserPoints): Promise<UserPoints> {
+    // Convert string dates to Date objects for database
+    const dataToInsert: any = { ...userPointsData };
+    
+    if (typeof dataToInsert.createdAt === 'string') {
+      dataToInsert.createdAt = new Date(dataToInsert.createdAt);
+    }
+    if (typeof dataToInsert.updatedAt === 'string') {
+      dataToInsert.updatedAt = new Date(dataToInsert.updatedAt);
+    }
+    
     const [newUserPoints] = await db
       .insert(userPoints)
-      .values(userPointsData)
+      .values(dataToInsert)
       .returning();
-    return newUserPoints;
+    
+    // Format for UserPoints interface
+    return {
+      ...newUserPoints,
+      details: newUserPoints.details || undefined,
+      createdAt: newUserPoints.createdAt instanceof Date ? newUserPoints.createdAt.toISOString() : newUserPoints.createdAt,
+      updatedAt: newUserPoints.updatedAt instanceof Date ? newUserPoints.updatedAt.toISOString() : newUserPoints.updatedAt
+    } as UserPoints;
   }
   
   async updateUserPoints(id: number, userPointsData: Partial<UserPoints>): Promise<UserPoints> {
+    // Convert string dates to Date objects for database
+    const dataToUpdate: any = { ...userPointsData };
+    
+    if (typeof dataToUpdate.createdAt === 'string') {
+      dataToUpdate.createdAt = new Date(dataToUpdate.createdAt);
+    }
+    if (typeof dataToUpdate.updatedAt === 'string') {
+      dataToUpdate.updatedAt = new Date(dataToUpdate.updatedAt);
+    }
+    
     const [updatedUserPoints] = await db
       .update(userPoints)
-      .set(userPointsData)
+      .set(dataToUpdate)
       .where(eq(userPoints.id, id))
       .returning();
-    return updatedUserPoints;
+    
+    // Format for UserPoints interface
+    return {
+      ...updatedUserPoints,
+      details: updatedUserPoints.details || undefined,
+      createdAt: updatedUserPoints.createdAt instanceof Date ? updatedUserPoints.createdAt.toISOString() : updatedUserPoints.createdAt,
+      updatedAt: updatedUserPoints.updatedAt instanceof Date ? updatedUserPoints.updatedAt.toISOString() : updatedUserPoints.updatedAt
+    } as UserPoints;
   }
   
   // Point System methods
@@ -437,6 +647,98 @@ export class DatabaseStorage implements IStorage {
       .where(eq(pointSystem.position, position))
       .returning();
     return updatedPoints;
+  }
+  
+  // Wildcard Golfer methods
+  async getWildcardGolfers(competitionId: number): Promise<WildcardGolfer[]> {
+    const wildcards = await db
+      .select()
+      .from(wildcardGolfers)
+      .where(eq(wildcardGolfers.competitionId, competitionId))
+      .orderBy(wildcardGolfers.golferId);
+    
+    // Format for WildcardGolfer interface
+    return wildcards.map(wc => ({
+      ...wc,
+      createdAt: wc.createdAt instanceof Date ? wc.createdAt.toISOString() : wc.createdAt,
+      updatedAt: wc.updatedAt instanceof Date ? wc.updatedAt.toISOString() : wc.updatedAt
+    })) as WildcardGolfer[];
+  }
+  
+  async getWildcardGolfer(competitionId: number, golferId: number): Promise<WildcardGolfer | undefined> {
+    const [wildcard] = await db
+      .select()
+      .from(wildcardGolfers)
+      .where(
+        and(
+          eq(wildcardGolfers.competitionId, competitionId),
+          eq(wildcardGolfers.golferId, golferId)
+        )
+      );
+    
+    if (!wildcard) return undefined;
+    
+    // Format for WildcardGolfer interface
+    return {
+      ...wildcard,
+      createdAt: wildcard.createdAt instanceof Date ? wildcard.createdAt.toISOString() : wildcard.createdAt,
+      updatedAt: wildcard.updatedAt instanceof Date ? wildcard.updatedAt.toISOString() : wildcard.updatedAt
+    } as WildcardGolfer;
+  }
+  
+  async createWildcardGolfer(wildcardGolfer: InsertWildcardGolfer): Promise<WildcardGolfer> {
+    // Convert string dates to Date objects for database
+    const dataToInsert: any = { ...wildcardGolfer };
+    
+    if (typeof dataToInsert.createdAt === 'string') {
+      dataToInsert.createdAt = new Date(dataToInsert.createdAt);
+    }
+    if (typeof dataToInsert.updatedAt === 'string') {
+      dataToInsert.updatedAt = new Date(dataToInsert.updatedAt);
+    }
+    
+    const [newWildcard] = await db
+      .insert(wildcardGolfers)
+      .values(dataToInsert)
+      .returning();
+    
+    // Format for WildcardGolfer interface
+    return {
+      ...newWildcard,
+      createdAt: newWildcard.createdAt instanceof Date ? newWildcard.createdAt.toISOString() : newWildcard.createdAt,
+      updatedAt: newWildcard.updatedAt instanceof Date ? newWildcard.updatedAt.toISOString() : newWildcard.updatedAt
+    } as WildcardGolfer;
+  }
+  
+  async updateWildcardGolfer(id: number, wildcardGolferData: Partial<WildcardGolfer>): Promise<WildcardGolfer> {
+    // Convert string dates to Date objects for database
+    const dataToUpdate: any = { ...wildcardGolferData };
+    
+    if (typeof dataToUpdate.createdAt === 'string') {
+      dataToUpdate.createdAt = new Date(dataToUpdate.createdAt);
+    }
+    if (typeof dataToUpdate.updatedAt === 'string') {
+      dataToUpdate.updatedAt = new Date(dataToUpdate.updatedAt);
+    }
+    
+    const [updatedWildcard] = await db
+      .update(wildcardGolfers)
+      .set(dataToUpdate)
+      .where(eq(wildcardGolfers.id, id))
+      .returning();
+    
+    // Format for WildcardGolfer interface
+    return {
+      ...updatedWildcard,
+      createdAt: updatedWildcard.createdAt instanceof Date ? updatedWildcard.createdAt.toISOString() : updatedWildcard.createdAt,
+      updatedAt: updatedWildcard.updatedAt instanceof Date ? updatedWildcard.updatedAt.toISOString() : updatedWildcard.updatedAt
+    } as WildcardGolfer;
+  }
+  
+  async deleteWildcardGolfer(id: number): Promise<void> {
+    await db
+      .delete(wildcardGolfers)
+      .where(eq(wildcardGolfers.id, id));
   }
   
   // Leaderboard methods

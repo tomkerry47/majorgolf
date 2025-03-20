@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pgTable, serial, varchar, text, boolean, timestamp, integer, date } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, text, boolean, timestamp, integer, date, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 
 // Define Drizzle schema for database tables
@@ -74,6 +74,15 @@ export const userPoints = pgTable("user_points", {
   details: text("details"), // JSON string containing point details
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
+export const wildcardGolfers = pgTable("wildcard_golfers", {
+  id: serial("id").primaryKey(),
+  competitionId: integer("competitionId").notNull(),
+  golferId: integer("golferId").notNull(),
+  isWildcard: boolean("isWildcard").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull()
 });
 
 // Define types based on Drizzle schema
@@ -153,6 +162,15 @@ export interface UserPoints {
   updatedAt: string;
 }
 
+export interface WildcardGolfer {
+  id: number;
+  competitionId: number;
+  golferId: number;
+  isWildcard: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Validation schemas for insert operations using drizzle-zod
 export const insertUserSchema = createInsertSchema(users)
   .omit({ id: true, createdAt: true });
@@ -180,6 +198,9 @@ export const insertPointSystemSchema = createInsertSchema(pointSystem)
 export const insertUserPointsSchema = createInsertSchema(userPoints)
   .omit({ id: true, createdAt: true, updatedAt: true });
 
+export const insertWildcardGolferSchema = createInsertSchema(wildcardGolfers)
+  .omit({ id: true, createdAt: true, updatedAt: true });
+
 // Type definitions for typescript usage
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertCompetition = z.infer<typeof insertCompetitionSchema>;
@@ -188,6 +209,7 @@ export type InsertSelection = z.infer<typeof insertSelectionSchema>;
 export type InsertResult = z.infer<typeof insertResultSchema>;
 export type InsertPointSystem = z.infer<typeof insertPointSystemSchema>;
 export type InsertUserPoints = z.infer<typeof insertUserPointsSchema>;
+export type InsertWildcardGolfer = z.infer<typeof insertWildcardGolferSchema>;
 
 // Login and Registration schemas
 export const loginSchema = z.object({

@@ -15,11 +15,11 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
-export async function apiRequest(
+export async function apiRequest<T = any>(
   url: string,
   method: string = 'GET',
   data?: unknown | undefined,
-): Promise<Response> {
+): Promise<T> {
   // Get token from localStorage
   const token = getToken();
   
@@ -43,7 +43,7 @@ export async function apiRequest(
   });
 
   await throwIfResNotOk(res);
-  return res;
+  return await res.json() as T;
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";

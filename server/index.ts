@@ -4,6 +4,9 @@ import { setupVite, serveStatic, log } from "./vite";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// Force development mode for Vite
+process.env.NODE_ENV = "development";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -103,9 +106,17 @@ app.use((req, res, next) => {
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
+  console.log("Current env:", app.get("env"));
+  console.log("Node ENV:", process.env.NODE_ENV);
+  
   if (app.get("env") === "development") {
     console.log("Setting up Vite in development mode");
-    await setupVite(app, server);
+    try {
+      await setupVite(app, server);
+      console.log("Vite setup completed successfully");
+    } catch (error) {
+      console.error("Error during Vite setup:", error);
+    }
   } else {
     console.log("Setting up static serving in production mode");
     serveStatic(app);
