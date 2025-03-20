@@ -1,0 +1,96 @@
+33
+489b48b6
+User
+Access from outside: http://0.0.0.0:5000
+2025-03-20 20:02:54.33
+489b48b6
+User
+Test page available at http://0.0.0.0:5000/test
+2025-03-20 20:02:54.42
+489b48b6
+User
+8:02:54 PM [vite] Pre-transform error: Failed to load url /src/main.tsx (resolved id: /src/main.tsx). Does the file exist?
+2025-03-20 20:02:54.44
+489b48b6
+User
+npm notice
+2025-03-20 20:02:54.44
+489b48b6
+User
+npm notice New major version of npm available! 10.8.2 -> 11.2.0
+2025-03-20 20:02:54.44
+489b48b6
+User
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.2.0
+2025-03-20 20:02:54.44
+489b48b6
+User
+npm notice To update run: npm install -g npm@11.2.0
+2025-03-20 20:02:54.44
+489b48b6
+User
+npm notice
+2025-03-20 20:02:54.45
+489b48b6
+System
+command finished with error [sh -c npm run start]: exit status 1
+2025-03-20 20:02:54.71
+489b48b6
+User
+> rest-express@1.0.0 start
+2025-03-20 20:02:54.71
+489b48b6
+User
+> NODE_ENV=production node dist/index.js
+2025-03-20 20:03:25.29
+489b48b6
+User
+PostgreSQL direct connection initialized
+2025-03-20 20:03:25.30
+489b48b6
+User
+Current env: development
+2025-03-20 20:03:25.30
+489b48b6
+User
+Node ENV: development
+2025-03-20 20:03:25.30
+489b48b6
+User
+Setting up Vite in development mode
+2025-03-20 20:03:27.16
+489b48b6
+User
+Vite setup completed successfully
+2025-03-20 20:03:27.18
+489b48b6
+User
+8:03:27 PM [express] serving on port 5000
+2025-03-20 20:03:27.18
+489b48b6
+User
+Server is running at http://0.0.0.0:5000
+2025-03-20 20:03:27.18
+489b48b6
+User
+Access from outside: http://0.0.0.0:5000
+2025-03-20 20:03:27.18
+489b48b6
+User
+Test page available at http://0.0.0.0:5000/test
+2025-03-20 20:03:29.60
+489b48b6
+User
+8:03:29 PM [vite] Pre-transform error: Failed to load url /src/main.tsx (resolved id: /src/main.tsx). Does the file exist?
+2025-03-20 20:03:29.64
+489b48b6
+System
+command finished with error [sh -c npm run start]: exit status 1
+2025-03-20 20:03:30.03
+489b48b6
+User
+> rest-express@1.0.0 start
+2025-03-20 20:03:30.03
+489b48b6
+User
+> NODE_ENV=production node dist/index.js
