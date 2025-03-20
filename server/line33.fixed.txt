@@ -1,1 +1,2 @@
   createResult(result: InsertResult): Promise<Result>;
+  updateResult(id: number, resultData: Partial<Result>): Promise<Result>;
