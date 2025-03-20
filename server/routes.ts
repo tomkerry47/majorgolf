@@ -333,6 +333,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to fetch user' });
     }
   });
+  
+  app.get('/api/users/:id/has-used-captains-chip', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      const requestedUserId = parseInt(req.params.id);
+      
+      // Only allow users to check their own status or admins to check any user
+      if (tokenUser.database_id !== requestedUserId && !tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Unauthorized to access this resource' });
+      }
+      
+      const hasUsed = await storage.hasUsedCaptainsChip(requestedUserId);
+      res.json({ hasUsedCaptainsChip: hasUsed });
+    } catch (error) {
+      console.error('Error checking captain\'s chip usage:', error);
+      res.status(500).json({ error: 'Failed to check captain\'s chip usage' });
+    }
+  });
 
   app.patch('/api/users/:id', async (req: Request, res: Response) => {
     try {
@@ -504,6 +522,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'You already have selections for this competition' });
       }
       
+      // Check if the user is using a captain's chip and if they've already used it in another competition
+      if (selectionData.useCaptainsChip) {
+        const hasUsedCaptainsChip = await storage.hasUsedCaptainsChip(userId);
+        if (hasUsedCaptainsChip) {
+          return res.status(400).json({ error: 'You have already used your captain\'s chip in another competition' });
+        }
+      }
+      
       // Create the selection
       const newSelection = await storage.createSelection({
         ...selectionData,
@@ -547,11 +573,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'No existing selection found' });
       }
       
+      // Handle captain's chip changes
+      if (selectionData.useCaptainsChip && !existingSelection.useCaptainsChip) {
+        // User is trying to use the captain's chip
+        const hasUsedCaptainsChip = await storage.hasUsedCaptainsChip(userId);
+        if (hasUsedCaptainsChip) {
+          return res.status(400).json({ error: 'You have already used your captain\'s chip in another competition' });
+        }
+      }
+      
       // Update the selection
       const updatedSelection = await storage.updateSelection(existingSelection.id, {
         golfer1Id: selectionData.golfer1Id,
         golfer2Id: selectionData.golfer2Id,
-        golfer3Id: selectionData.golfer3Id
+        golfer3Id: selectionData.golfer3Id,
+        useCaptainsChip: selectionData.useCaptainsChip
       });
       
       res.json(updatedSelection);
@@ -953,6 +989,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const selectionId = parseInt(id);
+      
+      // Get the existing selection to check for captains chip changes
+      const existingSelection = await storage.getSelectionById(selectionId);
+      if (!existingSelection) {
+        return res.status(404).json({ error: 'Selection not found' });
+      }
+      
+      // If they're trying to change the captains chip
+      if (req.body.useCaptainsChip !== undefined && 
+          req.body.useCaptainsChip !== existingSelection.useCaptainsChip) {
+        
+        // If trying to enable it, check if it's already been used elsewhere
+        if (req.body.useCaptainsChip) {
+          const hasUsedCaptainsChip = await storage.hasUsedCaptainsChip(existingSelection.userId);
+          if (hasUsedCaptainsChip) {
+            // Only allow if it's the same user's selection that already had it enabled
+            const selections = await storage.getAllSelections(existingSelection.competitionId);
+            const userSelectionWithChip = selections.find(s => 
+              s.userId === existingSelection.userId && s.useCaptainsChip && s.id !== selectionId
+            );
+            
+            if (userSelectionWithChip) {
+              return res.status(400).json({ 
+                error: 'This user has already used their captain\'s chip in another competition' 
+              });
+            }
+          }
+        }
+      }
       
       // Update the selection
       const updatedSelection = await storage.updateSelection(selectionId, req.body);

@@ -366,21 +366,47 @@ async function allocatePoints(competitionId) {
       // Check results for each golfer in the selection
       const golferIds = [selection.golfer1Id, selection.golfer2Id, selection.golfer3Id].filter(Boolean);
       
+      // Check if user has used captain's chip for this competition
+      const useCaptainsChip = selection.useCaptainsChip || false;
+      console.log(`User ${selection.userId} has ${useCaptainsChip ? 'used' : 'not used'} captain's chip`);
+      
       for (const golferId of golferIds) {
         const result = results.find(r => r.golferId === golferId);
         
         if (result) {
           const position = result.position;
-          const points = pointsLookup[position] || 0;
+          let points = pointsLookup[position] || 0;
           
-          console.log(`User ${selection.userId} earns ${points} points for golfer ${golferId} in position ${position}`);
+          // If captain's chip is used, double the points for only their best player
+          // We'll determine this later by picking the highest scoring golfer
           pointDetails.push({
             golferId,
             position,
-            points
+            points,
+            // Flag this golfer for potential double points with captain's chip
+            possibleCaptain: true
           });
           totalPoints += points;
         }
+      }
+      
+      // If captain's chip is used, find the best performing golfer and double their points
+      if (useCaptainsChip && pointDetails.length > 0) {
+        // Sort by points in descending order
+        pointDetails.sort((a, b) => b.points - a.points);
+        
+        // Double the points for the highest scoring golfer
+        const captainGolfer = pointDetails[0];
+        const additionalPoints = captainGolfer.points; // Double points means adding the same amount again
+        
+        console.log(`Captain's chip used on golfer ${captainGolfer.golferId} with ${captainGolfer.points} points, adding ${additionalPoints} more points`);
+        
+        // Update the point details to show this golfer as the captain
+        captainGolfer.isCaptain = true;
+        captainGolfer.captainPoints = additionalPoints;
+        
+        // Add these additional points to the total
+        totalPoints += additionalPoints;
       }
       
       console.log(`User ${selection.userId} earned a total of ${totalPoints} points for competition ${competitionId}`);

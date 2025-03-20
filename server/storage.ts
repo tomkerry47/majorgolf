@@ -8,7 +8,7 @@ import {
   pointSystem, type PointSystem, type InsertPointSystem
 } from "@shared/schema";
 import { db, pgClient, hashPassword } from "./db";
-import { eq, and, sql, desc, asc } from "drizzle-orm";
+import { eq, and, sql, desc, asc, count } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -36,6 +36,8 @@ export interface IStorage {
   
   // Selection methods
   getUserSelections(userId: number, competitionId: number): Promise<Selection | undefined>;
+  getSelectionById(id: number): Promise<Selection | undefined>;
+  hasUsedCaptainsChip(userId: number): Promise<boolean>;
   getAllSelections(competitionId: number): Promise<Selection[]>;
   createSelection(selection: InsertSelection): Promise<Selection>;
   updateSelection(id: number, selectionData: Partial<Selection>): Promise<Selection>;
@@ -287,6 +289,28 @@ export class DatabaseStorage implements IStorage {
         )
       );
     return selection || undefined;
+  }
+  
+  async getSelectionById(id: number): Promise<Selection | undefined> {
+    const [selection] = await db
+      .select()
+      .from(selections)
+      .where(eq(selections.id, id));
+    return selection || undefined;
+  }
+  
+  async hasUsedCaptainsChip(userId: number): Promise<boolean> {
+    const result = await db
+      .select({ count: count() })
+      .from(selections)
+      .where(
+        and(
+          eq(selections.userId, userId),
+          eq(selections.useCaptainsChip, true)
+        )
+      );
+    
+    return result[0].count > 0;
   }
   
   async getAllSelections(competitionId: number): Promise<Selection[]> {

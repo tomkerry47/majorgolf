@@ -45,6 +45,7 @@ export const selections = pgTable("selections", {
   golfer1Id: integer("golfer1Id").notNull(),
   golfer2Id: integer("golfer2Id").notNull(),
   golfer3Id: integer("golfer3Id").notNull(),
+  useCaptainsChip: boolean("useCaptainsChip").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull()
 });
@@ -116,6 +117,7 @@ export interface Selection {
   golfer1Id: number;
   golfer2Id: number;
   golfer3Id: number;
+  useCaptainsChip: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -164,7 +166,7 @@ export const insertCompetitionSchema = createInsertSchema(competitions)
   });
 
 export const insertGolferSchema = createInsertSchema(golfers)
-  .omit({ id: true, createdAt: true });
+  .omit({ id: true });
 
 export const insertSelectionSchema = createInsertSchema(selections)
   .omit({ id: true, createdAt: true, updatedAt: true });
@@ -212,11 +214,20 @@ export const selectionFormSchema = insertSelectionSchema
     golfer1Id: z.number().refine(val => val > 0, "Please select a golfer"),
     golfer2Id: z.number().refine(val => val > 0, "Please select a golfer"),
     golfer3Id: z.number().refine(val => val > 0, "Please select a golfer"),
+    useCaptainsChip: z.boolean().default(false),
+    captainGolferId: z.number().optional(),
   })
   .refine(
     data => new Set([data.golfer1Id, data.golfer2Id, data.golfer3Id]).size === 3,
     {
       message: "You must select three different golfers",
       path: ["golfer3Id"],
+    }
+  )
+  .refine(
+    data => !data.useCaptainsChip || (data.captainGolferId && [data.golfer1Id, data.golfer2Id, data.golfer3Id].includes(data.captainGolferId)),
+    {
+      message: "Captain must be one of your selected golfers",
+      path: ["captainGolferId"],
     }
   );
