@@ -649,19 +649,43 @@ export class DatabaseStorage implements IStorage {
 
   // Point System methods
   async getPointSystem(): Promise<PointSystem[]> {
-    return await db
-      .select()
-      .from(pointSystem)
-      .orderBy(pointSystem.position);
+    try {
+      // Use raw SQL as the schema and actual table structure differ
+      const result = await pgClient.query(
+        'SELECT position, points FROM points_system ORDER BY position'
+      );
+      return result.rows.map(row => ({
+        id: row.position, // Use position as id since we don't have an id column
+        position: row.position,
+        points: row.points
+      }));
+    } catch (error) {
+      console.error('Error fetching point system:', error);
+      return [];
+    }
   }
 
   async updatePointSystem(position: number, points: number): Promise<PointSystem> {
-    const [updatedPoints] = await db
-      .update(pointSystem)
-      .set({ points })
-      .where(eq(pointSystem.position, position))
-      .returning();
-    return updatedPoints;
+    try {
+      // Use raw SQL as the schema and actual table structure differ
+      const result = await pgClient.query(
+        'UPDATE points_system SET points = $1 WHERE position = $2 RETURNING position, points',
+        [points, position]
+      );
+      
+      if (result.rows.length === 0) {
+        throw new Error(`No point system entry found for position ${position}`);
+      }
+      
+      return {
+        id: result.rows[0].position, // Use position as id
+        position: result.rows[0].position,
+        points: result.rows[0].points
+      };
+    } catch (error) {
+      console.error('Error updating point system:', error);
+      throw error;
+    }
   }
 
   // Wildcard Golfer methods

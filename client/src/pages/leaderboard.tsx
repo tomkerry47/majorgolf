@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import LeaderboardTable from "@/components/leaderboard-table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,43 +13,63 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
-import { Tournament } from "@shared/schema";
+import { Competition } from "@shared/schema";
+
+interface LeaderboardData {
+  standings: Array<any>;
+  currentUserId?: number;
+  lastUpdated?: string;
+  currentRound?: number;
+  roundCompleted?: boolean;
+}
 
 const Leaderboard = () => {
-  const [selectedTournamentId, setSelectedTournamentId] = useState<string | null>(null);
+  const [selectedCompetitionId, setSelectedCompetitionId] = useState<string | null>(null);
 
-  // Fetch tournaments for the dropdown
-  const { data: tournaments, isLoading: isLoadingTournaments } = useQuery<Tournament[]>({
-    queryKey: ["/api/tournaments"],
+  // Fetch competitions for the dropdown
+  const { data: competitions, isLoading: isLoadingCompetitions } = useQuery<Competition[]>({
+    queryKey: ["/api/competitions"],
   });
 
-  // Filter to active or completed tournaments
-  const validTournaments = tournaments?.filter(t => 
-    t.status === 'active' || t.status === 'completed'
+  // Add an "All Tournaments" option
+  const allOption = { id: "all", name: "All Tournaments" };
+  
+  // Filter to active or completed competitions
+  const validCompetitions = competitions?.filter(c => 
+    c.isActive || c.isComplete
   ) || [];
-
-  // Set first tournament as default if none selected and we have data
-  if (!selectedTournamentId && validTournaments.length > 0 && !isLoadingTournaments) {
-    setSelectedTournamentId(validTournaments[0].id.toString());
-  }
-
-  // Fetch leaderboard data for selected tournament
+  
+  // Fetch leaderboard data based on selected competition
   const { 
-    data: leaderboard, 
+    data: leaderboard = {} as LeaderboardData, 
     isLoading: isLoadingLeaderboard,
     refetch: refetchLeaderboard
-  } = useQuery({
-    queryKey: ["/api/leaderboard", selectedTournamentId],
-    enabled: !!selectedTournamentId,
+  } = useQuery<LeaderboardData>({
+    queryKey: [
+      "/api/leaderboard", 
+      selectedCompetitionId === "all" ? undefined : selectedCompetitionId
+    ],
+    // Always enabled, will fetch overall leaderboard if no competitionId
+    enabled: true,  
   });
 
-  // Find currently selected tournament
-  const selectedTournament = validTournaments.find(
-    t => t.id.toString() === selectedTournamentId
-  );
+  // Find currently selected competition
+  const selectedCompetition = selectedCompetitionId === "all" 
+    ? allOption 
+    : validCompetitions.find(c => c.id.toString() === selectedCompetitionId);
 
-  // Tournament status and last updated info
-  const tournamentStatus = selectedTournament?.status || 'completed';
+  // Set "All Tournaments" as default view
+  useEffect(() => {
+    if (!selectedCompetitionId && !isLoadingCompetitions) {
+      setSelectedCompetitionId("all");
+    }
+  }, [isLoadingCompetitions, selectedCompetitionId]);
+
+  // Competition status and last updated info
+  const competitionStatus = selectedCompetitionId === "all" 
+    ? undefined
+    : (selectedCompetition as Competition)?.isActive ? 'active' : 'completed';
+  
   const lastUpdated = leaderboard?.lastUpdated 
     ? new Date(leaderboard.lastUpdated).toLocaleString()
     : 'Never';
@@ -59,12 +79,12 @@ const Leaderboard = () => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-800">Leaderboard</h2>
         <div className="flex items-center space-x-2">
-          {isLoadingTournaments ? (
+          {isLoadingCompetitions ? (
             <Skeleton className="h-10 w-56 rounded" />
           ) : (
             <Select
-              value={selectedTournamentId || ''}
-              onValueChange={setSelectedTournamentId}
+              value={selectedCompetitionId || ''}
+              onValueChange={setSelectedCompetitionId}
             >
               <SelectTrigger className="w-[220px]">
                 <SelectValue placeholder="Select tournament" />
@@ -72,10 +92,13 @@ const Leaderboard = () => {
               <SelectContent>
                 <SelectGroup>
                   <SelectLabel>Tournaments</SelectLabel>
-                  {validTournaments.length > 0 ? (
-                    validTournaments.map((tournament) => (
-                      <SelectItem key={tournament.id} value={tournament.id.toString()}>
-                        {tournament.name} {tournament.status === 'active' ? '(Active)' : ''}
+                  <SelectItem key="all" value="all">
+                    All Tournaments
+                  </SelectItem>
+                  {validCompetitions.length > 0 ? (
+                    validCompetitions.map((competition) => (
+                      <SelectItem key={competition.id} value={competition.id.toString()}>
+                        {competition.name} {competition.isActive ? '(Active)' : ''}
                       </SelectItem>
                     ))
                   ) : (
@@ -89,25 +112,25 @@ const Leaderboard = () => {
             size="icon" 
             variant="ghost"
             onClick={() => refetchLeaderboard()}
-            disabled={isLoadingLeaderboard || !selectedTournamentId}
+            disabled={isLoadingLeaderboard}
           >
             <RefreshCcw className="h-5 w-5" />
           </Button>
         </div>
       </div>
       
-      {/* Tournament status */}
-      {selectedTournament && (
+      {/* Competition status */}
+      {selectedCompetition && selectedCompetitionId !== "all" && (
         <div className="bg-white rounded-lg p-4 mb-4 border border-gray-200">
           <div className="flex flex-col md:flex-row md:justify-between md:items-center">
             <div className="mb-3 md:mb-0">
               <span className={`
                 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mr-2
-                ${tournamentStatus === 'active' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}
+                ${competitionStatus === 'active' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}
               `}>
-                {tournamentStatus === 'active' ? 'ACTIVE' : 'COMPLETED'}
+                {competitionStatus === 'active' ? 'ACTIVE' : 'COMPLETED'}
               </span>
-              {tournamentStatus === 'active' && leaderboard?.currentRound && (
+              {competitionStatus === 'active' && leaderboard?.currentRound && (
                 <span className="text-sm text-gray-500">
                   Round {leaderboard.currentRound} of 4 {leaderboard.roundCompleted ? 'completed' : 'in progress'}
                 </span>
@@ -120,19 +143,28 @@ const Leaderboard = () => {
         </div>
       )}
       
-      {/* Leaderboard table */}
-      {selectedTournamentId ? (
-        <LeaderboardTable 
-          data={leaderboard?.standings || []} 
-          isLoading={isLoadingLeaderboard}
-          userId={leaderboard?.currentUserId}
-        />
-      ) : (
-        <div className="bg-white rounded-lg shadow p-8 text-center">
-          <h3 className="text-lg font-medium text-gray-900">No tournament selected</h3>
-          <p className="mt-2 text-gray-500">Please select a tournament to view the leaderboard.</p>
+      {/* All tournaments view */}
+      {selectedCompetitionId === "all" && (
+        <div className="bg-white rounded-lg p-4 mb-4 border border-gray-200">
+          <div className="flex justify-between items-center">
+            <div>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mr-2 bg-purple-100 text-purple-800">
+                OVERALL STANDINGS
+              </span>
+            </div>
+            <div className="text-sm text-gray-500">
+              Last updated: {lastUpdated}
+            </div>
+          </div>
         </div>
       )}
+      
+      {/* Leaderboard table */}
+      <LeaderboardTable 
+        data={leaderboard?.standings || []} 
+        isLoading={isLoadingLeaderboard}
+        userId={leaderboard?.currentUserId}
+      />
     </div>
   );
 };
