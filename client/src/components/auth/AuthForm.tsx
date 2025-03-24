@@ -39,11 +39,13 @@ export default function AuthForm({ type }: AuthFormProps) {
     setIsLoading(true);
     try {
       if (type === "login") {
+        // Normalize email to lowercase to avoid case sensitivity issues
         const { email, password } = data as LoginCredentials;
-        console.log('Login attempt with:', { email });
+        const normalizedEmail = email.toLowerCase().trim();
+        console.log('Login attempt with:', { email: normalizedEmail });
         
         console.log('Starting signIn process...');
-        const result = await signIn(email, password);
+        const result = await signIn(normalizedEmail, password);
         console.log('SignIn complete, result:', result ? 'Success' : 'Failed');
         
         console.log('Showing success toast...');

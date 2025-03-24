@@ -195,12 +195,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Login attempt received:', req.body.email);
       // Validate request body
       const { email, password } = loginSchema.parse(req.body);
-      console.log('Login validation passed for:', email);
+      // Normalize email to lowercase
+      const normalizedEmail = email.toLowerCase().trim();
+      console.log('Login validation passed for:', normalizedEmail);
       
       // Find user
-      const user = await storage.getUserByEmail(email);
+      const user = await storage.getUserByEmail(normalizedEmail);
       if (!user) {
-        console.log('User not found for email:', email);
+        console.log('User not found for email:', normalizedEmail);
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       console.log('Found user:', { id: user.id, email: user.email, username: user.username });
