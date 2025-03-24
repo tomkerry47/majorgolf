@@ -9,7 +9,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<any>;
-  signUp: (email: string, password: string, username: string, fullName?: string) => Promise<any>;
+  signUp: (email: string, password: string, confirmPassword: string, username: string, fullName?: string) => Promise<any>;
   signOut: () => Promise<void>;
 }
 
@@ -68,11 +68,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signUpUser = async (email: string, password: string, username: string, fullName: string = username) => {
+  const signUpUser = async (email: string, password: string, confirmPassword: string, username: string, fullName: string = username) => {
     try {
       const result = await register({
         email,
         password,
+        confirmPassword,
         username,
         fullName
       });

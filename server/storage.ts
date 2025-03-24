@@ -83,17 +83,27 @@ export interface IStorage {
   deleteHoleInOne(id: number): Promise<void>;
 }
 
+// Helper function to convert DB user to User interface type
+function formatUserForResponse(user: any): User | undefined {
+  if (!user) return undefined;
+  
+  return {
+    ...user,
+    createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
+  };
+}
+
 // Implementation of IStorage using Drizzle ORM with PostgreSQL
 export class DatabaseStorage implements IStorage {
   // User methods
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user as User | undefined;
+    return formatUserForResponse(user);
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user as User | undefined;
+    return formatUserForResponse(user);
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
@@ -107,7 +117,7 @@ export class DatabaseStorage implements IStorage {
       } else {
         console.log(`No user found for email: ${email}`);
       }
-      return user as User | undefined;
+      return formatUserForResponse(user);
     } catch (error) {
       console.error(`Error looking up user by email: ${email}`, error);
       return undefined;
@@ -124,7 +134,7 @@ export class DatabaseStorage implements IStorage {
       .insert(users)
       .values(insertUser)
       .returning();
-    return user as User;
+    return formatUserForResponse(user)!;
   }
 
   async updateUser(id: number, userData: Partial<User>): Promise<User> {
@@ -144,12 +154,12 @@ export class DatabaseStorage implements IStorage {
       .set(dataToUpdate)
       .where(eq(users.id, id))
       .returning();
-    return user as User;
+    return formatUserForResponse(user)!;
   }
 
   async getAllUsers(): Promise<User[]> {
     const userList = await db.select().from(users).orderBy(users.username);
-    return userList as User[];
+    return userList.map(user => formatUserForResponse(user)!) as User[];
   }
 
   // Competition methods
@@ -394,11 +404,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning();
 
-    // Convert Date to string for User interface
-    return {
-      ...updatedUser,
-      createdAt: updatedUser.createdAt instanceof Date ? updatedUser.createdAt.toISOString() : updatedUser.createdAt
-    } as User;
+    return formatUserForResponse(updatedUser)!;
   }
 
   async getAllSelections(competitionId: number): Promise<Selection[]> {
@@ -898,7 +904,7 @@ export class DatabaseStorage implements IStorage {
       ...holeInOne,
       createdAt: holeInOne.createdAt instanceof Date ? holeInOne.createdAt.toISOString() : holeInOne.createdAt,
       updatedAt: holeInOne.updatedAt instanceof Date ? holeInOne.updatedAt.toISOString() : holeInOne.updatedAt
-    }} as HoleInOne;
+    } as HoleInOne;
   }
 
   async deleteHoleInOne(id: number): Promise<void> {

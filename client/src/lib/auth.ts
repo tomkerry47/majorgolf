@@ -16,6 +16,7 @@ interface RegisterData {
   fullName: string;
   email: string;
   password: string;
+  confirmPassword: string;
 }
 
 // Store token in localStorage

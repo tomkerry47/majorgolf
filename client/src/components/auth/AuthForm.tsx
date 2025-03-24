@@ -58,8 +58,9 @@ export default function AuthForm({ type }: AuthFormProps) {
         setLocation("/");
         console.log('Navigation command sent.');
       } else {
-        const { email, password, username, fullName } = data as RegisterCredentials;
-        await signUp(email, password, username, fullName);
+        const { email, password, confirmPassword, username, fullName } = data as RegisterCredentials;
+        const fullNameValue = fullName || username; // Ensure fullName is not undefined
+        await signUp(email, password, confirmPassword!, username, fullNameValue);
         toast({
           title: "Account created!",
           description: "Your account has been created successfully.",
