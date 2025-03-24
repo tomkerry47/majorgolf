@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { getAuthHeaders } from "@/lib/auth";
 import {
   Table,
   TableBody,
@@ -23,6 +24,19 @@ export default function ProfileSelections({ userId, username }: ProfileSelection
   
   const { data: userSelections, isLoading } = useQuery({
     queryKey: [`/api/users/${userId}/selections`],
+    queryFn: async ({ queryKey }) => {
+      const headers = getAuthHeaders();
+      
+      const response = await fetch(queryKey[0] as string, {
+        headers,
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch user selections');
+      }
+      return response.json();
+    },
     enabled: !!userId,
   });
   

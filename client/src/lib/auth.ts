@@ -144,3 +144,15 @@ export async function fetchUserProfile(userId: string): Promise<any> {
 export function isAuthenticated(): boolean {
   return !!getToken() && !!getStoredUser();
 }
+
+// Get auth headers helper function
+export function getAuthHeaders(): Record<string, string> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  
+  return headers;
+}

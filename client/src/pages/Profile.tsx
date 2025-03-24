@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import ProfileDetails from "@/components/profile/ProfileDetails";
 import ProfileSelections from "@/components/profile/ProfileSelections";
+import { getAuthHeaders } from "@/lib/auth";
 
 export default function Profile() {
   const { user } = useAuth();
@@ -25,7 +26,13 @@ export default function Profile() {
   const { data: profileData, isLoading, error } = useQuery({
     queryKey: ['profile', userId],
     queryFn: async () => {
-      const response = await fetch(`/api/users/${userId}`);
+      const headers = getAuthHeaders();
+      
+      const response = await fetch(`/api/users/${userId}`, {
+        headers,
+        credentials: 'include'
+      });
+      
       if (!response.ok) {
         throw new Error('Failed to fetch profile data');
       }
