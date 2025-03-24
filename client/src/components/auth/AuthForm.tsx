@@ -60,7 +60,8 @@ export default function AuthForm({ type }: AuthFormProps) {
       } else {
         const { email, password, confirmPassword, username, fullName } = data as RegisterCredentials;
         const fullNameValue = fullName || username; // Ensure fullName is not undefined
-        await signUp(email, password, confirmPassword!, username, fullNameValue);
+        const confirmPasswordValue = confirmPassword || ''; // Ensure confirmPassword is not undefined
+        await signUp(email, password, confirmPasswordValue, username, fullNameValue);
         toast({
           title: "Account created!",
           description: "Your account has been created successfully.",
@@ -131,7 +132,11 @@ export default function AuthForm({ type }: AuthFormProps) {
                     <FormItem>
                       <FormLabel>Username</FormLabel>
                       <FormControl>
-                        <Input placeholder="username" {...field} />
+                        <Input 
+                          placeholder="username" 
+                          {...field} 
+                          value={field.value || ''} 
+                        />
                       </FormControl>
                       <FormDescription>
                         This will be your public display name.
@@ -147,7 +152,11 @@ export default function AuthForm({ type }: AuthFormProps) {
                     <FormItem>
                       <FormLabel>Full Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="John Smith" {...field} />
+                        <Input 
+                          placeholder="John Smith" 
+                          {...field} 
+                          value={field.value || ''} 
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -162,7 +171,12 @@ export default function AuthForm({ type }: AuthFormProps) {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input type="email" placeholder="you@example.com" {...field} />
+                    <Input 
+                      type="email" 
+                      placeholder="you@example.com" 
+                      {...field} 
+                      value={field.value || ''} 
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -175,7 +189,12 @@ export default function AuthForm({ type }: AuthFormProps) {
                 <FormItem>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="••••••••" {...field} />
+                    <Input 
+                      type="password" 
+                      placeholder="••••••••" 
+                      {...field} 
+                      value={field.value || ''} 
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -189,7 +208,12 @@ export default function AuthForm({ type }: AuthFormProps) {
                   <FormItem>
                     <FormLabel>Confirm Password</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="••••••••" {...field} />
+                      <Input 
+                        type="password" 
+                        placeholder="••••••••" 
+                        {...field} 
+                        value={field.value || ''} 
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
