@@ -22,6 +22,15 @@ interface ExtendedUser {
   isAdmin?: boolean;
 }
 
+// Extend Express Request type to include user property
+declare global {
+  namespace Express {
+    interface Request {
+      user?: ExtendedUser;
+    }
+  }
+}
+
 // Middleware to validate JWT
 const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
   // Get the normalized path without the /api prefix
@@ -83,7 +92,7 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
     console.log(`User found in database: ${user.username}`);
     
     // Set user context in request
-    (req as any).user = {
+    req.user = {
       id: decodedToken.id,
       email: decodedToken.email,
       database_id: user.id,
@@ -432,10 +441,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Protected routes below this line
 
   // User profile
-  app.get('/api/users/:id', async (req: Request, res: Response) => {
+  app.get('/api/users/:id', validateJWT, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const user = await storage.getUser(parseInt(id));
+      const tokenUser = req.user as ExtendedUser;
+      const requestedUserId = parseInt(id);
+      
+      // Only allow users to access their own profile or admins to access any profile
+      if (tokenUser.database_id !== requestedUserId && !tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Unauthorized to access this resource' });
+      }
+      
+      const user = await storage.getUser(requestedUserId);
       
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
@@ -508,14 +525,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/users/:id', async (req: Request, res: Response) => {
+  app.patch('/api/users/:id', validateJWT, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = parseInt(id);
-      const requestUserId = (req as any).user.database_id;
+      const tokenUser = req.user as ExtendedUser;
       
       // Only allow users to update their own profile, unless admin
-      if (userId !== requestUserId && !(req as any).user.isAdmin) {
+      if (tokenUser.database_id !== userId && !tokenUser.isAdmin) {
         return res.status(403).json({ error: 'Not authorized to update this user' });
       }
       
@@ -541,7 +558,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/competitions', async (req: Request, res: Response) => {
     try {
       // Only admins can create competitions
-      if (!(req as any).user.isAdmin) {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
         return res.status(403).json({ error: 'Admin access required' });
       }
       
@@ -571,7 +589,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/golfers', async (req: Request, res: Response) => {
     try {
       // Only admins can create golfers
-      if (!(req as any).user.isAdmin) {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
         return res.status(403).json({ error: 'Admin access required' });
       }
       
@@ -584,10 +603,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Selections
-  app.get('/api/selections/:competitionId', async (req: Request, res: Response) => {
+  app.get('/api/selections/:competitionId', validateJWT, async (req: Request, res: Response) => {
     try {
       const { competitionId } = req.params;
-      const userId = (req as any).user.database_id;
+      const tokenUser = req.user as ExtendedUser;
+      const userId = tokenUser.database_id;
       
       const selection = await storage.getUserSelections(userId, parseInt(competitionId));
       res.json(selection || null);
@@ -597,9 +617,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/selections', async (req: Request, res: Response) => {
+  app.post('/api/selections', validateJWT, async (req: Request, res: Response) => {
     try {
-      const userId = (req as any).user.database_id;
+      const tokenUser = req.user as ExtendedUser;
+      const userId = tokenUser.database_id;
       
       // Validate the selection
       const selectionData = selectionFormSchema.parse(req.body);
@@ -647,10 +668,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch('/api/selections/:competitionId', async (req: Request, res: Response) => {
+  app.patch('/api/selections/:competitionId', validateJWT, async (req: Request, res: Response) => {
     try {
       const { competitionId } = req.params;
-      const userId = (req as any).user.database_id;
+      const tokenUser = req.user as ExtendedUser;
+      const userId = tokenUser.database_id;
       
       // Validate the selection
       const selectionData = selectionFormSchema.parse(req.body);
@@ -723,10 +745,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/results', async (req: Request, res: Response) => {
+  app.post('/api/results', validateJWT, async (req: Request, res: Response) => {
     try {
       // Only admins can create results
-      if (!(req as any).user.isAdmin) {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
         return res.status(403).json({ error: 'Admin access required' });
       }
       

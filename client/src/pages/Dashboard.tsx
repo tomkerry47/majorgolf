@@ -15,17 +15,19 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const [connectionStatus, setConnectionStatus] = useState<string>("checking");
   
-  // Check connection status
+  // Check connection status using our API instead of Supabase
   useEffect(() => {
     const checkConnection = async () => {
       try {
         setConnectionStatus("checking");
-        const { data, error } = await supabase.from('users').select('count').limit(1);
-        if (error) {
-          console.error("Connection check error:", error);
+        // Use our API to check connection instead of Supabase
+        const response = await fetch('/api/competitions');
+        
+        if (!response.ok) {
+          console.error("Connection check error:", response.statusText);
           setConnectionStatus("error");
         } else {
-          console.log("Database connection successful");
+          console.log("API connection successful");
           setConnectionStatus("connected");
         }
       } catch (err) {
