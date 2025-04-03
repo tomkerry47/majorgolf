@@ -104,20 +104,23 @@ export default function SelectionForm({ competitionId, onSuccess }: SelectionFor
   async function onSubmit(data: InsertSelection & { captainGolferId?: number }) {
     setIsSubmitting(true);
     try {
+      // Log the data received by onSubmit for debugging
+      console.log("Data submitted to onSubmit:", data);
+
       // Remove captainGolferId from data before sending to server
       // Create a new object without the captainGolferId property
       const { captainGolferId, ...selectionData } = data;
       
       if (existingSelections) {
-        // Update existing selections
-        await apiRequest('PATCH', `/api/selections/${competitionId}`, selectionData);
+        // Update existing selections (Corrected argument order)
+        await apiRequest(`/api/selections/${competitionId}`, 'PATCH', selectionData);
         toast({
           title: "Selections updated",
           description: "Your selections have been updated successfully.",
         });
       } else {
-        // Create new selections
-        await apiRequest('POST', '/api/selections', selectionData);
+        // Create new selections (Corrected argument order)
+        await apiRequest('/api/selections', 'POST', selectionData);
         toast({
           title: "Selections submitted",
           description: "Your selections have been submitted successfully.",

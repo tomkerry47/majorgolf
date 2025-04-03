@@ -1,3 +1,4 @@
+import 'dotenv/config'; // Load .env file variables into process.env
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -129,12 +130,12 @@ app.use((req, res, next) => {
   const port = parseInt(process.env.PORT || "5000", 10);
   server.listen({
     port,
-    host: "0.0.0.0",
-    reusePort: true,
+    host: "127.0.0.1", // Changed from localhost to explicit IPv4 loopback
+    // reusePort: true, // Removed reusePort option
   }, () => {
     log(`serving on port ${port}`);
-    console.log(`Server is running at http://0.0.0.0:${port}`);
-    console.log(`Access from outside: http://0.0.0.0:${port}`);
-    console.log(`Test page available at http://0.0.0.0:${port}/test`);
+    console.log(`Server is running at http://127.0.0.1:${port}`);
+    // Removed the 'Access from outside' log as it's less relevant for localhost
+    console.log(`Test page available at http://127.0.0.1:${port}/test`);
   });
 })();

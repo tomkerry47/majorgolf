@@ -40,6 +40,7 @@ export interface IStorage {
 
   // Selection methods
   getUserSelections(userId: number, competitionId: number): Promise<Selection | undefined>;
+  getUserSelectionsForAllCompetitions(userId: number): Promise<Selection[]>; // Added method
   getSelectionById(id: number): Promise<Selection | undefined>;
   hasUsedCaptainsChip(userId: number): Promise<boolean>;
   getAllSelections(competitionId: number): Promise<Selection[]>;
@@ -356,6 +357,20 @@ export class DatabaseStorage implements IStorage {
       createdAt: selection.createdAt instanceof Date ? selection.createdAt.toISOString() : selection.createdAt,
       updatedAt: selection.updatedAt instanceof Date ? selection.updatedAt.toISOString() : selection.updatedAt
     } as Selection;
+  }
+
+  async getUserSelectionsForAllCompetitions(userId: number): Promise<Selection[]> {
+    const userSelections = await db
+      .select()
+      .from(selections)
+      .where(eq(selections.userId, userId));
+
+    // Format for Selection interface
+    return userSelections.map(s => ({
+      ...s,
+      createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt,
+      updatedAt: s.updatedAt instanceof Date ? s.updatedAt.toISOString() : s.updatedAt
+    })) as Selection[];
   }
 
   async getSelectionById(id: number): Promise<Selection | undefined> {

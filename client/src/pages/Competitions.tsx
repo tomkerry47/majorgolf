@@ -4,9 +4,10 @@ import { useAuth } from "@/context/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Competition, Selection } from "@shared/schema"; // Import Competition and Selection types
+// Removed Tabs imports as they are no longer needed
 
 export default function Competitions() {
   const { user } = useAuth();
@@ -19,22 +20,46 @@ export default function Competitions() {
     }
   }, [user, setLocation]);
   
-  const { data: competitions, isLoading } = useQuery({
+  // Explicitly type the useQuery hook
+  const { data: competitions, isLoading } = useQuery<Competition[]>({ 
     queryKey: ['/api/competitions/all'],
-    enabled: !!user,
+    enabled: !!user, // Only fetch if user is logged in
+  });
+
+  // Fetch all selections for the current user
+  const { data: userSelections, isLoading: isLoadingUserSelections } = useQuery<Selection[]>({
+    queryKey: ['/api/selections/my-all'],
+    enabled: !!user, // Only fetch if user is logged in
   });
   
-  if (!user) return null;
+  // Removed duplicated useQuery hook for userSelections
   
-  const activeCompetitions = competitions?.filter(c => c.isActive) || [];
-  const upcomingCompetitions = competitions?.filter(c => !c.isActive && !c.isComplete) || [];
-  const pastCompetitions = competitions?.filter(c => c.isComplete) || [];
+  if (!user) return null; // Should be handled by useEffect redirect, but good practice
+
+  // Create a map for quick lookup of submitted competitions once userSelections are loaded
+  const userSelectionMap = new Map(userSelections?.map(sel => [sel.competitionId, true]) || []);
   
-  const CompetitionCard = ({ competition }: { competition: any }) => {
-    const startDate = new Date(competition.startDate).toLocaleDateString();
-    const endDate = new Date(competition.endDate).toLocaleDateString();
-    const deadlineDate = new Date(competition.selectionDeadline).toLocaleDateString();
-    
+  // Sort all competitions by start date
+  const sortedCompetitions = competitions
+    ? [...competitions].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+    : [];
+  
+  // Update CompetitionCard props to receive hasSubmitted
+  const CompetitionCard = ({ competition, hasSubmitted }: { competition: Competition, hasSubmitted: boolean }) => { 
+    const startDate = new Date(competition.startDate);
+    const endDate = new Date(competition.endDate);
+    const deadlineDate = new Date(competition.selectionDeadline); 
+
+    // Calculate deadline time (06:00 AM on start date)
+    const selectionLockTime = new Date(startDate);
+    selectionLockTime.setHours(6, 0, 0, 0); 
+
+    const now = new Date();
+    // Disable button if competition is complete OR if user is not admin AND deadline has passed
+    const isSelectionLocked = !user?.isAdmin && now >= selectionLockTime;
+    // Button should be enabled if competition is not complete AND selection is not locked for the user
+    const canMakeSelection = !competition.isComplete && !isSelectionLocked; 
+
     let status;
     let statusClass;
     
@@ -66,24 +91,30 @@ export default function Competitions() {
               </p>
               <p className="text-sm text-gray-600 mb-1">
                 <i className="fas fa-calendar mr-2 text-gray-400"></i>
-                {startDate} - {endDate}
+                {startDate.toLocaleDateString()} - {endDate.toLocaleDateString()} {/* Format dates */}
               </p>
               <p className="text-sm text-gray-600">
                 <i className="fas fa-clock mr-2 text-gray-400"></i>
-                Selection Deadline: {deadlineDate}
+                Selection Deadline: {deadlineDate.toLocaleDateString()} {/* Format date */}
               </p>
               
-              {competition.hasSubmitted && (
-                <div className="mt-3 text-sm text-success flex items-center">
+              {hasSubmitted && ( // Use the passed prop
+                <div className="mt-3 text-sm text-green-600 flex items-center"> {/* Use Tailwind color */}
                   <i className="fas fa-check-circle mr-1"></i>
-                  You have submitted your selections
+                  Selections Submitted
                 </div>
               )}
             </div>
             
+            {/* Removed duplicated/incorrect Link block */}
+            
             <Link href={`/competitions/${competition.id}`}>
-              <Button size="sm" variant={competition.hasSubmitted ? "outline" : "default"}>
-                {competition.hasSubmitted ? "View Selections" : "Make Selections"}
+              <Button 
+                size="sm" 
+                variant={hasSubmitted ? "outline" : "default"} // Use passed prop
+                disabled={!canMakeSelection} 
+              >
+                {competition.isComplete ? "View Results" : (hasSubmitted ? "Change Selections" : "Make Selections")} {/* Use passed prop */}
               </Button>
             </Link>
           </div>
@@ -127,63 +158,22 @@ export default function Competitions() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
         <h1 className="text-2xl font-semibold text-gray-900 mb-6">Competitions</h1>
         
-        <Tabs defaultValue="active">
-          <TabsList className="mb-6">
-            <TabsTrigger value="active">
-              Active
-              {activeCompetitions.length > 0 && (
-                <span className="ml-2 px-2 py-0.5 text-xs bg-primary/10 text-primary rounded-full">
-                  {activeCompetitions.length}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="upcoming">
-              Upcoming
-              {upcomingCompetitions.length > 0 && (
-                <span className="ml-2 px-2 py-0.5 text-xs bg-primary/10 text-primary rounded-full">
-                  {upcomingCompetitions.length}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="past">Past</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="active">
-            {isLoading ? (
-              <LoadingSkeleton />
-            ) : activeCompetitions.length === 0 ? (
-              <EmptyState message="There are no active competitions at the moment." />
-            ) : (
-              activeCompetitions.map((competition) => (
-                <CompetitionCard key={competition.id} competition={competition} />
-              ))
-            )}
-          </TabsContent>
-          
-          <TabsContent value="upcoming">
-            {isLoading ? (
-              <LoadingSkeleton />
-            ) : upcomingCompetitions.length === 0 ? (
-              <EmptyState message="There are no upcoming competitions scheduled." />
-            ) : (
-              upcomingCompetitions.map((competition) => (
-                <CompetitionCard key={competition.id} competition={competition} />
-              ))
-            )}
-          </TabsContent>
-          
-          <TabsContent value="past">
-            {isLoading ? (
-              <LoadingSkeleton />
-            ) : pastCompetitions.length === 0 ? (
-              <EmptyState message="There are no past competitions to display." />
-            ) : (
-              pastCompetitions.map((competition) => (
-                <CompetitionCard key={competition.id} competition={competition} />
-              ))
-            )}
-          </TabsContent>
-        </Tabs>
+        {/* Removed Tabs component, directly render the list */}
+        <div className="space-y-4">
+          {isLoading || isLoadingUserSelections ? ( // Check both loading states
+            <LoadingSkeleton />
+          ) : sortedCompetitions.length === 0 ? (
+            <EmptyState message="No competitions found." />
+          ) : (
+            sortedCompetitions.map((competition) => (
+              <CompetitionCard 
+                key={competition.id} 
+                competition={competition} 
+                hasSubmitted={userSelectionMap.has(competition.id)} // Pass hasSubmitted status from the map
+              />
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

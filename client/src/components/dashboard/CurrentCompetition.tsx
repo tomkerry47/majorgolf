@@ -56,34 +56,38 @@ export default function CurrentCompetition() {
     points: number;
   }
 
-  const { data: activeCompetition, isLoading } = useQuery<Competition>({
+  // Expect an array of competitions, even if only one is active
+  const { data: activeCompetitions, isLoading } = useQuery<Competition[]>({ 
     queryKey: ['/api/competitions/active'],
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
+  // Get the first active competition, if any
+  const currentCompetition = activeCompetitions?.[0]; 
+
   const { data: userSelections, isLoading: isLoadingSelections } = useQuery<Selection[]>({
-    queryKey: ['/api/selections/my', activeCompetition?.id],
-    enabled: !!activeCompetition?.id,
+    queryKey: ['/api/selections/my', currentCompetition?.id], // Use currentCompetition?.id
+    enabled: !!currentCompetition?.id, // Enable only if there's an active competition
   });
 
   // Setup polling for results updates instead of realtime subscription
   useEffect(() => {
-    if (!activeCompetition?.id) return;
+    if (!currentCompetition?.id) return; // Use currentCompetition?.id
 
     // Poll for updates every 30 seconds
     const intervalId = setInterval(() => {
       queryClient.invalidateQueries({
-        queryKey: ['/api/selections/my', activeCompetition.id],
+        queryKey: ['/api/selections/my', currentCompetition.id], // Use currentCompetition.id
       });
       queryClient.invalidateQueries({
-        queryKey: ['/api/results', activeCompetition.id],
+        queryKey: ['/api/results', currentCompetition.id], // Use currentCompetition.id
       });
     }, 30000); // 30 seconds
 
     return () => {
       clearInterval(intervalId);
     };
-  }, [activeCompetition?.id]);
+  }, [currentCompetition?.id]); // Depend on currentCompetition?.id
 
   if (isLoading) {
     return (
@@ -109,7 +113,8 @@ export default function CurrentCompetition() {
     );
   }
 
-  if (!activeCompetition) {
+  // Check if there is a currentCompetition after loading
+  if (!currentCompetition) { 
     return (
       <div className="mt-8">
         <div className="flex items-center justify-between">
@@ -134,6 +139,10 @@ export default function CurrentCompetition() {
     );
   }
 
+  // Format dates now that we know currentCompetition exists
+  const startDateString = new Date(currentCompetition.startDate).toLocaleDateString();
+  const endDateString = new Date(currentCompetition.endDate).toLocaleDateString();
+
   const hasSelections = userSelections && userSelections.length > 0;
   const totalPoints = hasSelections ? userSelections.reduce((sum, selection) => sum + selection.points, 0) : 0;
 
@@ -150,9 +159,9 @@ export default function CurrentCompetition() {
         <CardHeader className="bg-secondary/5 px-4 py-5 sm:px-6">
           <div className="flex justify-between">
             <div>
-              <h3 className="text-lg font-medium leading-6 text-gray-900">{activeCompetition.name}</h3>
+              <h3 className="text-lg font-medium leading-6 text-gray-900">{currentCompetition.name}</h3>
               <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                {activeCompetition.venue} • {new Date(activeCompetition.startDate).toLocaleDateString()} - {new Date(activeCompetition.endDate).toLocaleDateString()}
+                {currentCompetition.venue} • {startDateString} - {endDateString}
               </p>
             </div>
             <div className="flex items-center">
@@ -179,7 +188,7 @@ export default function CurrentCompetition() {
               </div>
               <p className="text-sm text-gray-500">You haven't made your selections for this competition yet.</p>
               <Button asChild className="mt-4">
-                <Link href={`/competitions/${activeCompetition.id}`}>Make Selections</Link>
+                <Link href={`/competitions/${currentCompetition.id}`}>Make Selections</Link>
               </Button>
             </div>
           ) : (
