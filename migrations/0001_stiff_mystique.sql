@@ -1,0 +1,1 @@
+-- Migration removed as the index already exists

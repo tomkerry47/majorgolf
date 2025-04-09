@@ -41,16 +41,33 @@ const Leaderboard = () => {
   
   // Fetch leaderboard data based on selected competition
   const { 
-    data: leaderboard = {} as LeaderboardData, 
+    data: leaderboard = { standings: [] } as LeaderboardData, // Provide a default matching the interface
     isLoading: isLoadingLeaderboard,
     refetch: refetchLeaderboard
-  } = useQuery<LeaderboardData>({
+  } = useQuery<LeaderboardData, Error>({ // Specify Error type for the second generic argument
     queryKey: [
       "/api/leaderboard", 
       selectedCompetitionId === "all" ? undefined : selectedCompetitionId
     ],
-    // Always enabled, will fetch overall leaderboard if no competitionId
-    enabled: true,  
+    queryFn: async () => { // Define the query function
+      const competitionParam = selectedCompetitionId === "all" ? '' : `/${selectedCompetitionId}`;
+      const response = await fetch(`/api/leaderboard${competitionParam}`);
+      if (!response.ok) {
+        throw new Error(`Network response was not ok: ${response.statusText}`);
+      }
+      // Assuming the API returns the LeaderboardData structure directly or needs parsing
+      // Let's assume it returns { standings: [], ... } structure based on previous analysis
+      const fetchedData = await response.json(); 
+      // Check if the response is an array (like from the route) or the expected object
+      if (Array.isArray(fetchedData)) {
+        // If it's just the array (likely overall standings), wrap it
+        return { standings: fetchedData } as LeaderboardData; 
+      }
+      // If it's already the object structure (likely specific competition), return as is
+      return fetchedData as LeaderboardData; 
+    },
+    enabled: true // Keep enabled
+    // Removed onSuccess and onError callbacks
   });
 
   // Find currently selected competition

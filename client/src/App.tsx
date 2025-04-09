@@ -8,14 +8,33 @@ import Leaderboard from "@/pages/leaderboard";
 import Admin from "@/pages/admin";
 import Profile from "@/pages/Profile";
 import NotFound from "@/pages/not-found";
-import PointSystemAdmin from "@/pages/admin/PointSystem";
-import TournamentResultsAdmin from "@/pages/admin/TournamentResults";
+// import PointSystemAdmin from "@/pages/admin/PointSystem"; // Removed import
+// import TournamentResultsAdmin from "@/pages/admin/TournamentResults"; // Removed import
 import TournamentResultDetail from "@/pages/admin/TournamentResultDetail";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import Auth from "./pages/auth";
+import { useLocation, type RouteComponentProps } from "wouter"; // Import useLocation and RouteComponentProps
+
+// Wrapper component to handle route params
+const TournamentResultDetailWrapper = (props: RouteComponentProps<{ id: string }>) => {
+  const [, navigate] = useLocation();
+  // Extract the 'id' param and pass it as 'competitionId'
+  // Provide a fallback or handle cases where 'id' might be missing/invalid if necessary
+  const competitionId = props.params.id; 
+  
+  // Basic check if competitionId is valid before rendering
+  if (!competitionId || isNaN(parseInt(competitionId))) {
+     // Handle invalid ID, e.g., navigate to NotFound or show an error
+     navigate("/404"); // Example: redirect to not found
+     return null; 
+  }
+
+  return <TournamentResultDetail competitionId={competitionId} onBack={() => navigate('/admin')} />;
+};
+
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -72,9 +91,10 @@ function App() {
               <Route path="/competitions/:id" component={Competition} />
               <Route path="/leaderboard" component={Leaderboard} />
               <Route path="/admin" component={Admin} />
-              <Route path="/admin/point-system" component={PointSystemAdmin} />
-              <Route path="/admin/tournament-results" component={TournamentResultsAdmin} />
-              <Route path="/admin/tournament-results/:id" component={TournamentResultDetail} />
+              {/* <Route path="/admin/point-system" component={PointSystemAdmin} /> */}
+              {/* <Route path="/admin/tournament-results" component={TournamentResultsAdmin} /> */}
+              {/* Use the wrapper component for the route */}
+              <Route path="/admin/tournament-results/:id" component={TournamentResultDetailWrapper} /> 
               <Route path="/profile" component={Profile} />
               <Route component={NotFound} />
             </Switch>

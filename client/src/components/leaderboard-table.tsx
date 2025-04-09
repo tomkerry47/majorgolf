@@ -26,11 +26,11 @@ interface LeaderboardEntry {
   email: string;
   avatarUrl?: string;
   points: number;
-  selections: {
+  selections?: { // Make selections optional
     playerName: string;
     position?: number;
   }[];
-  lastPointsChange: number;
+  lastPointsChange?: number; // Make lastPointsChange optional
 }
 
 interface LeaderboardTableProps {
@@ -190,24 +190,41 @@ const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) =>
                 </TableCell>
                 <TableCell className="font-semibold">{entry.points}</TableCell>
                 <TableCell className="text-sm text-gray-500">
-                  {entry.selections.map((selection, idx) => (
-                    <span key={idx} className={idx === 0 && selection.position === 1 ? 'text-green-700 font-medium' : ''}>
-                      {selection.playerName}
-                      {selection.position && ` (${selection.position}${getOrdinalSuffix(selection.position)})`}
-                      {idx < entry.selections.length - 1 ? ', ' : ''}
-                    </span>
-                  ))}
+                  {/* Check if selections exist and assign to a new variable */}
+                  {(() => {
+                    const selections = entry.selections; // Assign to new variable
+                    if (selections && selections.length > 0) {
+                      return selections.map((selection, idx) => (
+                        <span key={idx} className={idx === 0 && selection.position === 1 ? 'text-green-700 font-medium' : ''}>
+                          {selection.playerName}
+                          {selection.position && ` (${selection.position}${getOrdinalSuffix(selection.position)})`}
+                          {/* Use the new 'selections' variable which TS knows is an array */}
+                          {idx < selections.length - 1 ? ', ' : ''}
+                        </span>
+                      ));
+                    } else {
+                      return <span>-</span>; // Display dash if no selections
+                    }
+                  })()}
                 </TableCell>
                 <TableCell>
-                  <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
-                    ${entry.lastPointsChange > 0 
-                      ? 'bg-green-100 text-green-800' 
-                      : entry.lastPointsChange < 0 
-                        ? 'bg-red-100 text-red-800' 
-                        : 'bg-gray-100 text-gray-800'
-                    }`}>
-                    {entry.lastPointsChange > 0 ? '+' : ''}{entry.lastPointsChange}
-                  </span>
+                  {/* Conditionally render last points change */}
+                  {entry.lastPointsChange !== undefined ? (
+                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full
+                      ${entry.lastPointsChange > 0
+                        ? 'bg-green-100 text-green-800'
+                        : entry.lastPointsChange < 0
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                      {entry.lastPointsChange > 0 ? '+' : ''}{entry.lastPointsChange}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                      N/A
+                    </span> // Display N/A if undefined
+                  )}
+                  {/* Removed extra closing span from previous attempt */}
                 </TableCell>
               </TableRow>
             ))}
@@ -219,15 +236,19 @@ const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) =>
         <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 sm:px-6">
           <div className="flex items-center justify-between">
             <div className="flex-1 flex justify-between sm:hidden">
+              {/* Removed disabled prop */}
               <PaginationLink 
                 onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
+                aria-disabled={currentPage === 1} // Use aria-disabled for accessibility
+                className={currentPage === 1 ? 'pointer-events-none opacity-50' : ''} // Add styling for disabled state
               >
                 Previous
               </PaginationLink>
+              {/* Removed disabled prop */}
               <PaginationLink 
                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages}
+                aria-disabled={currentPage === totalPages} // Use aria-disabled for accessibility
+                className={currentPage === totalPages ? 'pointer-events-none opacity-50' : ''} // Add styling for disabled state
               >
                 Next
               </PaginationLink>
@@ -245,9 +266,11 @@ const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) =>
               <Pagination>
                 <PaginationContent>
                   <PaginationItem>
+                    {/* Removed disabled prop */}
                     <PaginationPrevious 
                       onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                      disabled={currentPage === 1}
+                      aria-disabled={currentPage === 1} // Use aria-disabled for accessibility
+                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : ''} // Add styling for disabled state
                     />
                   </PaginationItem>
                   
@@ -269,9 +292,11 @@ const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) =>
                   ))}
                   
                   <PaginationItem>
+                    {/* Removed disabled prop */}
                     <PaginationNext 
                       onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                      disabled={currentPage === totalPages}
+                      aria-disabled={currentPage === totalPages} // Use aria-disabled for accessibility
+                      className={currentPage === totalPages ? 'pointer-events-none opacity-50' : ''} // Add styling for disabled state
                     />
                   </PaginationItem>
                 </PaginationContent>

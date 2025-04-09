@@ -2,19 +2,23 @@ import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
-import { queryClient } from "@/lib/queryClient";
+import { useQuery, useQueryClient } from "@tanstack/react-query"; // Import useQueryClient
+import { apiRequest } from "@/lib/queryClient"; // Import apiRequest
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 
+// Updated GolferSelectionProps to include rank, captain, and wildcard
 interface GolferSelectionProps {
   name: string;
   position: number | string;
   points: number;
   avatar?: string;
+  rank: number | string; // Added rank
+  isCaptain: boolean; // Added captain flag
+  isWildcard: boolean; // Added wildcard flag
 }
 
-function GolferSelection({ name, position, points, avatar }: GolferSelectionProps) {
+function GolferSelection({ name, position, points, avatar, rank, isCaptain, isWildcard }: GolferSelectionProps) {
   return (
     <div className="relative rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm flex items-center space-x-3 hover:border-primary/30">
       <div className="flex-shrink-0">
@@ -27,8 +31,14 @@ function GolferSelection({ name, position, points, avatar }: GolferSelectionProp
         </div>
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900">{name}</p>
-        <p className="text-sm text-gray-500 truncate">Current Position: {position}</p>
+        <p className="text-sm font-medium text-gray-900">
+          {name}
+          {isCaptain && <span className="ml-1 text-xs font-bold text-primary">(C)</span>}
+          {isWildcard && <span className="ml-1 text-xs font-bold text-info">(W)</span>}
+        </p>
+        <p className="text-sm text-gray-500 truncate">
+          Rank: {rank} • Position: {position}
+        </p>
       </div>
       <div className="flex-shrink-0 text-sm font-semibold text-success">+{points} pts</div>
     </div>
@@ -46,14 +56,19 @@ export default function CurrentCompetition() {
     isActive: boolean;
   }
 
+  // Updated Selection interface to match the new API response
   interface Selection {
-    id: number;
+    id: number; // Selection record ID (might not be needed per golfer)
     golfer: {
+      id: number;
       name: string;
       avatar?: string;
+      rank: number | string; // Added rank
     };
-    position?: number;
-    points: number;
+    position?: number | string; // Position in the competition
+    points: number; // Points gained in the competition
+    isCaptain: boolean; // Added captain flag
+    isWildcard: boolean; // Added wildcard flag
   }
 
   // Expect an array of competitions, even if only one is active
@@ -63,24 +78,33 @@ export default function CurrentCompetition() {
   });
 
   // Get the first active competition, if any
-  const currentCompetition = activeCompetitions?.[0]; 
+  const currentCompetition = activeCompetitions?.[0];
+  const queryClientHook = useQueryClient(); // Get queryClient instance
 
-  const { data: userSelections, isLoading: isLoadingSelections } = useQuery<Selection[]>({
-    queryKey: ['/api/selections/my', currentCompetition?.id], // Use currentCompetition?.id
-    enabled: !!currentCompetition?.id, // Enable only if there's an active competition
+  // Fetch user's selection for the current competition
+  const { data: userSelections, isLoading: isLoadingSelections } = useQuery<Selection[] | null>({ // Allow null
+    // Corrected queryKey
+    queryKey: ['/api/selections', currentCompetition?.id], 
+    // Added queryFn to fetch from the correct endpoint
+    queryFn: () => {
+      if (!currentCompetition?.id) return null; // Return null if no ID
+      return apiRequest<Selection[] | null>(`/api/selections/${currentCompetition.id}`, 'GET');
+    },
+    enabled: !!currentCompetition?.id, // Enable only if there's an active competition ID
   });
 
-  // Setup polling for results updates instead of realtime subscription
+  // Setup polling for results updates
   useEffect(() => {
-    if (!currentCompetition?.id) return; // Use currentCompetition?.id
+    if (!currentCompetition?.id) return;
 
     // Poll for updates every 30 seconds
     const intervalId = setInterval(() => {
-      queryClient.invalidateQueries({
-        queryKey: ['/api/selections/my', currentCompetition.id], // Use currentCompetition.id
+      // Use the corrected queryKey for invalidation
+      queryClientHook.invalidateQueries({
+        queryKey: ['/api/selections', currentCompetition.id], 
       });
-      queryClient.invalidateQueries({
-        queryKey: ['/api/results', currentCompetition.id], // Use currentCompetition.id
+      queryClientHook.invalidateQueries({
+        queryKey: ['/api/results', currentCompetition.id], 
       });
     }, 30000); // 30 seconds
 
@@ -195,11 +219,14 @@ export default function CurrentCompetition() {
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
               {userSelections.map((selection, index) => (
                 <GolferSelection
-                  key={index}
+                  key={selection.golfer.id} // Use golfer ID for a more stable key
                   name={selection.golfer.name}
                   position={selection.position || 'N/A'}
                   points={selection.points || 0}
                   avatar={selection.golfer.avatar}
+                  rank={selection.golfer.rank || 'N/A'} // Pass rank
+                  isCaptain={selection.isCaptain} // Pass isCaptain
+                  isWildcard={selection.isWildcard} // Pass isWildcard
                 />
               ))}
             </div>

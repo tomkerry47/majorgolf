@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.json", // Inherit from the main config
+  "compilerOptions": {
+    "noEmit": false, // Allow JavaScript output
+    "outDir": "./dist-scripts", // Specify output directory for compiled scripts
+    "module": "NodeNext", // Use a Node-compatible module system for scripts
+    "moduleResolution": "NodeNext", // Match module resolution
+    "allowImportingTsExtensions": false, // Standard Node doesn't allow .ts imports
+    "esModuleInterop": true, // Maintain compatibility
+    "skipLibCheck": true, // Skip checking library files
+    // Remove client-specific options if they cause issues
+    "jsx": "react-jsx", // Or remove if scripts don't use JSX
+    "types": ["node"], // Only include node types for scripts
+    "paths": {
+      // Adjust paths if scripts import from shared using aliases
+      "@shared/*": ["./shared/*"] 
+    }
+  },
+  "include": [
+    "scripts/**/*.ts", // Only include files in the scripts directory
+    "shared/**/*.ts" // Include shared if scripts import from it
+  ],
+  "exclude": [
+    "node_modules", 
+    "client", // Exclude client code
+    "server", // Exclude server code unless scripts import directly
+    "dist", 
+    "build"
+  ] 
+}

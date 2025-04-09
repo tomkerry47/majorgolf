@@ -26,7 +26,7 @@ export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
     middlewareMode: true,
     hmr: { server },
-    allowedHosts: true,
+    // allowedHosts: true, // Removed this line to resolve TS error
   };
 
   const vite = await createViteServer({
@@ -71,7 +71,8 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(__dirname, "public");
+  // Correct the path to point to the client's build output directory
+  const distPath = path.resolve(__dirname, "..", "client", "dist"); 
 
   if (!fs.existsSync(distPath)) {
     throw new Error(

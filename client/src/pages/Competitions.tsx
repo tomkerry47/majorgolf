@@ -106,17 +106,26 @@ export default function Competitions() {
               )}
             </div>
             
-            {/* Removed duplicated/incorrect Link block */}
-            
-            <Link href={`/competitions/${competition.id}`}>
-              <Button 
-                size="sm" 
-                variant={hasSubmitted ? "outline" : "default"} // Use passed prop
-                disabled={!canMakeSelection} 
-              >
-                {competition.isComplete ? "View Results" : (hasSubmitted ? "Change Selections" : "Make Selections")} {/* Use passed prop */}
-              </Button>
-            </Link>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-4 sm:mt-0"> {/* Container for buttons */}
+              {/* View Competition Button (Always Enabled) */}
+              <Link href={`/competitions/${competition.id}`} className="w-full sm:w-auto">
+                <Button size="sm" variant="secondary" className="w-full"> 
+                  View Competition
+                </Button>
+              </Link>
+
+              {/* Make/Change Selections Button (Conditionally Enabled) */}
+              <Link href={`/competitions/${competition.id}`} className="w-full sm:w-auto">
+                <Button 
+                  size="sm" 
+                  variant={hasSubmitted ? "outline" : "default"} // Use passed prop
+                  className="w-full" // Make button full width on small screens
+                  disabled={!canMakeSelection} 
+                >
+                  {competition.isComplete ? "View Results" : (hasSubmitted ? "Change Selections" : "Make Selections")} {/* Use passed prop */}
+                </Button>
+              </Link>
+            </div>
           </div>
         </CardContent>
       </Card>

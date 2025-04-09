@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react"; // Import useMemo
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query"; // Add useMutation
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, RefreshCw } from 'lucide-react'; // Add icons
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; // Add CardDescription
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -41,7 +42,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { insertResultSchema, type InsertResult } from "@shared/schema";
+// Import necessary types
+import { insertResultSchema, type InsertResult, type Competition, type Result, type Golfer } from "@shared/schema"; 
+
+// Helper function to display golfer name
+const getGolferDisplayName = (golfer?: Golfer | null): string => {
+  if (golfer && golfer.firstName && golfer.lastName) {
+    return `${golfer.firstName} ${golfer.lastName}`;
+  }
+  return 'Unknown Golfer'; 
+};
 
 export default function AdminResults() {
   const { toast } = useToast();
@@ -50,27 +60,84 @@ export default function AdminResults() {
   const [selectedResult, setSelectedResult] = useState<any>(null);
   const [selectedCompetition, setSelectedCompetition] = useState<number | null>(null);
   const [formAction, setFormAction] = useState<'create' | 'edit'>('create');
-  
+
+  // --- Start: Modified Update Results Logic ---
+  // Mutation for triggering result updates for a SPECIFIC tournament
+  const { mutate: updateSelectedResults, isPending: isUpdatingSelected } = useMutation({
+    // Expect competitionId as an argument
+    mutationFn: ({ competitionId }: { competitionId: number }) => 
+      apiRequest('/api/admin/update-results', 'POST', { competitionId }), // Send ID in body
+    onSuccess: (_, variables) => { // Access variables to know which competition was updated
+      toast({
+        title: 'Success',
+          description: `Update triggered for competition ID ${variables.competitionId}. Results & points are being processed.`,
+      });
+       // Refetch results and leaderboard for the updated competition
+       if (variables.competitionId) {
+         queryClient.refetchQueries({ queryKey: [`/api/admin/tournament-results/${variables.competitionId}`] }); 
+         queryClient.refetchQueries({ queryKey: [`/api/leaderboard/${variables.competitionId}`] }); // Refetch specific leaderboard
+       }
+       // Refetch competitions list (status might change) and overall leaderboard
+      queryClient.refetchQueries({ queryKey: ['/api/competitions'] }); 
+      queryClient.refetchQueries({ queryKey: ['/api/leaderboard'] }); // Refetch overall leaderboard
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error Triggering Update',
+        description: error.message || 'Failed to trigger update for all tournament results.',
+        variant: 'destructive',
+      });
+    }
+  });
+  // --- End: Modified Update Results Logic ---
+
   // Get all competitions
   const { data: competitions, isLoading: isLoadingCompetitions } = useQuery({
     queryKey: ['/api/competitions'],
   });
   
-  // Get competition results for selected competition
-  const { data: results, isLoading: isLoadingResults } = useQuery({
-    queryKey: [`/api/admin/competitions/${selectedCompetition}/results`],
-    enabled: !!selectedCompetition,
-  });
+   // Get competition results for selected competition
+   const { data: results, isLoading: isLoadingResults } = useQuery({
+     queryKey: [`/api/admin/tournament-results/${selectedCompetition}`], // Corrected path
+     enabled: !!selectedCompetition,
+   });
   
-  // Get all golfers
-  const { data: golfers, isLoading: isLoadingGolfers } = useQuery({
+  // Get all golfers - Updated to handle { golfers: [...] }
+  const { data: golfers, isLoading: isLoadingGolfers } = useQuery<{ golfers: Golfer[] }, Error, Golfer[]>({
     queryKey: ['/api/golfers'],
+    queryFn: () => apiRequest<{ golfers: Golfer[] }>('/api/golfers'), // Fetch the object
+    // Extremely defensive select: Check data is object, golfers property exists and is an array
+    select: (data) => {
+      if (typeof data === 'object' && data !== null && Array.isArray(data.golfers)) {
+        return data.golfers;
+      }
+      // Return empty array in all other cases (including fetch errors handled by react-query)
+      return []; 
+    },
   });
-  
-  const defaultValues: InsertResult = {
+
+  // Create a map for quick golfer name lookup
+  // Create a map for quick golfer lookup (includes name for display)
+  const golferMap = useMemo(() => {
+    try {
+      // Stricter check + try...catch: Only proceed if golfers is definitely an array
+      if (Array.isArray(golfers)) {
+        // This is the line causing the error (116 in original stack trace)
+        return new Map(golfers.map(golfer => [golfer.id, golfer]));
+      }
+    } catch (error) {
+      console.error("Error creating golferMap:", error, "golfers value:", golfers);
+    }
+    // Otherwise, always return an empty map
+    return new Map<number, Golfer>();
+  }, [golfers]);
+
+  // Add score to defaultValues
+  const defaultValues: InsertResult = { 
     competitionId: selectedCompetition || 0,
     golferId: 0,
     position: 0,
+    score: 0, // Added required score field
     points: 0
   };
   
@@ -108,6 +175,7 @@ export default function AdminResults() {
       competitionId: result.competitionId,
       golferId: result.golferId,
       position: result.position,
+      score: result.score, // Add score when editing
       points: result.points
     });
     setFormAction('edit');
@@ -120,26 +188,26 @@ export default function AdminResults() {
     setIsDeleteDialogOpen(true);
   };
   
-  const onSubmit = async (data: InsertResult) => {
-    try {
-      if (formAction === 'create') {
-        await apiRequest('POST', '/api/admin/results', data);
-        toast({
-          title: "Result created",
-          description: "The result has been successfully created."
-        });
-      } else {
-        await apiRequest('PATCH', `/api/admin/results/${selectedResult.id}`, data);
-        toast({
-          title: "Result updated",
-          description: "The result has been successfully updated."
-        });
-      }
-      
-      queryClient.invalidateQueries({ queryKey: [`/api/admin/competitions/${selectedCompetition}/results`] });
-      setIsDialogOpen(false);
-    } catch (error: any) {
-      toast({
+   const onSubmit = async (data: InsertResult) => {
+     try {
+       if (formAction === 'create') {
+         await apiRequest('POST', '/api/admin/tournament-results', data); // Corrected path
+         toast({
+           title: "Result created",
+           description: "The result has been successfully created."
+         });
+       } else {
+         await apiRequest('PATCH', `/api/admin/tournament-results/${selectedResult.id}`, data); // Corrected path
+         toast({
+           title: "Result updated",
+           description: "The result has been successfully updated."
+         });
+       }
+       
+       queryClient.invalidateQueries({ queryKey: [`/api/admin/tournament-results/${selectedCompetition}`] }); // Corrected path
+       setIsDialogOpen(false);
+     } catch (error: any) {
+       toast({
         variant: "destructive",
         title: "Error",
         description: error.message || "An error occurred."
@@ -147,18 +215,18 @@ export default function AdminResults() {
     }
   };
   
-  const handleDelete = async () => {
-    try {
-      await apiRequest('DELETE', `/api/admin/results/${selectedResult.id}`, {});
-      toast({
-        title: "Result deleted",
-        description: "The result has been successfully deleted."
-      });
-      
-      queryClient.invalidateQueries({ queryKey: [`/api/admin/competitions/${selectedCompetition}/results`] });
-      setIsDeleteDialogOpen(false);
-    } catch (error: any) {
-      toast({
+   const handleDelete = async () => {
+     try {
+       await apiRequest('DELETE', `/api/admin/tournament-results/${selectedResult.id}`, {}); // Corrected path
+       toast({
+         title: "Result deleted",
+         description: "The result has been successfully deleted."
+       });
+       
+       queryClient.invalidateQueries({ queryKey: [`/api/admin/tournament-results/${selectedCompetition}`] }); // Corrected path
+       setIsDeleteDialogOpen(false);
+     } catch (error: any) {
+       toast({
         variant: "destructive",
         title: "Error",
         description: error.message || "An error occurred."
@@ -166,7 +234,8 @@ export default function AdminResults() {
     }
   };
   
-  const activeCompetitions = competitions?.filter(c => c.isActive || c.isComplete) || [];
+  // Add explicit types and default empty array, ensure competitions is an array before filtering
+  const activeCompetitions = Array.isArray(competitions) ? competitions.filter((c: Competition) => c.isActive || c.isComplete) : []; 
   
   return (
     <Card>
@@ -188,21 +257,17 @@ export default function AdminResults() {
               {isLoadingCompetitions ? (
                 <div className="py-2 text-center text-sm text-gray-500">Loading...</div>
               ) : activeCompetitions.length === 0 ? (
-                <div className="py-2 text-center text-sm text-gray-500">No active competitions</div>
-              ) : (
-                activeCompetitions.map((competition) => (
-                  <SelectItem key={competition.id} value={competition.id.toString()}>
-                    {competition.name}
-                  </SelectItem>
+                 <div className="py-2 text-center text-sm text-gray-500">No active competitions</div>
+               ) : (
+                 // Add explicit type
+                 activeCompetitions.map((competition: Competition) => ( 
+                   <SelectItem key={competition.id} value={competition.id.toString()}>
+                     {competition.name}
+                   </SelectItem>
                 ))
               )}
             </SelectContent>
           </Select>
-          
-          <Button onClick={openCreateDialog} disabled={!selectedCompetition}>
-            <i className="fas fa-plus mr-2"></i>
-            Add Result
-          </Button>
         </div>
       </CardHeader>
       <CardContent>
@@ -210,52 +275,58 @@ export default function AdminResults() {
           <div className="text-center py-10 text-gray-500">
             Please select a competition to view and manage results.
           </div>
-        ) : isLoadingResults ? (
+        ) : isLoadingResults || isLoadingGolfers ? ( // Wait for golfers too
           <div className="space-y-4">
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
+          <> {/* Added Fragment */}
+            {/* Moved Add Result Button Here */}
+            <div className="mb-4 flex justify-end">
+              <Button onClick={openCreateDialog} disabled={!selectedCompetition}>
+                <i className="fas fa-plus mr-2"></i>
+                Add Result
+              </Button>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
                 <TableHead>Position</TableHead>
                 <TableHead>Golfer</TableHead>
                 <TableHead>Points</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
-              {results?.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center py-4 text-gray-500">
-                    No results found for this competition. Add some to get started.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                results?.map((result) => (
-                  <TableRow key={result.id}>
-                    <TableCell className="font-medium">{result.position}</TableCell>
-                    <TableCell>
+             <TableBody>
+               {/* Add nullish coalescing and ensure results is an array */}
+               {!(Array.isArray(results) && results.length > 0) ? ( 
+                 <TableRow>
+                   <TableCell colSpan={4} className="text-center py-4 text-gray-500">
+                     No results found for this competition. Add some to get started.
+                   </TableCell>
+                 </TableRow>
+               ) : (
+                 // Add explicit type and ensure results is an array
+                 (results as Result[]).map((result: Result) => ( 
+                   <TableRow key={result.id}>
+                     <TableCell className="font-medium">{result.position}</TableCell>
+                     <TableCell>
                       <div className="flex items-center">
-                        {result.golfer?.avatar ? (
-                          <img 
-                            className="h-8 w-8 rounded-full mr-2" 
-                            src={result.golfer.avatar} 
-                            alt={result.golfer.name} 
-                          />
-                        ) : (
-                          <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center mr-2">
-                            <span className="text-sm font-medium text-gray-800">
-                              {result.golfer?.name.charAt(0)}
-                            </span>
-                          </div>
-                        )}
-                        {result.golfer?.name}
+                        {/* Avatar URL is not available on result.golfers, use fallback */}
+                        {/* Avatar Placeholder - Use golferNameMap for initial */}
+                        {/* Avatar Placeholder - Use first initial of first name */}
+                        <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center mr-2">
+                          <span className="text-sm font-medium text-gray-800">
+                            {(golferMap.get(result.golferId)?.firstName?.charAt(0) ?? '?').toUpperCase()}
+                          </span>
+                        </div>
+                        {/* Use helper function for display */}
+                        {getGolferDisplayName(golferMap.get(result.golferId))}
                       </div>
                     </TableCell>
-                    <TableCell>{result.points}</TableCell>
+                    <TableCell>{result.points ?? 0}</TableCell> {/* Handle potentially null points */}
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" onClick={() => openEditDialog(result)}>
                         <i className="fas fa-edit mr-1"></i> Edit
@@ -267,11 +338,50 @@ export default function AdminResults() {
                   </TableRow>
                 ))
               )}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-      
+             </TableBody>
+           </Table>
+          </> // Close the fragment here
+         )}
+
+         {/* --- Start: Modified Update Selected Results Section (Conditional) --- */}
+         {selectedCompetition && ( // Show only when a competition is selected
+           <div className="mt-6 pt-6 border-t"> {/* Add separator */}
+             <Card>
+               <CardHeader>
+                 <CardTitle>Update Selected Tournament</CardTitle> {/* Changed Title */}
+                 <CardDescription>
+                   Fetch the latest results for the selected tournament and allocate points. {/* Changed Description */}
+                 </CardDescription>
+               </CardHeader>
+                 <CardContent>
+                   <div className="space-y-4">
+                     <p className="text-sm text-gray-500">
+                       Click the button below to automatically update results for the selected tournament. {/* Changed Description */}
+                       This will also allocate points based on player positions. This process might take a moment.
+                     </p>
+
+                     <Button
+                       // Pass selectedCompetition to the mutation
+                       onClick={() => updateSelectedResults({ competitionId: selectedCompetition })}
+                       disabled={!selectedCompetition || isUpdatingSelected || isLoadingCompetitions || isLoadingResults} // Disable if no competition selected or updating
+                       className="w-full md:w-auto"
+                     >
+                       {isUpdatingSelected ? (
+                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                       ) : (
+                         <RefreshCw className="mr-2 h-4 w-4" />
+                       )}
+                       {/* Changed Button Text */}
+                       {isUpdatingSelected ? 'Updating Results...' : 'Update Selected Results'}
+                   </Button>
+                 </div>
+               </CardContent>
+             </Card>
+           </div>
+         )}
+         {/* --- End: Modified Update Selected Results Section --- */}
+       </CardContent>
+
       {/* Create/Edit Result Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
@@ -296,14 +406,16 @@ export default function AdminResults() {
                           <SelectValue placeholder="Select a golfer" />
                         </SelectTrigger>
                       </FormControl>
-                      <SelectContent>
-                        {isLoadingGolfers ? (
-                          <div className="py-2 text-center text-sm text-gray-500">Loading...</div>
-                        ) : (
-                          golfers?.map((golfer) => (
-                            <SelectItem key={golfer.id} value={golfer.id.toString()}>
-                              {golfer.name}
-                            </SelectItem>
+                       <SelectContent>
+                          {isLoadingGolfers ? (
+                            <div className="py-2 text-center text-sm text-gray-500">Loading...</div>
+                          ) : (
+                            // Add explicit type and ensure golfers is an array
+                            (Array.isArray(golfers) ? golfers : []).map((golfer: Golfer) => ( 
+                              <SelectItem key={golfer.id} value={golfer.id.toString()}>
+                                {/* Use helper function for display */}
+                                {getGolferDisplayName(golfer)}
+                              </SelectItem>
                           ))
                         )}
                       </SelectContent>
@@ -322,11 +434,13 @@ export default function AdminResults() {
                     <FormControl>
                       <Input 
                         type="number" 
-                        placeholder="e.g. 1" 
-                        {...field}
-                        onChange={(e) => field.onChange(parseInt(e.target.value))} 
-                      />
-                    </FormControl>
+                         placeholder="e.g. 1" 
+                         {...field}
+                         // Ensure value is string for input, handle NaN from parseInt
+                         value={field.value?.toString() ?? ""} 
+                         onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} 
+                       />
+                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -341,11 +455,13 @@ export default function AdminResults() {
                     <FormControl>
                       <Input 
                         type="number" 
-                        placeholder="e.g. 100" 
-                        {...field} 
-                        onChange={(e) => field.onChange(parseInt(e.target.value))}
-                      />
-                    </FormControl>
+                         placeholder="e.g. 100" 
+                         {...field} 
+                         // Ensure value is string for input, handle NaN from parseInt
+                         value={field.value?.toString() ?? ""}
+                         onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                       />
+                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}

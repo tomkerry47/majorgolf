@@ -9,6 +9,43 @@ import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { differenceInDays, formatDistanceToNowStrict, isToday, isTomorrow, parseISO } from 'date-fns';
+
+// Helper function to format the deadline
+const formatDeadline = (deadlineString: string | undefined | null): string => {
+  if (!deadlineString) {
+    return 'None';
+  }
+  try {
+    const deadlineDate = parseISO(deadlineString);
+    const now = new Date();
+
+    if (isToday(deadlineDate)) {
+      return 'Today';
+    }
+    if (isTomorrow(deadlineDate)) {
+      return 'Tomorrow';
+    }
+
+    const daysRemaining = differenceInDays(deadlineDate, now);
+
+    if (daysRemaining < 0) {
+      return 'Passed'; // Or handle as needed
+    }
+    if (daysRemaining < 1) {
+        // Handles cases less than 24 hours away but not 'today' or 'tomorrow' if timezones differ etc.
+        // Or if the deadline is later today. Let's refine to show hours if less than a day.
+        const distance = formatDistanceToNowStrict(deadlineDate, { unit: 'hour', roundingMethod: 'ceil' });
+        return `In ${distance}`;
+    }
+
+    return `${daysRemaining} days away`;
+  } catch (error) {
+    console.error("Error parsing deadline date:", error);
+    return deadlineString; // Fallback to original string on error
+  }
+};
+
 
 export default function Dashboard() {
   const { user, isLoading } = useAuth();
@@ -117,7 +154,7 @@ export default function Dashboard() {
           
           <StatCard
             title="Next Deadline"
-            value={dashboardStats?.nextDeadline || 'None'}
+            value={formatDeadline(dashboardStats?.nextDeadline)} // Use the helper function
             icon={<span className="text-amber-500 h-6 w-6">📅</span>}
             iconBgClass="bg-amber-500/10"
             loading={isLoadingStats}

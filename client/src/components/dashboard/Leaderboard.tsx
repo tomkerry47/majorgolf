@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "wouter";
+import { Link } from "wouter"; // Keep Link if needed for golfer profiles later
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -18,90 +18,95 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
-import { queryClient } from "@/lib/queryClient";
-import { useAuth } from "@/context/AuthContext";
+import { queryClient, apiRequest } from "@/lib/queryClient"; // Keep apiRequest if needed later
+import { type Competition } from "@shared/schema"; // Import Competition type
 
-export default function Leaderboard() {
-  interface Competition {
+// Removed local Competition interface definition
+
+// Interface for Tournament Result (matching API response from /api/results/:id)
+interface TournamentResult {
+  id: number;
+  competitionId: number;
+  golferId: number;
+  position: number;
+  score: number;
+  points?: number; // Points might be optional depending on calculation status
+  created_at: string;
+  golfer?: { // Joined golfer data
     id: number;
     name: string;
-    venue: string;
-    startDate: string;
-    endDate: string;
-  }
-  
-  interface LeaderboardEntry {
-    userId: number;
-    username: string;
-    fullName?: string;
-    avatar?: string;
-    competitionsPlayed: number;
-    totalCompetitions: number;
-    totalPoints: number;
-  }
-  
-  const { user } = useAuth();
-  const [selectedCompetition, setSelectedCompetition] = useState<number | 'all'>('all');
-  
-  const { data: competitions } = useQuery<Competition[]>({
+    // avatarUrl?: string; // Add if API provides it
+  };
+}
+
+// Renamed component conceptually
+export default function TournamentResultsDisplay() {
+  const [selectedCompetitionId, setSelectedCompetitionId] = useState<number | null>(null);
+
+  // Fetch completed or active competitions for the dropdown
+  const { data: competitions, isLoading: isLoadingCompetitions } = useQuery<Competition[]>({
     queryKey: ['/api/competitions'],
+    select: (data) => data?.filter(c => c.isComplete || c.isActive) || [], // Filter for relevant competitions
   });
-  
-  const { data: leaderboard, isLoading } = useQuery<LeaderboardEntry[]>({
-    queryKey: ['/api/leaderboard', selectedCompetition],
-  });
-  
-  // Set up polling for leaderboard updates
+
+  // Set default selected competition once competitions load
   useEffect(() => {
-    // Poll for updates every 30 seconds
-    const intervalId = setInterval(() => {
-      queryClient.invalidateQueries({
-        queryKey: ['/api/leaderboard', selectedCompetition],
-      });
-    }, 30000); // 30 seconds
-    
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [selectedCompetition]);
-  
-  const currentUserId = user?.id;
-  
-  const getRankBadgeColor = (rank: number) => {
-    switch (rank) {
-      case 1: return "bg-secondary text-white";
-      case 2: return "bg-slate-600 text-white";
-      case 3: return "bg-amber-500 text-white";
-      default: return "bg-slate-400 text-white";
+    if (!selectedCompetitionId && competitions && competitions.length > 0) {
+      // Default to the first completed/active competition
+      setSelectedCompetitionId(competitions[0].id);
     }
+  }, [competitions, selectedCompetitionId]);
+
+  // Fetch results for the selected competition
+  const { data: results, isLoading: isLoadingResults } = useQuery<TournamentResult[]>({
+    queryKey: ['/api/results', selectedCompetitionId], // Use correct API endpoint
+    enabled: !!selectedCompetitionId, // Only fetch when an ID is selected
+  });
+
+  // Log the fetched data when it changes
+  useEffect(() => {
+    if (results) {
+      console.log(`Results data received for competition ${selectedCompetitionId}:`, JSON.stringify(results, null, 2));
+    }
+  }, [results, selectedCompetitionId]);
+
+  const getPositionDisplay = (position: number) => {
+    // Add logic for T (Tied) if API provides tie info, otherwise just return position
+    // Example: return result.isTied ? `T${position}` : position;
+    return position;
   };
 
   return (
     <div className="mt-8">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-gray-900">Current Leaderboard</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold text-gray-900">Tournament Results</h2>
         <div className="relative inline-block text-left">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="inline-flex justify-center w-full rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
-                {selectedCompetition === 'all' 
-                  ? 'All Competitions' 
-                  : competitions?.find(c => c.id === selectedCompetition)?.name || 'Select Competition'}
+                {/* Display selected competition name or prompt */}
+                {isLoadingCompetitions
+                  ? 'Loading...'
+                  : competitions?.find(c => c.id === selectedCompetitionId)?.name || 'Select Competition'}
                 <i className="fas fa-chevron-down -mr-1 ml-2 h-5 w-5"></i>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setSelectedCompetition('all')}>
-                All Competitions
-              </DropdownMenuItem>
-              {competitions?.map(comp => (
-                <DropdownMenuItem 
-                  key={comp.id} 
-                  onClick={() => setSelectedCompetition(comp.id)}
-                >
-                  {comp.name}
-                </DropdownMenuItem>
-              ))}
+              {/* Removed "All Competitions" */}
+              {isLoadingCompetitions ? (
+                 <DropdownMenuItem disabled>Loading...</DropdownMenuItem>
+              ) : competitions?.length === 0 ? (
+                 <DropdownMenuItem disabled>No competitions available</DropdownMenuItem>
+              ) : (
+                 competitions?.map(comp => (
+                   <DropdownMenuItem
+                     key={comp.id}
+                     onClick={() => setSelectedCompetitionId(comp.id)}
+                   >
+                     {comp.name}
+                   </DropdownMenuItem>
+                 ))
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -114,87 +119,74 @@ export default function Leaderboard() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-20">Rank</TableHead>
+                    <TableHead className="w-20">Pos</TableHead> {/* Changed from Rank */}
                     <TableHead>Player</TableHead>
-                    <TableHead>Competitions</TableHead>
+                    <TableHead>Score</TableHead> {/* Added Score */}
                     <TableHead>Points</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    {/* Removed Actions column unless needed */}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {isLoading ? (
+                  {isLoadingResults || (isLoadingCompetitions && !selectedCompetitionId) ? ( // Show skeleton while loading competitions or results
                     // Loading skeleton
-                    Array(5).fill(0).map((_, i) => (
+                    Array(10).fill(0).map((_, i) => (
                       <TableRow key={i}>
-                        <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-8" /></TableCell>
                         <TableCell>
                           <div className="flex items-center">
                             <Skeleton className="h-10 w-10 rounded-full" />
                             <div className="ml-4">
                               <Skeleton className="h-4 w-24" />
-                              <Skeleton className="h-3 w-16 mt-1" />
                             </div>
                           </div>
                         </TableCell>
                         <TableCell><Skeleton className="h-4 w-12" /></TableCell>
                         <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                        <TableCell><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
                       </TableRow>
                     ))
-                  ) : leaderboard?.length === 0 ? (
+                  ) : !selectedCompetitionId ? (
+                     <TableRow>
+                       <TableCell colSpan={4} className="text-center py-6 text-gray-500">
+                         Please select a competition.
+                       </TableCell>
+                     </TableRow>
+                  ) : results?.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-6 text-gray-500">
-                        No data available
+                      <TableCell colSpan={4} className="text-center py-6 text-gray-500">
+                        No results available for this competition yet.
                       </TableCell>
                     </TableRow>
                   ) : (
                     // Actual data
-                    leaderboard?.map((entry, index) => (
-                      <TableRow 
-                        key={entry.userId} 
-                        className={currentUserId === entry.userId ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-slate-50"}
-                      >
+                    results?.map((result) => (
+                      <TableRow key={result.id} className="hover:bg-slate-50">
                         <TableCell className="whitespace-nowrap text-sm font-medium text-gray-900">
-                          <span className="flex items-center">
-                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full ${getRankBadgeColor(index + 1)}`}>
-                              {index + 1}
-                            </span>
-                          </span>
+                          {/* Display Position */}
+                          {getPositionDisplay(result.position)}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
                           <div className="flex items-center">
+                            {/* Golfer Avatar Placeholder - Add real avatar if available */}
                             <div className="flex-shrink-0 h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center">
-                              {entry.avatar ? (
-                                <img 
-                                  className="h-10 w-10 rounded-full" 
-                                  src={entry.avatar} 
-                                  alt={entry.username} 
-                                />
-                              ) : (
-                                <span className="text-sm font-medium text-gray-800">
-                                  {entry.fullName?.charAt(0) || entry.username.charAt(0)}
-                                </span>
-                              )}
+                               <span className="text-sm font-medium text-gray-800">
+                                 {result.golfer?.name?.charAt(0) || '?'}
+                               </span>
                             </div>
                             <div className="ml-4">
                               <div className="text-sm font-medium text-gray-900">
-                                {entry.fullName || entry.username}
-                                {currentUserId === entry.userId && " (You)"}
+                                {result.golfer?.name || 'Unknown Golfer'}
                               </div>
-                              <div className="text-sm text-gray-500">@{entry.username}</div>
+                              {/* Optional: Add golfer country or other details if needed */}
                             </div>
                           </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm text-gray-500">
-                          {entry.competitionsPlayed}/{entry.totalCompetitions}
+                          {/* Display Score */}
+                          {result.score}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
-                          <div className="text-sm text-gray-900 font-medium">{entry.totalPoints}</div>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-right text-sm font-medium">
-                          <Link href={`/profile/${entry.userId}`} className="text-primary hover:text-primary/80">
-                            View
-                          </Link>
+                          {/* Display Points */}
+                          <div className="text-sm text-gray-900 font-medium">{result.points ?? '-'}</div>
                         </TableCell>
                       </TableRow>
                     ))

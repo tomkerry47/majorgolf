@@ -1,6 +1,6 @@
 import { Express, Request, Response, NextFunction } from 'express';
 import { Server } from 'http';
-import { storage } from './storage';
+import { storage, type IStorage } from './storage'; // Import IStorage type
 import {
   loginSchema,
   registerSchema,
@@ -9,11 +9,20 @@ import {
   insertCompetitionSchema,
   holeInOneFormSchema,
   type Competition,
-  type Selection
+  type Selection,
+  User,
+  Golfer,
+  type UserPoints,
+  type SelectionRank, // Import SelectionRank type
+  type Result // Import Result type
 } from '@shared/schema';
 import { generateToken, verifyToken, comparePassword } from './db';
 import { ZodError } from 'zod';
-import { pgClient } from './db';
+import { pgClient, pool } from './db';
+import { updateResultsAndAllocatePoints } from '../scripts/update_results_and_allocate_points';
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url'; // Import fileURLToPath for ES Modules
 
 // Extended user interface including JWT properties
 interface ExtendedUser {
@@ -40,6 +49,41 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
   const route = `${path} ${method}`;
   console.log(`Validating auth for: ${route}`);
 
+  // List of explicitly public routes (paths starting after /api/)
+  const publicRoutes = [
+    '/auth/login POST',
+    '/auth/register POST',
+    '/competitions GET',
+    '/competitions/all GET',
+    '/competitions/active GET',
+    '/competitions/upcoming GET',
+    '/golfers GET',
+    '/leaderboard GET',
+    '/test-leaderboard GET',
+    '/dashboard/stats GET',
+    // Add patterns for dynamic public routes
+    '/leaderboard/:competitionId GET',
+    '/competitions/:id GET',
+    '/results/:competitionId GET',
+    '/competitions/:competitionId/hole-in-ones GET'
+  ];
+
+  // Check if the current route matches any public route pattern
+  const isPublic = publicRoutes.some(publicRoute => {
+    const [publicPath, publicMethod] = publicRoute.split(' ');
+    if (publicMethod !== method) return false;
+    // Simple wildcard matching for dynamic parts
+    const publicPathRegex = new RegExp(`^${publicPath.replace(/:\w+/g, '\\d+')}$`);
+    return publicPathRegex.test(path);
+  });
+
+
+  if (isPublic) {
+      console.log('Public route detected, skipping auth');
+      return next();
+  }
+
+  // If not public, proceed with JWT validation
   try {
     // Extract token
     const authHeader = req.headers.authorization;
@@ -82,7 +126,7 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
       isAdmin: user.isAdmin
     };
 
-    // Check admin routes
+    // Check admin routes specifically
     if (req.path.startsWith('/api/admin') && !user.isAdmin) {
       console.log('Non-admin user attempting to access admin route:', route);
       return res.status(403).json({ error: 'Admin access required' });
@@ -95,10 +139,12 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
+
 // Register API routes
 export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- PUBLIC ROUTES ---
+
 
   app.get('/api/test-leaderboard', async (req: Request, res: Response) => {
     try {
@@ -152,11 +198,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/competitions/upcoming', async (req: Request, res: Response) => {
     try { const upcomingCompetitions = await storage.getUpcomingCompetitions(); res.json(upcomingCompetitions); } catch (error) { console.error('Get upcoming competitions error:', error); res.status(500).json({ error: 'Failed to fetch upcoming competitions' }); }
   });
+
+  // Updated /api/competitions/:id route
   app.get('/api/competitions/:id', async (req: Request, res: Response) => {
-    try { const { id } = req.params; const competition = await storage.getCompetitionById(parseInt(id)); if (!competition) { return res.status(404).json({ error: 'Competition not found' }); } res.json(competition); } catch (error) { console.error('Get competition error:', error); res.status(500).json({ error: 'Failed to fetch competition' }); }
+    try {
+      const { id } = req.params;
+      const competitionId = parseInt(id);
+      if (isNaN(competitionId)) {
+        return res.status(400).json({ error: 'Invalid competition ID' });
+      }
+
+      const competition = await storage.getCompetitionById(competitionId);
+      if (!competition) {
+        return res.status(404).json({ error: 'Competition not found' });
+      }
+
+      let allSelectionsData = null;
+      const now = new Date();
+      const deadline = new Date(competition.selectionDeadline);
+
+      // Check if deadline has passed
+      if (now > deadline) {
+        console.log(`Deadline passed for competition ${competitionId}. Fetching all selections and ranks.`);
+        const selections = await storage.getAllSelections(competitionId);
+
+        // Fetch user, golfer details, and ranks for each selection
+        const usersMap = new Map<number, User>();
+        const golfersMap = new Map<number, Golfer>();
+        const ranksMap = new Map<string, SelectionRank | undefined>(); // Key: "userId-golferId"
+
+        // Pre-fetch all necessary ranks to minimize DB calls
+        const allUserGolferPairs = selections.flatMap(sel => [
+          { userId: sel.userId, golferId: sel.golfer1Id },
+          { userId: sel.userId, golferId: sel.golfer2Id },
+          { userId: sel.userId, golferId: sel.golfer3Id },
+        ]);
+
+        // Fetch ranks in batches or individually (adjust based on performance needs)
+        for (const pair of allUserGolferPairs) {
+          const rankKey = `${pair.userId}-${pair.golferId}`;
+          if (!ranksMap.has(rankKey)) {
+            const rank = await storage.getSelectionRank(pair.userId, competitionId, pair.golferId);
+            ranksMap.set(rankKey, rank);
+          }
+        }
+        console.log(`Fetched ${ranksMap.size} unique selection ranks.`);
+
+        allSelectionsData = await Promise.all(selections.map(async (sel) => {
+          let user = usersMap.get(sel.userId);
+          if (!user) { user = await storage.getUser(sel.userId); if (user) usersMap.set(sel.userId, user); }
+          let golfer1 = golfersMap.get(sel.golfer1Id);
+          if (!golfer1) { golfer1 = await storage.getGolferById(sel.golfer1Id); if (golfer1) golfersMap.set(sel.golfer1Id, golfer1); }
+          let golfer2 = golfersMap.get(sel.golfer2Id);
+          if (!golfer2) { golfer2 = await storage.getGolferById(sel.golfer2Id); if (golfer2) golfersMap.set(sel.golfer2Id, golfer2); }
+          let golfer3 = golfersMap.get(sel.golfer3Id);
+          if (!golfer3) { golfer3 = await storage.getGolferById(sel.golfer3Id); if (golfer3) golfersMap.set(sel.golfer3Id, golfer3); }
+
+          // Get ranks from the pre-fetched map
+          const rank1 = ranksMap.get(`${sel.userId}-${sel.golfer1Id}`)?.rankAtDeadline;
+          const rank2 = ranksMap.get(`${sel.userId}-${sel.golfer2Id}`)?.rankAtDeadline;
+          const rank3 = ranksMap.get(`${sel.userId}-${sel.golfer3Id}`)?.rankAtDeadline;
+
+          return {
+            userId: sel.userId,
+            username: user?.username || 'Unknown User',
+            golfer1Id: sel.golfer1Id,
+            golfer2Id: sel.golfer2Id,
+            golfer3Id: sel.golfer3Id,
+            golfer1Name: golfer1?.name || 'N/A',
+            golfer2Name: golfer2?.name || 'N/A',
+            golfer3Name: golfer3?.name || 'N/A',
+            golfer1Rank: rank1, // Add rank
+            golfer2Rank: rank2, // Add rank
+            golfer3Rank: rank3, // Add rank
+            useCaptainsChip: sel.useCaptainsChip,
+            captainGolferId: sel.captainGolferId
+          };
+        }));
+        console.log(`Fetched ${allSelectionsData.length} selections with details and ranks.`);
+      } else {
+         console.log(`Deadline not passed for competition ${competitionId}. Not fetching all selections.`);
+      }
+
+      // Return competition details and all selections if deadline passed
+      res.json({
+        ...competition,
+        allSelections: allSelectionsData // Will be null if deadline hasn't passed
+      });
+
+    } catch (error) {
+      console.error('Get competition error:', error);
+      res.status(500).json({ error: 'Failed to fetch competition details' });
+    }
   });
+
   app.get('/api/golfers', async (req: Request, res: Response) => {
-    try { const golfers = await storage.getGolfers(); res.json(golfers); } catch (error) { console.error('Get golfers error:', error); res.status(500).json({ error: 'Failed to fetch golfers' }); }
+    try { const golfers = await storage.getGolfers(); res.json({ golfers }); } catch (error) { console.error('Get golfers error:', error); res.status(500).json({ error: 'Failed to fetch golfers' }); } // Wrap in { golfers: ... }
   });
   app.get('/api/results/:competitionId', async (req: Request, res: Response) => {
     try { const { competitionId } = req.params; const results = await storage.getResults(parseInt(competitionId)); const resultsWithGolfers = await Promise.all(results.map(async (result) => { const golfer = await storage.getGolferById(result.golferId); return { ...result, golfer: golfer ? { id: golfer.id, name: golfer.name } : undefined }; })); res.json(resultsWithGolfers); } catch (error) { console.error('Get results error:', error); res.status(500).json({ error: 'Failed to fetch results' }); }
@@ -165,33 +302,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const competitionId = req.params.competitionId ? parseInt(req.params.competitionId) : undefined;
       const leaderboard = await storage.getLeaderboard(competitionId);
-      // Only enhance if competitionId is a valid number AND user is authenticated (check req.user)
-      // Note: This route is public, so req.user might not be set. We need to handle this.
-      // A better approach might be a separate authenticated endpoint for enhanced leaderboards.
-      // For now, we'll proceed assuming the frontend handles cases where selections aren't available.
       if (typeof competitionId === 'number' && !isNaN(competitionId)) {
-         // Attempt to get user ID if authenticated, otherwise proceed without selections
          const tokenUser = req.user as ExtendedUser | undefined;
          const userId = tokenUser?.database_id;
-
         const enhancedLeaderboard = await Promise.all(leaderboard.map(async (entry) => {
           let selectionRecord: Selection | undefined = undefined;
-          // Only fetch selections if we have a user ID and it matches the entry's user ID
-          if (userId && entry.userId === userId) { 
-             selectionRecord = await storage.getUserSelections(entry.userId, competitionId);
-          }
-          
-          if (!selectionRecord) { return { ...entry, selections: [] }; } 
-          const golfer1 = await storage.getGolferById(selectionRecord.golfer1Id); 
-          const golfer2 = await storage.getGolferById(selectionRecord.golfer2Id); 
-          const golfer3 = await storage.getGolferById(selectionRecord.golfer3Id); 
-          const results = await storage.getResults(competitionId); 
+          // Fetch selections for the specific user in the leaderboard entry
+          selectionRecord = await storage.getUserSelections(entry.userId, competitionId);
+
+          if (!selectionRecord) { return { ...entry, selections: [] }; }
+          const golfer1 = await storage.getGolferById(selectionRecord.golfer1Id);
+          const golfer2 = await storage.getGolferById(selectionRecord.golfer2Id);
+          const golfer3 = await storage.getGolferById(selectionRecord.golfer3Id);
+          const results = await storage.getResults(competitionId);
           const selections = [
-            { playerId: selectionRecord.golfer1Id, playerName: golfer1?.name || 'Unknown', position: results.find(r => r.golferId === selectionRecord.golfer1Id)?.position }, 
-            { playerId: selectionRecord.golfer2Id, playerName: golfer2?.name || 'Unknown', position: results.find(r => r.golferId === selectionRecord.golfer2Id)?.position }, 
+            { playerId: selectionRecord.golfer1Id, playerName: golfer1?.name || 'Unknown', position: results.find(r => r.golferId === selectionRecord.golfer1Id)?.position },
+            { playerId: selectionRecord.golfer2Id, playerName: golfer2?.name || 'Unknown', position: results.find(r => r.golferId === selectionRecord.golfer2Id)?.position },
             { playerId: selectionRecord.golfer3Id, playerName: golfer3?.name || 'Unknown', position: results.find(r => r.golferId === selectionRecord.golfer3Id)?.position }
-          ]; 
-          return { ...entry, selections }; 
+          ];
+          return { ...entry, selections };
         }));
         res.json(enhancedLeaderboard);
       } else { res.json(leaderboard); }
@@ -214,7 +343,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) { console.error('Dashboard stats error:', error); res.status(500).json({ error: 'Failed to fetch dashboard stats' }); }
   });
 
-  // --- PROTECTED ROUTES ---
+  // --- PROTECTED ROUTES --- (Apply validateJWT middleware individually)
 
   // User profile routes
   app.get('/api/users/:id', validateJWT, async (req: Request, res: Response) => {
@@ -232,10 +361,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Selection routes
   app.get('/api/selections/my-all', validateJWT, async (req: Request, res: Response) => {
-    try { const tokenUser = req.user as ExtendedUser; const userId = tokenUser.database_id!; const userSelections = await storage.getUserSelectionsForAllCompetitions(userId); res.json(userSelections); } catch (error) { console.error('Get my-all selections error:', error); res.status(500).json({ error: 'Failed to fetch user selections' }); }
+    console.log(`[Route /api/selections/my-all] Request received.`); // Added log
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser || !tokenUser.database_id) {
+        console.error('[Route /api/selections/my-all] Error: User or database_id not found in request context.');
+        return res.status(401).json({ error: 'User context not found' });
+      }
+      const userId = tokenUser.database_id;
+      console.log(`[Route /api/selections/my-all] Fetching selections for user ID: ${userId}`); // Added log
+      const userSelections = await storage.getUserSelectionsForAllCompetitions(userId);
+      console.log(`[Route /api/selections/my-all] Selections retrieved from storage. Count: ${userSelections?.length ?? 0}`); // Added log
+      res.json(userSelections);
+      console.log(`[Route /api/selections/my-all] Response sent successfully.`); // Added log
+    } catch (error) {
+      console.error('[Route /api/selections/my-all] Error caught:', error); // Updated log prefix
+      res.status(500).json({ error: 'Failed to fetch user selections' });
+    }
   });
+  // Updated route to return enriched selection details for the dashboard
   app.get('/api/selections/:competitionId', validateJWT, async (req: Request, res: Response) => {
-    try { const { competitionId } = req.params; const tokenUser = req.user as ExtendedUser; const userId = tokenUser.database_id!; const selection = await storage.getUserSelections(userId, parseInt(competitionId)); res.json(selection || null); } catch (error) { console.error('Get selections error:', error); res.status(500).json({ error: 'Failed to fetch selections' }); }
+    try {
+      const competitionId = parseInt(req.params.competitionId);
+      const tokenUser = req.user as ExtendedUser;
+      const userId = tokenUser.database_id!;
+
+      if (isNaN(competitionId)) {
+        return res.status(400).json({ error: 'Invalid competition ID' });
+      }
+
+      // 1. Fetch the base selection record
+      const selectionRecord = await storage.getUserSelections(userId, competitionId);
+
+      if (!selectionRecord) {
+        return res.json(null); // No selection found for this user/competition
+      }
+
+      // 2. Fetch details for all selected golfers concurrently
+      const golferIds = [selectionRecord.golfer1Id, selectionRecord.golfer2Id, selectionRecord.golfer3Id];
+      const golferPromises = golferIds.map(id => storage.getGolferById(id));
+      const golfers = await Promise.all(golferPromises);
+
+      // 3. Fetch results for the competition to get points and positions
+      const results = await storage.getResults(competitionId);
+      const resultsMap = new Map<number, Result>();
+      results.forEach(r => resultsMap.set(r.golferId, r));
+
+      // 4. Fetch rank at deadline for each golfer concurrently
+      const rankPromises = golferIds.map(id => storage.getSelectionRank(userId, competitionId, id));
+      const ranks = await Promise.all(rankPromises);
+      const rankMap = new Map<number, number | undefined>();
+      ranks.forEach((rankRecord, index) => {
+        rankMap.set(golferIds[index], rankRecord?.rankAtDeadline);
+      });
+
+      // 5. Construct the response array
+      const enrichedSelections = await Promise.all(golfers.map(async (golfer, index) => { // Make map async
+        if (!golfer) {
+          // Handle case where a golfer might not be found (though unlikely if selection exists)
+          return null;
+        }
+        const golferId = golfer.id;
+        const result = resultsMap.get(golferId);
+        const isCaptain = selectionRecord.useCaptainsChip && selectionRecord.captainGolferId === golferId;
+
+        // Fetch rank at deadline for wildcard check
+        const rankAtDeadline = rankMap.get(golferId);
+        const isWildcard = rankAtDeadline !== undefined && rankAtDeadline >= 51;
+
+        return {
+          id: selectionRecord.id, // Include selection ID if needed, though maybe not necessary per golfer
+          golfer: {
+            id: golfer.id,
+            name: golfer.name,
+            avatar: golfer.avatarUrl,
+            rank: golfer.rank || 'N/A' // Include current rank (from golfer table)
+          },
+          position: result?.position || 'N/A',
+          points: result?.points || 0,
+          isCaptain: isCaptain,
+          isWildcard: isWildcard // Use rank-based wildcard logic
+        };
+      }));
+
+      const validSelections = enrichedSelections.filter(selection => selection !== null); // Filter out any null entries
+
+      res.json(validSelections);
+
+    } catch (error) {
+      console.error('Get selections error:', error);
+      res.status(500).json({ error: 'Failed to fetch selections' });
+    }
   });
   app.post('/api/selections', validateJWT, async (req: Request, res: Response) => {
     try { const tokenUser = req.user as ExtendedUser; const userId = tokenUser.database_id!; const selectionData = selectionFormSchema.parse(req.body); const competition = await storage.getCompetitionById(selectionData.competitionId); if (!competition) { return res.status(404).json({ error: 'Competition not found' }); } const deadlineDate = new Date(competition.selectionDeadline); const currentDate = new Date(); if (currentDate > deadlineDate) { return res.status(400).json({ error: 'Selection deadline has passed' }); } const existingSelection = await storage.getUserSelections(userId, selectionData.competitionId); if (existingSelection) { return res.status(400).json({ error: 'You already have selections for this competition' }); } if (selectionData.useCaptainsChip) { const hasUsedCaptainsChip = await storage.hasUsedCaptainsChip(userId); if (hasUsedCaptainsChip) { return res.status(400).json({ error: 'You have already used your captain\'s chip in another competition' }); } } const newSelection = await storage.createSelection({ ...selectionData, userId }); res.status(201).json(newSelection); } catch (error) { if (error instanceof ZodError) { return res.status(400).json({ error: error.errors }); } console.error('Create selection error:', error); res.status(500).json({ error: 'Failed to create selection' }); }
@@ -247,7 +463,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // --- ADMIN ROUTES --- (All require validateJWT)
 
   app.post('/api/competitions', validateJWT, async (req: Request, res: Response) => {
-    try { const tokenUser = req.user as ExtendedUser; if (!tokenUser.isAdmin) { return res.status(403).json({ error: 'Admin access required' }); } const competitionData = insertCompetitionSchema.parse(req.body); const newCompetition = await storage.createCompetition(competitionData); res.status(201).json(newCompetition); } catch (error) { if (error instanceof ZodError) { return res.status(400).json({ error: error.errors }); } console.error('Create competition error:', error); res.status(500).json({ error: 'Failed to create competition' }); }
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+      // Zod schema already validates externalLeaderboardUrl
+      const competitionData = insertCompetitionSchema.parse(req.body);
+      // Storage function now handles the URL
+      const newCompetition = await storage.createCompetition(competitionData);
+      res.status(201).json(newCompetition);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error('Create competition error:', error);
+      res.status(500).json({ error: 'Failed to create competition' });
+    }
   });
   app.post('/api/golfers', validateJWT, async (req: Request, res: Response) => {
     try { const tokenUser = req.user as ExtendedUser; if (!tokenUser.isAdmin) { return res.status(403).json({ error: 'Admin access required' }); } const newGolfer = await storage.createGolfer(req.body); res.status(201).json(newGolfer); } catch (error) { console.error('Create golfer error:', error); res.status(500).json({ error: 'Failed to create golfer' }); }
@@ -259,7 +491,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try { const competitions = await storage.getCompetitions(); res.json(competitions); } catch (error) { console.error('Admin get competitions error:', error); res.status(500).json({ error: 'Failed to fetch competitions' }); }
   });
   app.patch('/api/admin/competitions/:id', validateJWT, async (req: Request, res: Response) => {
-    try { const { id } = req.params; const competitionId = parseInt(id); const updatedCompetition = await storage.updateCompetition(competitionId, req.body); res.json(updatedCompetition); } catch (error) { console.error('Admin update competition error:', error); res.status(500).json({ error: 'Failed to update competition' }); }
+    try {
+      const { id } = req.params;
+      const competitionId = parseInt(id);
+      // We don't need to re-validate with Zod here for PATCH,
+      // but storage.updateCompetition now handles the URL field correctly.
+      // Ensure req.body might contain externalLeaderboardUrl (as null or string)
+      const updatedCompetition = await storage.updateCompetition(competitionId, req.body);
+      res.json(updatedCompetition);
+    } catch (error) {
+      console.error('Admin update competition error:', error);
+      res.status(500).json({ error: 'Failed to update competition' });
+    }
   });
   app.get('/api/admin/users', validateJWT, async (req: Request, res: Response) => {
     try { const users = await storage.getAllUsers(); const sanitizedUsers = users.map(user => { const { password, ...userData } = user; return userData; }); res.json(sanitizedUsers); } catch (error) { console.error('Admin get users error:', error); res.status(500).json({ error: 'Failed to fetch users' }); }
@@ -283,10 +526,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try { const { id } = req.params; const resultId = parseInt(id); await storage.deleteResult(resultId); res.json({ success: true }); } catch (error) { console.error('Admin delete tournament result error:', error); res.status(500).json({ error: 'Failed to delete tournament result' }); }
   });
   app.post('/api/admin/complete-tournament/:competitionId', validateJWT, async (req: Request, res: Response) => {
-    try { const { competitionId } = req.params; const competition = await storage.getCompetitionById(parseInt(competitionId)); if (!competition) { return res.status(404).json({ error: 'Competition not found' }); } try { /* @ts-ignore */ const { updateResultsAndAllocatePoints } = await import('../scripts/update_results_and_allocate_points.js'); await updateResultsAndAllocatePoints(parseInt(competitionId)); } catch (error) { console.error('Error running points allocation:', error); return res.status(500).json({ error: 'Failed to allocate points' }); } const updatedCompetition = await storage.updateCompetition(parseInt(competitionId), { isComplete: true, isActive: false }); res.json({ success: true, competition: updatedCompetition }); } catch (error) { console.error('Admin complete tournament error:', error); res.status(500).json({ error: 'Failed to complete tournament' }); }
+    try {
+      const { competitionId } = req.params;
+      const competition = await storage.getCompetitionById(parseInt(competitionId));
+      if (!competition) {
+        return res.status(404).json({ error: 'Competition not found' });
+      }
+      try {
+        // Use statically imported function
+        // Pass pool and competitionId
+        await updateResultsAndAllocatePoints(pool, parseInt(competitionId)); // Pass pool directly
+      } catch (error) {
+        console.error('Error running points allocation:', error);
+        return res.status(500).json({ error: 'Failed to allocate points' });
+      }
+      const updatedCompetition = await storage.updateCompetition(parseInt(competitionId), { isComplete: true, isActive: false });
+      res.json({ success: true, competition: updatedCompetition });
+    } catch (error) {
+      console.error('Admin complete tournament error:', error);
+      res.status(500).json({ error: 'Failed to complete tournament' });
+    }
   });
   app.get('/api/admin/competitions/:id/selections', validateJWT, async (req: Request, res: Response) => {
     try { const { id } = req.params; const competitionId = parseInt(id); const selectionRows = await storage.getAllSelections(competitionId); const selectionsWithDetails = await Promise.all(selectionRows.map(async (selection) => { const user = await storage.getUser(selection.userId); const golfer1 = await storage.getGolferById(selection.golfer1Id); const golfer2 = await storage.getGolferById(selection.golfer2Id); const golfer3 = await storage.getGolferById(selection.golfer3Id); return { ...selection, user: user ? { id: user.id, username: user.username, email: user.email } : undefined, golfer1: golfer1 ? { id: golfer1.id, name: golfer1.name } : undefined, golfer2: golfer2 ? { id: golfer2.id, name: golfer2.name } : undefined, golfer3: golfer3 ? { id: golfer3.id, name: golfer3.name } : undefined }; })); res.json(selectionsWithDetails); } catch (error) { console.error('Admin get competition selections error:', error); res.status(500).json({ error: 'Failed to fetch competition selections' }); }
+  });
+  // Add new route for fetching specific user selection by admin
+  app.get('/api/admin/user-selection/:userId/:competitionId', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const { userId, competitionId } = req.params;
+      console.log(`[Admin Route] Fetching selection for User: ${userId}, Competition: ${competitionId}`);
+      const selection = await storage.getUserSelections(parseInt(userId), parseInt(competitionId));
+      console.log(`[Admin Route] Found selection:`, selection);
+      if (!selection) {
+        console.log(`[Admin Route] Selection not found, returning 404`);
+        return res.status(404).json({ error: 'Selection not found for this user and competition' });
+      }
+      res.json(selection);
+    } catch (error) {
+      console.error('[Admin Route] Get user selection error:', error);
+      res.status(500).json({ error: 'Failed to fetch user selection' });
+    }
   });
   app.patch('/api/admin/selections/:id', validateJWT, async (req: Request, res: Response) => {
     try { const { id } = req.params; const selectionId = parseInt(id); const existingSelection = await storage.getSelectionById(selectionId); if (!existingSelection) { return res.status(404).json({ error: 'Selection not found' }); } if (req.body.useCaptainsChip !== undefined && req.body.useCaptainsChip !== existingSelection.useCaptainsChip) { if (req.body.useCaptainsChip) { const hasUsedCaptainsChip = await storage.hasUsedCaptainsChip(existingSelection.userId); if (hasUsedCaptainsChip) { const selections = await storage.getAllSelections(existingSelection.competitionId); const userSelectionWithChip = selections.find(s => s.userId === existingSelection.userId && s.useCaptainsChip && s.id !== selectionId); if (userSelectionWithChip) { return res.status(400).json({ error: 'This user has already used their captain\'s chip in another competition' }); } } } } const updatedSelection = await storage.updateSelection(selectionId, req.body); const user = await storage.getUser(updatedSelection.userId); const golfer1 = await storage.getGolferById(updatedSelection.golfer1Id); const golfer2 = await storage.getGolferById(updatedSelection.golfer2Id); const golfer3 = await storage.getGolferById(updatedSelection.golfer3Id); res.json({ ...updatedSelection, user: user ? { id: user.id, username: user.username, email: user.email } : undefined, golfer1: golfer1 ? { id: golfer1.id, name: golfer1.name } : undefined, golfer2: golfer2 ? { id: golfer2.id, name: golfer2.name } : undefined, golfer3: golfer3 ? { id: golfer3.id, name: golfer3.name } : undefined }); } catch (error) { console.error('Admin update selection error:', error); res.status(500).json({ error: 'Failed to update selection' }); }
@@ -295,7 +574,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try { const { id } = req.params; const selectionId = parseInt(id); await storage.deleteSelection(selectionId); res.json({ success: true }); } catch (error) { console.error('Admin delete selection error:', error); res.status(500).json({ error: 'Failed to delete selection' }); }
   });
   app.post('/api/admin/update-results', validateJWT, async (req: Request, res: Response) => {
-    try { /* @ts-ignore */ const { updateResultsAndAllocatePoints } = await import('../scripts/update_results_and_allocate_points.js'); await updateResultsAndAllocatePoints(); res.json({ success: true }); } catch (error) { console.error('Admin update results error:', error); res.status(500).json({ error: 'Failed to update results' }); }
+    try {
+      // Extract competitionId from request body
+      const { competitionId } = req.body;
+
+      // Validate competitionId (optional but recommended)
+      if (typeof competitionId !== 'number') {
+        return res.status(400).json({ error: 'Invalid or missing competitionId' });
+      }
+
+      // Use statically imported function
+      // Pass the imported pool and the specific competitionId to the function
+      await updateResultsAndAllocatePoints(pool, competitionId); // Pass pool and competitionId
+      res.json({ success: true, message: `Update triggered for competition ${competitionId}` });
+    } catch (error) {
+      console.error(`Admin update results error for competition ${req.body?.competitionId}:`, error); // Log with ID
+      res.status(500).json({ error: 'Failed to update results' });
+    }
   });
   app.get('/api/admin/wildcard-golfers/:competitionId', validateJWT, async (req: Request, res: Response) => {
     try { const { competitionId } = req.params; const compId = parseInt(competitionId); const wildcardGolfers = await storage.getWildcardGolfers(compId); res.json(wildcardGolfers); } catch (error) { console.error('Get wildcard golfers error:', error); res.status(500).json({ error: 'Failed to get wildcard golfers' }); }
@@ -318,6 +613,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/admin/hole-in-ones/:id', validateJWT, async (req: Request, res: Response) => {
     try { const holeInOneId = parseInt(req.params.id); await storage.deleteHoleInOne(holeInOneId); res.status(200).json({ message: 'Hole-in-one deleted successfully' }); } catch (error) { console.error('Error deleting hole-in-one:', error); res.status(500).json({ error: 'Failed to delete hole-in-one' }); }
   });
+
+  // New endpoint to capture selection ranks for a competition
+  app.post('/api/admin/competitions/:id/capture-ranks', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const competitionId = parseInt(req.params.id);
+      if (isNaN(competitionId)) {
+        return res.status(400).json({ error: 'Invalid competition ID' });
+      }
+
+      // Optional: Add check if deadline has passed before capturing
+      // const competition = await storage.getCompetitionById(competitionId);
+      // if (!competition || new Date() < new Date(competition.selectionDeadline)) {
+      //   return res.status(400).json({ error: 'Cannot capture ranks before selection deadline' });
+      // }
+
+      console.log(`[API] Triggering rank capture for competition ID: ${competitionId}`);
+      const result = await storage.captureSelectionRanksForCompetition(competitionId);
+      console.log(`[API] Rank capture result for competition ID ${competitionId}:`, result);
+
+      if (result.success) {
+        res.json({ success: true, message: `Successfully captured/updated ${result.count} selection ranks.`, errors: result.errors });
+      } else {
+        // Even if some errors occurred, report partial success if count > 0
+        res.status(500).json({ success: false, message: `Rank capture process completed with ${result.errors} errors. ${result.count} ranks captured.`, errors: result.errors, count: result.count });
+      }
+    } catch (error) {
+      console.error(`Error capturing selection ranks for competition ${req.params.id}:`, error);
+      res.status(500).json({ error: 'Failed to capture selection ranks' });
+    }
+  });
+
+  // New endpoint to trigger the golfer update script
+  app.post('/api/admin/update-golfers', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      console.log('[API] Triggering golfer update script...');
+
+      // Resolve the path to the script using import.meta.url for ES Modules
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const scriptPath = path.resolve(__dirname, '../scripts/update_golfers_datagolf.ts');
+
+      // Check if the script exists before attempting to run
+      // (Requires fs module, consider adding if needed for robustness)
+      // import fs from 'fs';
+      // if (!fs.existsSync(scriptPath)) {
+      //   console.error(`Script not found at path: ${scriptPath}`);
+      //   return res.status(500).json({ error: 'Golfer update script not found.' });
+      // }
+
+      // Execute the TypeScript script using tsx
+      const process = spawn('npx', ['tsx', scriptPath], { stdio: 'pipe' }); // Use tsx
+
+      let scriptOutput = '';
+      let scriptError = '';
+
+      process.stdout.on('data', (data) => {
+        console.log(`[Golfer Update Script STDOUT]: ${data}`);
+        scriptOutput += data.toString();
+      });
+
+      process.stderr.on('data', (data) => {
+        console.error(`[Golfer Update Script STDERR]: ${data}`);
+        scriptError += data.toString();
+      });
+
+      process.on('close', (code) => {
+        console.log(`[Golfer Update Script] exited with code ${code}`);
+        if (code === 0) {
+          // Attempt to parse count/errors from output (simple example)
+          const countMatch = scriptOutput.match(/Inserted (\d+) golfers/);
+          const count = countMatch ? parseInt(countMatch[1], 10) : 'N/A';
+          res.json({ success: true, message: `Golfer update script finished.`, count: count, errors: 0 }); // Assume 0 errors on success code for now
+        } else {
+          res.status(500).json({ success: false, error: `Golfer update script failed with code ${code}.`, details: scriptError || scriptOutput });
+        }
+      });
+
+       process.on('error', (err) => {
+         console.error('[API] Failed to start golfer update script:', err);
+         res.status(500).json({ error: 'Failed to start golfer update script.', details: err.message });
+       });
+
+    } catch (error) {
+      console.error('Error triggering golfer update script:', error);
+      res.status(500).json({ error: 'Failed to trigger golfer update script' });
+    }
+  });
+
 
   // Return a new server but don't start it
   // This will be started in index.ts

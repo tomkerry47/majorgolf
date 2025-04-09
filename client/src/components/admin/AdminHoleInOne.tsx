@@ -1,380 +1,293 @@
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { z } from 'zod';
-import { holeInOneFormSchema, type HoleInOne, type Competition, type Golfer } from '@shared/schema';
-import { apiRequest } from '@/lib/queryClient';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useToast } from '@/hooks/use-toast';
-
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage
-} from '@/components/ui/form';
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from '@/components/ui/table';
+import { useState, useMemo, useEffect } from "react"; // Add useEffect
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter
-} from '@/components/ui/dialog';
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { AlertTriangle, Award, Edit, Trash2 } from 'lucide-react';
-
-// Define the form schema for hole-in-one records without createdAt and updatedAt fields which are auto-generated
-type HoleInOneFormValues = {
-  competitionId: number;
-  golferId: number;
-  holeNumber: number;
-  roundNumber: number;
-};
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { holeInOneFormSchema, type InsertHoleInOne, type Competition, type Golfer, type HoleInOne } from "@shared/schema";
+import { Loader2 } from "lucide-react"; // Import Loader2
 
 export default function AdminHoleInOne() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [selectedCompetitionId, setSelectedCompetitionId] = useState<number | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedHoleInOne, setSelectedHoleInOne] = useState<HoleInOne | null>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState<boolean>(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState<boolean>(false);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState<boolean>(false);
+  const [selectedCompetitionId, setSelectedCompetitionId] = useState<number | null>(null);
+  const [formAction, setFormAction] = useState<'create' | 'edit'>('create');
 
   // Fetch competitions
-  const { data: competitions } = useQuery<Competition[]>({
-    queryKey: ['/api/competitions'],
-    select: (data) => data.sort((a, b) => {
-      // Show active competitions first, then upcoming, then completed
-      if (a.isActive && !b.isActive) return -1;
-      if (!a.isActive && b.isActive) return 1;
-      if (!a.isComplete && b.isComplete) return -1;
-      if (a.isComplete && !b.isComplete) return 1;
-      return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-    }),
+  const { data: competitions, isLoading: isLoadingCompetitions } = useQuery<Competition[]>({
+    queryKey: ['/api/competitions/all'],
   });
 
-  // Fetch golfers
-  const { data: golfers } = useQuery<Golfer[]>({
+  // Fetch golfers - Updated to handle { golfers: [...] }
+  const { data: golfers, isLoading: isLoadingGolfers } = useQuery<{ golfers: Golfer[] }, Error, Golfer[]>({
     queryKey: ['/api/golfers'],
-    select: (data) => data.sort((a, b) => a.rank - b.rank),
+    queryFn: () => apiRequest<{ golfers: Golfer[] }>('/api/golfers'), // Fetch the object
+    // More defensive select: ensure data exists and has the golfers property which is an array
+    select: (data) => (data && Array.isArray(data.golfers) ? data.golfers : []),
   });
 
-  // Fetch hole-in-ones for selected competition
-  const { data: holeInOnes, isLoading } = useQuery<HoleInOne[]>({
+  // Fetch hole-in-ones for the selected competition
+  const { data: holeInOnes = [], isLoading: isLoadingHoleInOnes } = useQuery<HoleInOne[]>({
     queryKey: ['/api/admin/hole-in-ones', selectedCompetitionId],
-    queryFn: () => apiRequest<HoleInOne[]>(`GET`, `/api/admin/hole-in-ones/${selectedCompetitionId}`),
-    enabled: !!selectedCompetitionId,
+    queryFn: () => apiRequest(`/api/admin/hole-in-ones/${selectedCompetitionId}`),
+    enabled: !!selectedCompetitionId, // Only fetch if a competition is selected
   });
 
-  // Form for adding/editing hole-in-one
-  const form = useForm<HoleInOneFormValues>({
-    resolver: zodResolver(holeInOneFormSchema.omit({ createdAt: true, updatedAt: true })),
-    defaultValues: {
-      competitionId: selectedCompetitionId || 0,
-      golferId: 0,
-      holeNumber: 1,
-      roundNumber: 1,
+  // Create a map for quick golfer name lookup
+  const golferMap = useMemo(() => {
+    // Explicitly check if golfers is an array before mapping
+    if (!golfers || !Array.isArray(golfers)) {
+      return new Map<number, Golfer>();
     }
+    return new Map(golfers.map(golfer => [golfer.id, golfer]));
+  }, [golfers]);
+
+  const defaultValues: Partial<InsertHoleInOne> = {
+    competitionId: selectedCompetitionId || 0,
+    golferId: 0,
+    holeNumber: 0,
+    roundNumber: 0,
+  };
+
+  const form = useForm<InsertHoleInOne>({
+    resolver: zodResolver(holeInOneFormSchema),
+    defaultValues,
   });
 
-  // Create hole-in-one mutation
-  const createMutation = useMutation({
-    mutationFn: (values: HoleInOneFormValues) =>
-      apiRequest<HoleInOne>(`POST`, `/api/admin/hole-in-ones`, values),
+  // Update form default competitionId when selection changes
+  useEffect(() => {
+    if (selectedCompetitionId) {
+      form.setValue("competitionId", selectedCompetitionId);
+    }
+  }, [selectedCompetitionId, form]);
+
+  const openCreateDialog = () => {
+    if (!selectedCompetitionId) {
+      toast({
+        variant: "destructive",
+        title: "Select a competition",
+        description: "Please select a competition first.",
+      });
+      return;
+    }
+    form.reset({
+      ...defaultValues,
+      competitionId: selectedCompetitionId, // Ensure competitionId is set
+    });
+    setFormAction('create');
+    setSelectedHoleInOne(null);
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (hio: HoleInOne) => {
+    form.reset({
+      competitionId: hio.competitionId,
+      golferId: hio.golferId,
+      holeNumber: hio.holeNumber,
+      roundNumber: hio.roundNumber,
+    });
+    setFormAction('edit');
+    setSelectedHoleInOne(hio);
+    setIsDialogOpen(true);
+  };
+
+  const openDeleteDialog = (hio: HoleInOne) => {
+    setSelectedHoleInOne(hio);
+    setIsDeleteDialogOpen(true);
+  };
+
+  // Create/Update Mutation
+  const mutation = useMutation({
+    mutationFn: (data: InsertHoleInOne) => {
+      if (formAction === 'create') {
+        return apiRequest('/api/admin/hole-in-ones', 'POST', data);
+      } else if (selectedHoleInOne) {
+        return apiRequest(`/api/admin/hole-in-ones/${selectedHoleInOne.id}`, 'PATCH', data);
+      }
+      throw new Error("Invalid action or missing selection");
+    },
     onSuccess: () => {
       toast({
-        title: 'Success',
-        description: 'Hole-in-one record added successfully',
+        title: `Hole-in-One ${formAction === 'create' ? 'Created' : 'Updated'}`,
+        description: `The hole-in-one record has been successfully ${formAction === 'create' ? 'created' : 'updated'}.`,
       });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/hole-in-ones', selectedCompetitionId] });
-      setIsAddDialogOpen(false);
+      setIsDialogOpen(false);
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
       toast({
-        title: 'Error',
-        description: `Failed to add hole-in-one: ${error.message}`,
-        variant: 'destructive',
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "An error occurred.",
       });
     },
   });
 
-  // Update hole-in-one mutation
-  const updateMutation = useMutation({
-    mutationFn: (values: HoleInOneFormValues & { id: number }) => {
-      const { id, ...data } = values;
-      return apiRequest<HoleInOne>(`PATCH`, `/api/admin/hole-in-ones/${id}`, data);
-    },
-    onSuccess: () => {
-      toast({
-        title: 'Success',
-        description: 'Hole-in-one record updated successfully',
-      });
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/hole-in-ones', selectedCompetitionId] });
-      setIsEditDialogOpen(false);
-    },
-    onError: (error: Error) => {
-      toast({
-        title: 'Error',
-        description: `Failed to update hole-in-one: ${error.message}`,
-        variant: 'destructive',
-      });
-    },
-  });
-
-  // Delete hole-in-one mutation
+  // Delete Mutation
   const deleteMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiRequest<void>(`DELETE`, `/api/admin/hole-in-ones/${id}`),
+    mutationFn: (id: number) => apiRequest(`/api/admin/hole-in-ones/${id}`, 'DELETE'),
     onSuccess: () => {
       toast({
-        title: 'Success',
-        description: 'Hole-in-one record deleted successfully',
+        title: "Hole-in-One Deleted",
+        description: "The record has been successfully deleted.",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/hole-in-ones', selectedCompetitionId] });
       setIsDeleteDialogOpen(false);
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
       toast({
-        title: 'Error',
-        description: `Failed to delete hole-in-one: ${error.message}`,
-        variant: 'destructive',
+        variant: "destructive",
+        title: "Error Deleting",
+        description: error.message || "An error occurred.",
       });
     },
   });
 
-  // Handle form submission for adding new hole-in-one
-  const onSubmit = (data: HoleInOneFormValues) => {
-    if (selectedHoleInOne) {
-      // Update existing record
-      updateMutation.mutate({ ...data, id: selectedHoleInOne.id });
-    } else {
-      // Create new record
-      createMutation.mutate(data);
-    }
+  const onSubmit = (data: InsertHoleInOne) => {
+    mutation.mutate(data);
   };
 
-  // Open add dialog
-  const handleAddClick = () => {
-    form.reset({
-      competitionId: selectedCompetitionId || 0,
-      golferId: 0,
-      holeNumber: 1,
-      roundNumber: 1,
-    });
-    setSelectedHoleInOne(null);
-    setIsAddDialogOpen(true);
-  };
-
-  // Open edit dialog
-  const handleEditClick = (holeInOne: HoleInOne) => {
-    setSelectedHoleInOne(holeInOne);
-    form.reset({
-      competitionId: holeInOne.competitionId,
-      golferId: holeInOne.golferId,
-      holeNumber: holeInOne.holeNumber,
-      roundNumber: holeInOne.roundNumber,
-    });
-    setIsEditDialogOpen(true);
-  };
-
-  // Open delete dialog
-  const handleDeleteClick = (holeInOne: HoleInOne) => {
-    setSelectedHoleInOne(holeInOne);
-    setIsDeleteDialogOpen(true);
-  };
-
-  // Confirm delete
-  const confirmDelete = () => {
+  const handleDelete = () => {
     if (selectedHoleInOne) {
       deleteMutation.mutate(selectedHoleInOne.id);
     }
   };
 
-  // Get golfer name by ID
-  const getGolferName = (golferId: number) => {
-    const golfer = golfers?.find((g) => g.id === golferId);
-    return golfer ? golfer.name : 'Unknown Golfer';
-  };
-
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl font-bold">Hole-in-One Records</CardTitle>
-          <CardDescription>
-            Manage hole-in-one records for each tournament. Each hole-in-one is worth 20 points to users who selected that golfer.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="w-full max-w-xs">
-                <Label htmlFor="competition-select">Select Tournament</Label>
-                <Select
-                  onValueChange={(value) => setSelectedCompetitionId(parseInt(value))}
-                  value={selectedCompetitionId?.toString() || ""}
-                >
-                  <SelectTrigger id="competition-select">
-                    <SelectValue placeholder="Select Tournament" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {competitions?.map((competition: any) => (
-                      <SelectItem key={competition.id} value={competition.id.toString()}>
-                        {competition.name} {competition.isActive ? '(Active)' : competition.isComplete ? '(Completed)' : '(Upcoming)'}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <Button 
-                onClick={handleAddClick} 
-                disabled={!selectedCompetitionId}
-                className="mt-6"
-              >
-                Add Hole-in-One Record
-              </Button>
-            </div>
-
-            {selectedCompetitionId && (
-              <div className="border rounded-md">
-                {isLoading ? (
-                  <div className="p-8 text-center">Loading hole-in-one records...</div>
-                ) : holeInOnes && holeInOnes.length > 0 ? (
-                  <Table>
-                    <TableCaption>Hole-in-One Records</TableCaption>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Golfer</TableHead>
-                        <TableHead>Round</TableHead>
-                        <TableHead>Hole</TableHead>
-                        <TableHead>Date Recorded</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {holeInOnes.map((holeInOne: any) => (
-                        <TableRow key={holeInOne.id}>
-                          <TableCell className="font-medium">
-                            <div className="flex items-center gap-2">
-                              <Award className="w-4 h-4 text-yellow-500" />
-                              {holeInOne.golfer ? holeInOne.golfer.name : getGolferName(holeInOne.golferId)}
-                            </div>
-                          </TableCell>
-                          <TableCell>{holeInOne.roundNumber}</TableCell>
-                          <TableCell>{holeInOne.holeNumber}</TableCell>
-                          <TableCell>{new Date(holeInOne.createdAt).toLocaleDateString()}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditClick(holeInOne)}
-                              >
-                                <Edit className="w-4 h-4" />
-                                <span className="sr-only">Edit</span>
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => handleDeleteClick(holeInOne)}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                <span className="sr-only">Delete</span>
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="p-8 text-center">
-                    <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-yellow-500" />
-                    <p>No hole-in-one records found for this tournament.</p>
-                    <p className="text-sm text-muted-foreground">
-                      Add a record using the button above.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Manage Hole-in-Ones</CardTitle>
+        <div className="flex gap-2">
+          <Select
+            value={selectedCompetitionId?.toString() || ""}
+            onValueChange={(value) => setSelectedCompetitionId(value ? parseInt(value) : null)}
+          >
+            <SelectTrigger className="w-[240px]">
+              <SelectValue placeholder="Select a competition" />
+            </SelectTrigger>
+            <SelectContent>
+              {isLoadingCompetitions ? (
+                <div className="p-2 text-center text-sm text-gray-500">Loading...</div>
+              ) : competitions && competitions.length > 0 ? (
+                competitions.map((competition) => (
+                  <SelectItem key={competition.id} value={competition.id.toString()}>
+                    {competition.name}
+                  </SelectItem>
+                ))
+              ) : (
+                <div className="p-2 text-center text-sm text-gray-500">No competitions found</div>
+              )}
+            </SelectContent>
+          </Select>
+          <Button onClick={openCreateDialog} disabled={!selectedCompetitionId}>
+            <i className="fas fa-plus mr-2"></i>
+            Add Hole-in-One
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {!selectedCompetitionId ? (
+          <div className="text-center py-10 text-gray-500">
+            Please select a competition to view and manage hole-in-one records.
           </div>
-        </CardContent>
-      </Card>
+        ) : isLoadingHoleInOnes || isLoadingGolfers ? (
+          <div className="space-y-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Golfer</TableHead>
+                <TableHead>Round</TableHead>
+                <TableHead>Hole</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {holeInOnes.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-4 text-gray-500">
+                    No hole-in-one records found for this competition.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                holeInOnes.map((hio) => {
+                  const golfer = golferMap.get(hio.golferId);
+                  return (
+                    <TableRow key={hio.id}>
+                      <TableCell className="font-medium">
+                        {golfer ? `${golfer.firstName} ${golfer.lastName}` : 'Unknown Golfer'} 
+                      </TableCell>
+                      <TableCell>{hio.roundNumber}</TableCell>
+                      <TableCell>{hio.holeNumber}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog(hio)}>
+                          <i className="fas fa-edit mr-1"></i> Edit
+                        </Button>
+                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => openDeleteDialog(hio)}>
+                          <i className="fas fa-trash mr-1"></i> Delete
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
 
-      {/* Add/Edit Dialog */}
-      <Dialog open={isAddDialogOpen || isEditDialogOpen} onOpenChange={(open) => {
-        if (!open) {
-          setIsAddDialogOpen(false);
-          setIsEditDialogOpen(false);
-        }
-      }}>
-        <DialogContent>
+      {/* Create/Edit Hole-in-One Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[450px]">
           <DialogHeader>
-            <DialogTitle>
-              {selectedHoleInOne ? 'Edit Hole-in-One Record' : 'Add New Hole-in-One Record'}
-            </DialogTitle>
+            <DialogTitle>{formAction === 'create' ? 'Add New Hole-in-One' : 'Edit Hole-in-One'}</DialogTitle>
           </DialogHeader>
-          
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="competitionId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tournament</FormLabel>
-                    <Select
-                      onValueChange={(value) => field.onChange(parseInt(value))}
-                      defaultValue={String(field.value)}
-                      disabled={!!selectedHoleInOne}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Tournament" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {competitions?.map((competition: any) => (
-                          <SelectItem key={competition.id} value={competition.id.toString()}>
-                            {competition.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
               <FormField
                 control={form.control}
                 name="golferId"
@@ -382,78 +295,62 @@ export default function AdminHoleInOne() {
                   <FormItem>
                     <FormLabel>Golfer</FormLabel>
                     <Select
+                      value={field.value?.toString() || ""}
                       onValueChange={(value) => field.onChange(parseInt(value))}
-                      defaultValue={String(field.value)}
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select Golfer" />
+                          <SelectValue placeholder="Select a golfer" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {golfers?.map((golfer: any) => (
-                          <SelectItem key={golfer.id} value={golfer.id.toString()}>
-                            {golfer.rank}. {golfer.name}
-                          </SelectItem>
-                        ))}
+                        {isLoadingGolfers ? (
+                          <div className="p-2 text-center text-sm text-gray-500">Loading...</div>
+                        ) : golfers && Array.isArray(golfers) && golfers.length > 0 ? ( // Added Array.isArray check
+                          golfers.map((golfer) => (
+                            <SelectItem key={golfer.id} value={golfer.id.toString()}>
+                              {golfer.firstName} {golfer.lastName}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="p-2 text-center text-sm text-gray-500">No golfers available</div>
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="roundNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Round</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="1"
-                          max="4"
-                          {...field}
-                          onChange={(e) => field.onChange(parseInt(e.target.value))}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
-                <FormField
-                  control={form.control}
-                  name="holeNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Hole</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="1"
-                          max="18"
-                          {...field}
-                          onChange={(e) => field.onChange(parseInt(e.target.value))}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              
+              <FormField
+                control={form.control}
+                name="roundNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Round Number</FormLabel>
+                    <FormControl>
+                      <Input type="number" min="1" max="4" {...field} onChange={e => field.onChange(parseInt(e.target.value) || 0)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="holeNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Hole Number</FormLabel>
+                    <FormControl>
+                      <Input type="number" min="1" max="18" {...field} onChange={e => field.onChange(parseInt(e.target.value) || 0)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline" type="button">Cancel</Button>
-                </DialogClose>
-                <Button 
-                  type="submit" 
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  {createMutation.isPending || updateMutation.isPending ? 'Saving...' : 'Save'}
+                <Button type="submit" disabled={mutation.isPending}>
+                  {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {formAction === 'create' ? 'Add Record' : 'Save Changes'}
                 </Button>
               </DialogFooter>
             </form>
@@ -462,33 +359,27 @@ export default function AdminHoleInOne() {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Deletion</DialogTitle>
-          </DialogHeader>
-          <p>
-            Are you sure you want to delete this hole-in-one record? This action cannot be undone.
-          </p>
-          {selectedHoleInOne && (
-            <p className="font-medium">
-              {getGolferName(selectedHoleInOne.golferId)} - Round {selectedHoleInOne.roundNumber}, Hole {selectedHoleInOne.holeNumber}
-            </p>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmDelete}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Hole-in-One Record</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this record? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
               disabled={deleteMutation.isPending}
+              className="bg-red-500 hover:bg-red-600"
             >
-              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+              {deleteMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
   );
 }

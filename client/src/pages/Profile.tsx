@@ -153,8 +153,8 @@ export default function Profile() {
           </TabsContent>
           
           <TabsContent value="selections">
+            {/* userId prop removed */}
             <ProfileSelections 
-              userId={userId} 
               username={profileData.username}
             />
           </TabsContent>

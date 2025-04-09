@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pgTable, serial, varchar, text, boolean, timestamp, integer, date, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, text, boolean, timestamp, integer, date, primaryKey, uniqueIndex } from "drizzle-orm/pg-core"; // Added uniqueIndex
 import { createInsertSchema } from "drizzle-zod";
 
 // Define Drizzle schema for database tables
@@ -25,12 +25,16 @@ export const competitions = pgTable("competitions", {
   isActive: boolean("isActive").default(false).notNull(),
   isComplete: boolean("isComplete").default(false).notNull(),
   description: text("description"),
-  imageUrl: text("imageUrl")
+  imageUrl: text("imageUrl"),
+  externalLeaderboardUrl: text('externalLeaderboardUrl'), // Add new optional URL field
 });
 
 export const golfers = pgTable("golfers", {
   id: serial("id").primaryKey(),
-  name: varchar("name", { length: 100 }).notNull(),
+  name: varchar("name", { length: 100 }).notNull(), // Keep original name field
+  shortName: text("shortName"),                     // Keep shortName field
+  firstName: varchar("firstName", { length: 50 }), // Add firstName (nullable)
+  lastName: varchar("lastName", { length: 50 }),   // Add lastName (nullable)
   rank: integer("rank").notNull(),
   avatarUrl: text("avatarUrl"),
   // Note: The 'country' and 'createdAt' columns are defined in schema but not in DB
@@ -47,6 +51,7 @@ export const selections = pgTable("selections", {
   golfer2Id: integer("golfer2Id").notNull(),
   golfer3Id: integer("golfer3Id").notNull(),
   useCaptainsChip: boolean("useCaptainsChip").default(false).notNull(),
+  captainGolferId: integer("captainGolferId"), // Added nullable integer for captain ID
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull()
 });
@@ -75,6 +80,11 @@ export const userPoints = pgTable("user_points", {
   details: text("details"), // JSON string containing point details
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (table) => {
+  return {
+    // Add a unique constraint on userId and competitionId
+    userCompetitionUnique: uniqueIndex("user_competition_idx").on(table.userId, table.competitionId),
+  };
 });
 
 export const wildcardGolfers = pgTable("wildcard_golfers", {
@@ -95,6 +105,22 @@ export const holeInOnes = pgTable("hole_in_ones", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull()
 });
+
+// New table to store ranks at selection deadline
+export const selectionRanks = pgTable("selection_ranks", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: 'cascade' }), // Foreign key to users
+  competitionId: integer("competitionId").notNull().references(() => competitions.id, { onDelete: 'cascade' }), // Foreign key to competitions
+  golferId: integer("golferId").notNull().references(() => golfers.id, { onDelete: 'cascade' }), // Foreign key to golfers
+  rankAtDeadline: integer("rankAtDeadline").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+}, (table) => {
+  return {
+    // Unique constraint to prevent duplicate rank entries for the same selection
+    userCompetitionGolferUnique: uniqueIndex("user_competition_golfer_rank_idx").on(table.userId, table.competitionId, table.golferId),
+  };
+});
+
 
 // Define types based on Drizzle schema
 export interface User {
@@ -120,15 +146,19 @@ export interface Competition {
   isComplete: boolean;
   description?: string;
   imageUrl?: string;
+  externalLeaderboardUrl?: string | null; // Add corresponding type field
 }
 
 export interface Golfer {
   id: number;
-  name: string;
+  name: string; // Keep original name field
+  shortName?: string | null; 
+  firstName?: string | null; // Add firstName type
+  lastName?: string | null;  // Add lastName type
   rank: number;
-  country?: string; // Make country optional to match DB structure
+  country?: string; 
   avatarUrl?: string;
-  createdAt?: string; // Make createdAt optional to match DB structure
+  createdAt?: string; 
 }
 
 export interface Selection {
@@ -139,6 +169,7 @@ export interface Selection {
   golfer2Id: number;
   golfer3Id: number;
   useCaptainsChip: boolean;
+  captainGolferId?: number | null; // Added optional captain ID
   createdAt: string;
   updatedAt: string;
 }
@@ -152,7 +183,7 @@ export interface Result {
   points?: number;
   created_at: string; // Use snake_case to match DB column name
   // Join with the golfer 
-  golfers?: {
+  golfer?: { // Renamed from 'golfers' to 'golfer'
     id: number;
     name: string;
   };
@@ -193,6 +224,16 @@ export interface HoleInOne {
   updatedAt: string;
 }
 
+// Add interface for SelectionRank
+export interface SelectionRank {
+  id: number;
+  userId: number;
+  competitionId: number;
+  golferId: number;
+  rankAtDeadline: number;
+  createdAt: string;
+}
+
 // Validation schemas for insert operations using drizzle-zod
 export const insertUserSchema = createInsertSchema(users)
   .omit({ id: true, createdAt: true });
@@ -203,13 +244,20 @@ export const insertCompetitionSchema = createInsertSchema(competitions)
     startDate: z.string().or(z.date()),
     endDate: z.string().or(z.date()),
     selectionDeadline: z.string().or(z.date()),
+    externalLeaderboardUrl: z.string().url().optional().nullable(), // Add to Zod schema
   });
 
-export const insertGolferSchema = createInsertSchema(golfers)
-  .omit({ id: true });
+export const insertGolferSchema = createInsertSchema(golfers, {
+  shortName: z.string().optional().nullable(), 
+  firstName: z.string().optional().nullable(), 
+  lastName: z.string().optional().nullable(),  
+}).omit({ id: true });
 
 export const insertSelectionSchema = createInsertSchema(selections)
-  .omit({ id: true, createdAt: true, updatedAt: true });
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({
+    captainGolferId: z.number().optional().nullable(), // Ensure captainGolferId is optional and nullable
+  });
 
 export const insertResultSchema = createInsertSchema(results)
   .omit({ id: true, created_at: true });
@@ -226,6 +274,10 @@ export const insertWildcardGolferSchema = createInsertSchema(wildcardGolfers)
 export const insertHoleInOneSchema = createInsertSchema(holeInOnes)
   .omit({ id: true, createdAt: true, updatedAt: true });
 
+// Add schema for SelectionRank
+export const insertSelectionRankSchema = createInsertSchema(selectionRanks)
+  .omit({ id: true, createdAt: true });
+
 // Type definitions for typescript usage
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertCompetition = z.infer<typeof insertCompetitionSchema>;
@@ -236,6 +288,7 @@ export type InsertPointSystem = z.infer<typeof insertPointSystemSchema>;
 export type InsertUserPoints = z.infer<typeof insertUserPointsSchema>;
 export type InsertWildcardGolfer = z.infer<typeof insertWildcardGolferSchema>;
 export type InsertHoleInOne = z.infer<typeof insertHoleInOneSchema>;
+export type InsertSelectionRank = z.infer<typeof insertSelectionRankSchema>; // Add type
 
 // Hole in One form schema with validation
 export const holeInOneFormSchema = insertHoleInOneSchema

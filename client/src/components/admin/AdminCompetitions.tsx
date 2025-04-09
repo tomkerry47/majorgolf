@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query"; // Add useMutation import
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,14 +38,17 @@ import {
 } from "@/components/ui/alert-dialog";
 import { insertCompetitionSchema, type InsertCompetition, type Competition } from "@shared/schema";
 import { Switch } from "@/components/ui/switch";
+import { Clock } from 'lucide-react'; // Import Clock icon
 
-export default function AdminCompetitions() {
+// Ensure the component is exported as default
+export default function AdminCompetitions() { 
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedCompetition, setSelectedCompetition] = useState<Competition | null>(null);
   const [formAction, setFormAction] = useState<'create' | 'edit'>('create');
   const [isCreatingTournaments, setIsCreatingTournaments] = useState(false);
+  const [capturingRanksId, setCapturingRanksId] = useState<number | null>(null); 
   
   const { data: competitions = [], isLoading } = useQuery<Competition[]>({
     queryKey: ['/api/admin/competitions'],
@@ -57,6 +60,7 @@ export default function AdminCompetitions() {
     startDate: '',
     endDate: '',
     selectionDeadline: '',
+    externalLeaderboardUrl: '', 
     isActive: false,
     isComplete: false
   };
@@ -64,7 +68,6 @@ export default function AdminCompetitions() {
   const form = useForm<InsertCompetition>({
     resolver: zodResolver(insertCompetitionSchema),
     defaultValues,
-    // Add this to handle date conversion in form fields
     shouldUnregister: false
   });
   
@@ -75,14 +78,32 @@ export default function AdminCompetitions() {
     setIsDialogOpen(true);
   };
   
+  const formatDateForInput = (dateString: string | Date | null | undefined): string => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '';
+      const year = date.getFullYear();
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const day = date.getDate().toString().padStart(2, '0');
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    } catch (e) {
+      console.error("Error formatting date:", e);
+      return ''; 
+    }
+  };
+
   const openEditDialog = (competition: Competition) => {
     const formattedCompetition = {
       ...competition,
-      startDate: new Date(competition.startDate).toISOString().slice(0, 16),
-      endDate: new Date(competition.endDate).toISOString().slice(0, 16),
-      selectionDeadline: new Date(competition.selectionDeadline).toISOString().slice(0, 16),
+      startDate: formatDateForInput(competition.startDate),
+      endDate: formatDateForInput(competition.endDate),
+      selectionDeadline: formatDateForInput(competition.selectionDeadline),
       description: competition.description || '',
-      imageUrl: competition.imageUrl || ''
+      imageUrl: competition.imageUrl || '',
+      externalLeaderboardUrl: competition.externalLeaderboardUrl || '' 
     };
     
     form.reset(formattedCompetition);
@@ -98,20 +119,28 @@ export default function AdminCompetitions() {
   
   const onSubmit = async (data: InsertCompetition) => {
     try {
+      const dataToSend = {
+        ...data,
+        startDate: data.startDate ? new Date(data.startDate).toISOString() : null,
+        endDate: data.endDate ? new Date(data.endDate).toISOString() : null,
+        selectionDeadline: data.selectionDeadline ? new Date(data.selectionDeadline).toISOString() : null,
+        externalLeaderboardUrl: data.externalLeaderboardUrl || null, 
+      };
+
       if (formAction === 'create') {
-        await apiRequest('POST', '/api/competitions', data);
+        await apiRequest('/api/competitions', 'POST', dataToSend); 
         toast({
           title: "Competition created",
           description: "The competition has been successfully created."
         });
       } else if (selectedCompetition) {
-        await apiRequest('PATCH', `/api/admin/competitions/${selectedCompetition.id}`, data);
+        await apiRequest(`/api/admin/competitions/${selectedCompetition.id}`, 'PATCH', dataToSend); 
         toast({
           title: "Competition updated",
           description: "The competition has been successfully updated."
         });
       } else {
-        throw new Error("Selected competition not found");
+        throw new Error("Selected competition not found for update."); 
       }
       
       queryClient.invalidateQueries({ queryKey: ['/api/admin/competitions'] });
@@ -119,12 +148,14 @@ export default function AdminCompetitions() {
       queryClient.invalidateQueries({ queryKey: ['/api/competitions/all'] });
       queryClient.invalidateQueries({ queryKey: ['/api/competitions/active'] });
       queryClient.invalidateQueries({ queryKey: ['/api/competitions/upcoming'] });
-      setIsDialogOpen(false);
+      
+      setIsDialogOpen(false); 
     } catch (error: any) {
+      console.error(`Error submitting competition form (action: ${formAction}):`, error); 
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message || "An error occurred."
+        description: error.message || `An error occurred while ${formAction === 'create' ? 'creating' : 'updating'} the competition.`
       });
     }
   };
@@ -132,7 +163,7 @@ export default function AdminCompetitions() {
   const handleDelete = async () => {
     try {
       if (!selectedCompetition) return;
-      await apiRequest('DELETE', `/api/admin/competitions/${selectedCompetition.id}`, {});
+      await apiRequest(`/api/admin/competitions/${selectedCompetition.id}`, 'DELETE', {}); 
       toast({
         title: "Competition deleted",
         description: "The competition has been successfully deleted."
@@ -153,8 +184,46 @@ export default function AdminCompetitions() {
     }
   };
   
+  // Mutation for capturing ranks
+  const captureRanksMutation = useMutation({
+    mutationFn: (competitionId: number) => 
+      apiRequest(`/api/admin/competitions/${competitionId}/capture-ranks`, 'POST'),
+    onMutate: (competitionId: number) => { // Add type
+      setCapturingRanksId(competitionId); 
+    },
+    onSuccess: (data: any, competitionId: number) => { // Add type
+      toast({
+        title: "Ranks Captured",
+        description: `Successfully captured ${data?.count ?? 'N/A'} ranks for competition ${competitionId}. Errors: ${data?.errors ?? 'N/A'}.`,
+      });
+    },
+    onError: (error: any, competitionId: number) => { // Add type
+      toast({
+        variant: "destructive",
+        title: "Error Capturing Ranks",
+        description: error.message || `Failed to capture ranks for competition ${competitionId}.`,
+      });
+    },
+    onSettled: () => {
+      setCapturingRanksId(null); 
+    },
+  });
+
+  const handleCaptureRanks = (competitionId: number, deadline: string) => {
+    if (new Date() < new Date(deadline)) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Capture Ranks Yet",
+        description: "The selection deadline has not passed for this competition.",
+      });
+      return;
+    }
+    captureRanksMutation.mutate(competitionId);
+  };
+
   const createMajorTournaments = async () => {
-    try {
+    // ... (createMajorTournaments function remains the same) ...
+     try {
       setIsCreatingTournaments(true);
       
       const tournaments = [
@@ -219,7 +288,6 @@ export default function AdminCompetitions() {
       
       for (const tournament of tournaments) {
         try {
-          // Convert dates to ISO strings for API submission
           const formattedTournament = {
             ...tournament,
             startDate: tournament.startDate.toISOString(),
@@ -227,7 +295,7 @@ export default function AdminCompetitions() {
             selectionDeadline: tournament.selectionDeadline.toISOString()
           };
           
-          await apiRequest('POST', '/api/competitions', formattedTournament);
+          await apiRequest('/api/competitions', 'POST', formattedTournament); 
           successCount++;
         } catch (error: any) {
           console.error(`Error creating ${tournament.name}:`, error);
@@ -296,6 +364,7 @@ export default function AdminCompetitions() {
                 <TableHead>Venue</TableHead>
                 <TableHead>Dates</TableHead>
                 <TableHead>Deadline</TableHead>
+                <TableHead>Leaderboard URL</TableHead> 
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -303,7 +372,7 @@ export default function AdminCompetitions() {
             <TableBody>
               {competitions?.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-4 text-gray-500">
+                  <TableCell colSpan={7} className="text-center py-4 text-gray-500"> 
                     No competitions found. Create one to get started.
                   </TableCell>
                 </TableRow>
@@ -316,6 +385,21 @@ export default function AdminCompetitions() {
                       {new Date(competition.startDate).toLocaleDateString()} - {new Date(competition.endDate).toLocaleDateString()}
                     </TableCell>
                     <TableCell>{new Date(competition.selectionDeadline).toLocaleDateString()}</TableCell>
+                    <TableCell className="max-w-[150px] truncate"> 
+                      {competition.externalLeaderboardUrl ? (
+                        <a 
+                          href={competition.externalLeaderboardUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline"
+                          title={competition.externalLeaderboardUrl} 
+                        >
+                          {competition.externalLeaderboardUrl}
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">N/A</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {competition.isComplete ? (
                         <Badge variant="outline" className="bg-slate-100 text-slate-800">Completed</Badge>
@@ -331,6 +415,22 @@ export default function AdminCompetitions() {
                       </Button>
                       <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => openDeleteDialog(competition)}>
                         <i className="fas fa-trash mr-1"></i> Delete
+                      </Button>
+                      {/* Capture Ranks Button */}
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="ml-2"
+                        onClick={() => handleCaptureRanks(competition.id, competition.selectionDeadline)}
+                        disabled={capturingRanksId === competition.id || new Date() < new Date(competition.selectionDeadline)} 
+                        title={new Date() < new Date(competition.selectionDeadline) ? "Deadline not passed" : "Capture ranks at deadline"}
+                      >
+                        {capturingRanksId === competition.id ? (
+                          <Clock className="mr-1 h-4 w-4 animate-spin" /> 
+                        ) : (
+                          <Clock className="mr-1 h-4 w-4" />
+                        )}
+                        Capture Ranks
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -380,7 +480,7 @@ export default function AdminCompetitions() {
               
               <div className="grid grid-cols-2 gap-4">
                 <FormField
-                  control={form.control}
+                  control={form.control} 
                   name="startDate"
                   render={({ field }) => (
                     <FormItem>
@@ -388,11 +488,8 @@ export default function AdminCompetitions() {
                       <FormControl>
                         <Input 
                           type="datetime-local" 
-                          value={typeof field.value === 'string' ? field.value : ''} 
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
+                          {...field}
+                          value={formatDateForInput(field.value)} 
                         />
                       </FormControl>
                       <FormMessage />
@@ -409,11 +506,8 @@ export default function AdminCompetitions() {
                       <FormControl>
                         <Input 
                           type="datetime-local" 
-                          value={typeof field.value === 'string' ? field.value : ''} 
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
+                          {...field}
+                          value={formatDateForInput(field.value)} 
                         />
                       </FormControl>
                       <FormMessage />
@@ -431,11 +525,8 @@ export default function AdminCompetitions() {
                     <FormControl>
                       <Input 
                         type="datetime-local" 
-                        value={typeof field.value === 'string' ? field.value : ''} 
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        name={field.name}
-                        ref={field.ref}
+                        {...field}
+                        value={formatDateForInput(field.value)} 
                       />
                     </FormControl>
                     <FormMessage />
@@ -453,7 +544,8 @@ export default function AdminCompetitions() {
                       <Textarea 
                         placeholder="Enter a description of the tournament..." 
                         className="resize-none h-20"
-                        {...field} 
+                        {...field}
+                        value={field.value ?? ''} 
                       />
                     </FormControl>
                     <FormMessage />
@@ -468,7 +560,22 @@ export default function AdminCompetitions() {
                   <FormItem>
                     <FormLabel>Tournament Logo URL</FormLabel>
                     <FormControl>
-                      <Input placeholder="https://example.com/logo.png" {...field} />
+                      <Input placeholder="https://example.com/logo.png" {...field} value={field.value ?? ''} /> 
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Add External Leaderboard URL Field */}
+              <FormField
+                control={form.control}
+                name="externalLeaderboardUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>External Leaderboard URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="https://www.pgatour.com/tournaments/..." {...field} value={field.value ?? ''} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -507,7 +614,7 @@ export default function AdminCompetitions() {
                     </FormItem>
                   )}
                 />
-              </div>
+              </div> 
               
               <DialogFooter>
                 <Button type="submit">
@@ -541,4 +648,4 @@ export default function AdminCompetitions() {
       </AlertDialog>
     </Card>
   );
-}
+} // Ensure this closing brace is present

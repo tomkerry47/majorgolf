@@ -1,295 +1,142 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"; // Import useQuery
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { insertGolferSchema, type InsertGolfer } from "@shared/schema";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertTriangle, RefreshCw, Loader2 } from "lucide-react"; // Import Loader2
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"; // Import Table components
+import { Golfer } from "shared/schema"; // Import Golfer type
 
 export default function AdminGolfers() {
   const { toast } = useToast();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedGolfer, setSelectedGolfer] = useState<any>(null);
-  const [formAction, setFormAction] = useState<'create' | 'edit'>('create');
-  
-  const { data: golfers, isLoading } = useQuery({
-    queryKey: ['/api/admin/golfers'],
+  const queryClient = useQueryClient();
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  // Fetch golfers data
+  const { data: golfersData, isLoading: isLoadingGolfers, error: golfersError } = useQuery<{ golfers: Golfer[] }>({
+    queryKey: ['/api/golfers'], // Use the standard endpoint for fetching golfers
+    queryFn: () => apiRequest('/api/golfers', 'GET'),
   });
-  
-  const defaultValues: InsertGolfer = {
-    name: '',
-    rank: undefined,
-    avatar: ''
-  };
-  
-  const form = useForm<InsertGolfer>({
-    resolver: zodResolver(insertGolferSchema),
-    defaultValues
-  });
-  
-  const openCreateDialog = () => {
-    form.reset(defaultValues);
-    setFormAction('create');
-    setSelectedGolfer(null);
-    setIsDialogOpen(true);
-  };
-  
-  const openEditDialog = (golfer: any) => {
-    form.reset({
-      name: golfer.name,
-      rank: golfer.rank || undefined,
-      avatar: golfer.avatar || ''
-    });
-    setFormAction('edit');
-    setSelectedGolfer(golfer);
-    setIsDialogOpen(true);
-  };
-  
-  const openDeleteDialog = (golfer: any) => {
-    setSelectedGolfer(golfer);
-    setIsDeleteDialogOpen(true);
-  };
-  
-  const onSubmit = async (data: InsertGolfer) => {
-    try {
-      if (formAction === 'create') {
-        await apiRequest('POST', '/api/admin/golfers', data);
-        toast({
-          title: "Golfer created",
-          description: "The golfer has been successfully created."
-        });
-      } else {
-        await apiRequest('PATCH', `/api/admin/golfers/${selectedGolfer.id}`, data);
-        toast({
-          title: "Golfer updated",
-          description: "The golfer has been successfully updated."
-        });
-      }
-      
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/golfers'] });
+
+  const updateGolfersMutation = useMutation({
+    mutationFn: () => apiRequest('/api/admin/update-golfers', 'POST'),
+    onMutate: () => {
+      setIsUpdating(true);
+      toast({
+        title: "Update Started",
+        description: "Updating golfer list from DataGolf. This may take a moment...",
+      });
+    },
+    onSuccess: (data: any) => { // Define type for data if known, e.g., { success: boolean, count: number, errors: number }
+      toast({
+        title: "Update Successful",
+        description: `Golfers table cleared and ${data?.count ?? 'N/A'} golfers inserted. Errors: ${data?.errors ?? 0}.`,
+      });
+      // Invalidate golfer queries to refresh lists
       queryClient.invalidateQueries({ queryKey: ['/api/golfers'] });
-      setIsDialogOpen(false);
-    } catch (error: any) {
+    },
+    onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error.message || "An error occurred."
+        title: "Update Failed",
+        description: error.message || "Failed to update golfer list.",
       });
-    }
+    },
+    onSettled: () => {
+      setIsUpdating(false);
+    },
+  });
+
+  const handleUpdateGolfers = () => {
+    // Maybe add a confirmation dialog here in the future
+    updateGolfersMutation.mutate();
   };
-  
-  const handleDelete = async () => {
-    try {
-      await apiRequest('DELETE', `/api/admin/golfers/${selectedGolfer.id}`, {});
-      toast({
-        title: "Golfer deleted",
-        description: "The golfer has been successfully deleted."
-      });
-      
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/golfers'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/golfers'] });
-      setIsDeleteDialogOpen(false);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message || "An error occurred."
-      });
-    }
-  };
-  
+
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Manage Golfers</CardTitle>
-        <Button onClick={openCreateDialog}>
-          <i className="fas fa-plus mr-2"></i>
-          Add Golfer
-        </Button>
+      <CardHeader>
+        <CardTitle>Golf Player Management</CardTitle>
+        <CardDescription>
+          Update the master golfer list and rankings from the DataGolf source, and view current golfers.
+        </CardDescription>
       </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Rank</TableHead>
-                <TableHead>Avatar</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {golfers?.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center py-4 text-gray-500">
-                    No golfers found. Add one to get started.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                golfers?.map((golfer) => (
-                  <TableRow key={golfer.id}>
-                    <TableCell className="font-medium">{golfer.name}</TableCell>
-                    <TableCell>{golfer.rank || 'N/A'}</TableCell>
-                    <TableCell>
-                      {golfer.avatar ? (
-                        <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                          <img 
-                            src={golfer.avatar} 
-                            alt={golfer.name} 
-                            className="h-10 w-10 object-cover" 
-                          />
-                        </div>
-                      ) : (
-                        <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
-                          <span className="text-sm font-medium text-gray-800">
-                            {golfer.name.charAt(0)}
-                          </span>
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => openEditDialog(golfer)}>
-                        <i className="fas fa-edit mr-1"></i> Edit
-                      </Button>
-                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => openDeleteDialog(golfer)}>
-                        <i className="fas fa-trash mr-1"></i> Delete
-                      </Button>
-                    </TableCell>
+      <CardContent className="space-y-4">
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Update Action</AlertTitle>
+          <AlertDescription>
+            Running the update will fetch the latest golfer rankings from DataGolf, update existing golfers in the database, and insert any new golfers found. It does not delete existing golfers.
+          </AlertDescription>
+        </Alert>
+        <Button
+          onClick={handleUpdateGolfers}
+          disabled={isUpdating || isLoadingGolfers} // Disable if updating or loading
+        >
+          {isUpdating ? (
+            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="mr-2 h-4 w-4" />
+          )}
+          {isUpdating ? 'Updating Golfers...' : 'Update Golfer List from DataGolf'}
+        </Button>
+
+        {/* Display current golfers */}
+        <div className="mt-6">
+          <h3 className="text-lg font-semibold mb-2">Current Golfers in Database</h3>
+          {isLoadingGolfers && (
+            <div className="flex items-center justify-center p-4">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <span className="ml-2">Loading golfers...</span>
+            </div>
+          )}
+          {golfersError && (
+             <Alert variant="destructive">
+               <AlertTriangle className="h-4 w-4" />
+               <AlertTitle>Error Loading Golfers</AlertTitle>
+               <AlertDescription>
+                 {(golfersError as Error).message || "Could not fetch golfer data."}
+               </AlertDescription>
+             </Alert>
+          )}
+          {golfersData && golfersData.golfers && (
+            <div className="border rounded-md max-h-96 overflow-y-auto"> {/* Added scroll */}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Rank</TableHead>
+                    <TableHead>First Name</TableHead>
+                    <TableHead>Last Name</TableHead>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        )}
+                </TableHeader>
+                <TableBody>
+                  {golfersData.golfers.length > 0 ? (
+                    // Sort golfers by rank before mapping
+                    [...golfersData.golfers].sort((a, b) => a.rank - b.rank).map((golfer) => (
+                      <TableRow key={golfer.id}>
+                        <TableCell>{golfer.id}</TableCell>
+                        <TableCell className="font-medium">{golfer.name}</TableCell>
+                        <TableCell>{golfer.rank}</TableCell>
+                        <TableCell>{golfer.firstName ?? 'N/A'}</TableCell>
+                        <TableCell>{golfer.lastName ?? 'N/A'}</TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center">
+                        No golfers found in the database.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
       </CardContent>
-      
-      {/* Create/Edit Golfer Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>{formAction === 'create' ? 'Add New Golfer' : 'Edit Golfer'}</DialogTitle>
-          </DialogHeader>
-          
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Golfer Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g. Rory McIlroy" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="rank"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>World Rank</FormLabel>
-                    <FormControl>
-                      <Input 
-                        type="number" 
-                        placeholder="e.g. 1" 
-                        value={field.value === undefined ? '' : field.value} 
-                        onChange={(e) => field.onChange(e.target.value === '' ? undefined : parseInt(e.target.value))} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="avatar"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Avatar URL</FormLabel>
-                    <FormControl>
-                      <Input 
-                        placeholder="https://example.com/avatar.jpg" 
-                        {...field} 
-                        value={field.value || ''} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <DialogFooter>
-                <Button type="submit">
-                  {formAction === 'create' ? 'Add Golfer' : 'Save Changes'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Golfer</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{selectedGolfer?.name}"? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDelete}
-              className="bg-red-500 hover:bg-red-600"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </Card>
   );
 }

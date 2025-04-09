@@ -96,7 +96,11 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  console.log("[Server Startup] Starting async IIFE..."); // Added log
+  
+  console.log("[Server Startup] Registering routes..."); // Added log
   const server = await registerRoutes(app);
+  console.log("[Server Startup] Routes registered."); // Added log
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -113,12 +117,12 @@ app.use((req, res, next) => {
   console.log("Node ENV:", process.env.NODE_ENV);
   
   if (app.get("env") === "development") {
-    console.log("Setting up Vite in development mode");
+    console.log("[Server Startup] Setting up Vite in development mode..."); // Updated log
     try {
       await setupVite(app, server);
-      console.log("Vite setup completed successfully");
+      console.log("[Server Startup] Vite setup completed successfully."); // Updated log
     } catch (error) {
-      console.error("Error during Vite setup:", error);
+      console.error("[Server Startup] Error during Vite setup:", error); // Updated log
     }
   } else {
     console.log("Setting up static serving in production mode");
@@ -128,14 +132,15 @@ app.use((req, res, next) => {
   // Use PORT from environment variable if available, otherwise default to 5000
   // this serves both the API and the client.
   const port = parseInt(process.env.PORT || "5000", 10);
+  console.log(`[Server Startup] Attempting to listen on ${port}...`); // Added log
   server.listen({
     port,
     host: "127.0.0.1", // Changed from localhost to explicit IPv4 loopback
     // reusePort: true, // Removed reusePort option
   }, () => {
-    log(`serving on port ${port}`);
-    console.log(`Server is running at http://127.0.0.1:${port}`);
+    log(`serving on port ${port}`); // Keep existing log
+    console.log(`[Server Startup] Server is running at http://127.0.0.1:${port}`); // Updated log
     // Removed the 'Access from outside' log as it's less relevant for localhost
-    console.log(`Test page available at http://127.0.0.1:${port}/test`);
+    console.log(`[Server Startup] Test page available at http://127.0.0.1:${port}/test`); // Updated log
   });
 })();

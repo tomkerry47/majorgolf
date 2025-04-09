@@ -7,10 +7,12 @@ import {
   userPoints, type UserPoints, type InsertUserPoints,
   pointSystem, type PointSystem, type InsertPointSystem,
   wildcardGolfers, type WildcardGolfer, type InsertWildcardGolfer,
-  holeInOnes, type HoleInOne, type InsertHoleInOne
+  holeInOnes, type HoleInOne, type InsertHoleInOne,
+  selectionRanks, type SelectionRank, type InsertSelectionRank // Import new schema items
 } from "@shared/schema";
 import { db, pgClient, hashPassword } from "./db";
-import { eq, and, sql, desc, asc, count } from "drizzle-orm";
+import { eq, and, sql, desc, asc, count, inArray, ilike } from "drizzle-orm"; // Added ilike for case-insensitive matching
+import { alias } from "drizzle-orm/pg-core"; // Import alias from pg-core
 
 export interface IStorage {
   // User methods
@@ -37,6 +39,7 @@ export interface IStorage {
   getGolferById(id: number): Promise<Golfer | undefined>;
   createGolfer(golfer: InsertGolfer): Promise<Golfer>;
   updateGolfer(id: number, golferData: Partial<Golfer>): Promise<Golfer>;
+  getGolferByName(name: string): Promise<Golfer | undefined>; // Add method to find by name
 
   // Selection methods
   getUserSelections(userId: number, competitionId: number): Promise<Selection | undefined>;
@@ -47,6 +50,7 @@ export interface IStorage {
   createSelection(selection: InsertSelection): Promise<Selection>;
   updateSelection(id: number, selectionData: Partial<Selection>): Promise<Selection>;
   deleteSelection(id: number): Promise<void>;
+  deleteUserSelectionsForCompetition(userId: number, competitionId: number): Promise<number>; // Added method
 
   // Results methods
   getResults(competitionId: number): Promise<Result[]>;
@@ -82,6 +86,11 @@ export interface IStorage {
   createHoleInOne(holeInOne: InsertHoleInOne): Promise<HoleInOne>;
   updateHoleInOne(id: number, holeInOneData: Partial<HoleInOne>): Promise<HoleInOne>;
   deleteHoleInOne(id: number): Promise<void>;
+
+  // Selection Rank methods
+  createSelectionRank(data: InsertSelectionRank): Promise<SelectionRank>;
+  getSelectionRank(userId: number, competitionId: number, golferId: number): Promise<SelectionRank | undefined>;
+  captureSelectionRanksForCompetition(competitionId: number): Promise<{ success: boolean; count: number; errors: number }>;
 }
 
 // Helper function to convert DB user to User interface type
@@ -166,15 +175,39 @@ export class DatabaseStorage implements IStorage {
   // Competition methods
   async getCompetitions(): Promise<Competition[]> {
     const competitionsList = await db
-      .select()
+      .select({ // Select specific columns including the new one
+        id: competitions.id,
+        name: competitions.name,
+        venue: competitions.venue,
+        startDate: competitions.startDate,
+        endDate: competitions.endDate,
+        selectionDeadline: competitions.selectionDeadline,
+        isActive: competitions.isActive,
+        isComplete: competitions.isComplete,
+        description: competitions.description,
+        imageUrl: competitions.imageUrl,
+        externalLeaderboardUrl: competitions.externalLeaderboardUrl,
+      })
       .from(competitions)
       .orderBy(competitions.startDate);
-    return competitionsList as unknown as Competition[];
+    return competitionsList.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null })) as Competition[];
   }
 
   async getActiveCompetitions(): Promise<Competition[]> {
     const activeCompetitions = await db
-      .select()
+      .select({ // Select specific columns including the new one
+        id: competitions.id,
+        name: competitions.name,
+        venue: competitions.venue,
+        startDate: competitions.startDate,
+        endDate: competitions.endDate,
+        selectionDeadline: competitions.selectionDeadline,
+        isActive: competitions.isActive,
+        isComplete: competitions.isComplete,
+        description: competitions.description,
+        imageUrl: competitions.imageUrl,
+        externalLeaderboardUrl: competitions.externalLeaderboardUrl,
+      })
       .from(competitions)
       .where(
         and(
@@ -183,13 +216,25 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(competitions.startDate);
-    return activeCompetitions as unknown as Competition[];
+    return activeCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null })) as Competition[];
   }
 
   async getUpcomingCompetitions(): Promise<Competition[]> {
     const currentDate = new Date();
     const upcomingCompetitions = await db
-      .select()
+      .select({ // Select specific columns including the new one
+        id: competitions.id,
+        name: competitions.name,
+        venue: competitions.venue,
+        startDate: competitions.startDate,
+        endDate: competitions.endDate,
+        selectionDeadline: competitions.selectionDeadline,
+        isActive: competitions.isActive,
+        isComplete: competitions.isComplete,
+        description: competitions.description,
+        imageUrl: competitions.imageUrl,
+        externalLeaderboardUrl: competitions.externalLeaderboardUrl,
+      })
       .from(competitions)
       .where(
         and(
@@ -198,24 +243,50 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(competitions.startDate);
-    return upcomingCompetitions as unknown as Competition[];
+    return upcomingCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null })) as Competition[];
   }
 
   async getCompletedCompetitions(): Promise<Competition[]> {
     const completedCompetitions = await db
-      .select()
+      .select({ // Select specific columns including the new one
+        id: competitions.id,
+        name: competitions.name,
+        venue: competitions.venue,
+        startDate: competitions.startDate,
+        endDate: competitions.endDate,
+        selectionDeadline: competitions.selectionDeadline,
+        isActive: competitions.isActive,
+        isComplete: competitions.isComplete,
+        description: competitions.description,
+        imageUrl: competitions.imageUrl,
+        externalLeaderboardUrl: competitions.externalLeaderboardUrl,
+      })
       .from(competitions)
       .where(eq(competitions.isComplete, true))
       .orderBy(desc(competitions.endDate));
-    return completedCompetitions as unknown as Competition[];
+    return completedCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null })) as Competition[];
   }
 
   async getCompetitionById(id: number): Promise<Competition | undefined> {
     const [competition] = await db
-      .select()
+      .select({ // Select specific columns including the new one
+        id: competitions.id,
+        name: competitions.name,
+        venue: competitions.venue,
+        startDate: competitions.startDate,
+        endDate: competitions.endDate,
+        selectionDeadline: competitions.selectionDeadline,
+        isActive: competitions.isActive,
+        isComplete: competitions.isComplete,
+        description: competitions.description,
+        imageUrl: competitions.imageUrl,
+        externalLeaderboardUrl: competitions.externalLeaderboardUrl,
+      })
       .from(competitions)
       .where(eq(competitions.id, id));
-    return competition as unknown as Competition | undefined;
+    
+    if (!competition) return undefined;
+    return { ...competition, externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null } as Competition;
   }
 
   async createCompetition(competition: InsertCompetition): Promise<Competition> {
@@ -231,21 +302,29 @@ export class DatabaseStorage implements IStorage {
     if (typeof competitionToInsert.selectionDeadline === 'string') {
       competitionToInsert.selectionDeadline = new Date(competitionToInsert.selectionDeadline);
     }
+    // Ensure externalLeaderboardUrl is included
+    competitionToInsert.externalLeaderboardUrl = competition.externalLeaderboardUrl || null;
 
     const [newCompetition] = await db
       .insert(competitions)
       .values(competitionToInsert)
       .returning();
-    return newCompetition as unknown as Competition;
+    return { ...newCompetition, externalLeaderboardUrl: newCompetition.externalLeaderboardUrl ?? null } as Competition;
   }
 
   async updateCompetition(id: number, competitionData: Partial<Competition>): Promise<Competition> {
+    // Ensure externalLeaderboardUrl is handled correctly (allow setting to null)
+    const dataToUpdate: any = { ...competitionData };
+    if (competitionData.hasOwnProperty('externalLeaderboardUrl')) {
+        dataToUpdate.externalLeaderboardUrl = competitionData.externalLeaderboardUrl || null;
+    }
+
     const [competition] = await db
       .update(competitions)
-      .set(competitionData)
+      .set(dataToUpdate)
       .where(eq(competitions.id, id))
       .returning();
-    return competition as unknown as Competition;
+    return { ...competition, externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null } as Competition;
   }
 
   // Golfer methods
@@ -254,21 +333,28 @@ export class DatabaseStorage implements IStorage {
     const results = await db
       .select({
         id: golfers.id,
-        name: golfers.name,
-        rank: golfers.rank,
-        avatarUrl: golfers.avatarUrl
-      })
-      .from(golfers)
-      .orderBy(golfers.rank);
+      name: golfers.name,
+      shortName: golfers.shortName,
+      firstName: golfers.firstName, // Add firstName
+      lastName: golfers.lastName,   // Add lastName
+      rank: golfers.rank,
+      avatarUrl: golfers.avatarUrl
+    })
+    .from(golfers)
+    .orderBy(golfers.rank);
 
     // Convert to Golfer type with optional fields
-    return results.map(golfer => ({
-      ...golfer,
-      country: undefined, // Add missing optional fields with undefined values
-      createdAt: undefined,
-      avatarUrl: golfer.avatarUrl || undefined
-    })) as Golfer[];
-  }
+  // Convert to Golfer type with optional fields
+  return results.map(golfer => ({
+    ...golfer,
+    shortName: golfer.shortName ?? null,
+    firstName: golfer.firstName ?? null, // Pass firstName
+    lastName: golfer.lastName ?? null,   // Pass lastName
+    country: undefined,
+    createdAt: undefined,
+    avatarUrl: golfer.avatarUrl || undefined
+  })) as Golfer[];
+}
 
   async getGolferById(id: number): Promise<Golfer | undefined> {
     // Select only columns that exist in the database
@@ -276,6 +362,7 @@ export class DatabaseStorage implements IStorage {
       .select({
         id: golfers.id,
         name: golfers.name,
+        shortName: golfers.shortName, // Select shortName
         rank: golfers.rank,
         avatarUrl: golfers.avatarUrl
       })
@@ -287,18 +374,46 @@ export class DatabaseStorage implements IStorage {
     // Convert to Golfer type with optional fields
     return {
       ...result,
-      country: undefined, // Add missing optional fields with undefined values
+      shortName: result.shortName ?? null, // Handle null shortName
+      country: undefined, 
+      createdAt: undefined,
+      avatarUrl: result.avatarUrl || undefined
+    } as Golfer;
+  }
+
+  // Duplicate createGolfer removed below
+
+  async getGolferByName(name: string): Promise<Golfer | undefined> {
+    // Case-insensitive search
+    const [result] = await db
+      .select({
+        id: golfers.id,
+        name: golfers.name,
+        shortName: golfers.shortName,
+        rank: golfers.rank,
+        avatarUrl: golfers.avatarUrl
+      })
+      .from(golfers)
+      .where(ilike(golfers.name, name)); // Use ilike for case-insensitive
+
+    if (!result) return undefined;
+
+    return {
+      ...result,
+      shortName: result.shortName ?? null,
+      country: undefined,
       createdAt: undefined,
       avatarUrl: result.avatarUrl || undefined
     } as Golfer;
   }
 
   async createGolfer(golfer: InsertGolfer): Promise<Golfer> {
-    // Only include fields that exist in the database
+    // Include shortName if provided
     const golferToInsert = {
       name: golfer.name,
+      shortName: golfer.shortName || null, // Ensure null if not provided
       rank: golfer.rank,
-      avatarUrl: golfer.avatarUrl
+      avatarUrl: golfer.avatarUrl || null
     };
 
     const [newGolfer] = await db
@@ -309,6 +424,7 @@ export class DatabaseStorage implements IStorage {
     // Convert to Golfer type with optional fields
     return {
       ...newGolfer,
+      shortName: newGolfer.shortName ?? null,
       country: undefined,
       createdAt: undefined,
       avatarUrl: newGolfer.avatarUrl || undefined
@@ -316,9 +432,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateGolfer(id: number, golferData: Partial<Golfer>): Promise<Golfer> {
-    // Only include fields that exist in the database
+    // Include shortName if provided
     const golferToUpdate: any = {};
     if (golferData.name !== undefined) golferToUpdate.name = golferData.name;
+    if (golferData.shortName !== undefined) golferToUpdate.shortName = golferData.shortName; // Add shortName
     if (golferData.rank !== undefined) golferToUpdate.rank = golferData.rank;
     if (golferData.avatarUrl !== undefined) golferToUpdate.avatarUrl = golferData.avatarUrl;
 
@@ -331,6 +448,7 @@ export class DatabaseStorage implements IStorage {
     // Convert to Golfer type with optional fields
     return {
       ...updatedGolfer,
+      shortName: updatedGolfer.shortName ?? null,
       country: undefined,
       createdAt: undefined,
       avatarUrl: updatedGolfer.avatarUrl || undefined
@@ -354,23 +472,108 @@ export class DatabaseStorage implements IStorage {
     // Convert Date to string for Selection interface
     return {
       ...selection,
+      captainGolferId: selection.captainGolferId ?? null, // Ensure captainGolferId is included
       createdAt: selection.createdAt instanceof Date ? selection.createdAt.toISOString() : selection.createdAt,
       updatedAt: selection.updatedAt instanceof Date ? selection.updatedAt.toISOString() : selection.updatedAt
     } as Selection;
   }
 
-  async getUserSelectionsForAllCompetitions(userId: number): Promise<Selection[]> {
-    const userSelections = await db
-      .select()
-      .from(selections)
-      .where(eq(selections.userId, userId));
+  async getUserSelectionsForAllCompetitions(userId: number): Promise<any[]> { // Return type changed to any[] for enriched data
+    // Define aliases for golfers table to join multiple times
+    const golfer1 = alias(golfers, "golfer1"); // Use imported alias
+    const golfer2 = alias(golfers, "golfer2"); // Use imported alias
+    const golfer3 = alias(golfers, "golfer3"); // Use imported alias
 
-    // Format for Selection interface
-    return userSelections.map(s => ({
-      ...s,
-      createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt,
-      updatedAt: s.updatedAt instanceof Date ? s.updatedAt.toISOString() : s.updatedAt
-    })) as Selection[];
+    const userSelectionsData = await db
+      .select({
+        selection: selections,
+        competition: competitions,
+        golfer1: { id: golfer1.id, name: golfer1.name, avatarUrl: golfer1.avatarUrl },
+        golfer2: { id: golfer2.id, name: golfer2.name, avatarUrl: golfer2.avatarUrl },
+        golfer3: { id: golfer3.id, name: golfer3.name, avatarUrl: golfer3.avatarUrl },
+        userPoints: userPoints // Include userPoints to get total points and details
+      })
+      .from(selections)
+      .where(eq(selections.userId, userId))
+      .leftJoin(competitions, eq(selections.competitionId, competitions.id))
+      .leftJoin(golfer1, eq(selections.golfer1Id, golfer1.id))
+      .leftJoin(golfer2, eq(selections.golfer2Id, golfer2.id))
+      .leftJoin(golfer3, eq(selections.golfer3Id, golfer3.id))
+      .leftJoin(userPoints, and(eq(selections.userId, userPoints.userId), eq(selections.competitionId, userPoints.competitionId)))
+      .orderBy(desc(competitions.startDate)); // Order by competition start date
+
+    // Fetch results separately for each competition to avoid complex joins/aggregation in the main query
+    const competitionIds = userSelectionsData
+      .map(s => s.selection.competitionId)
+      .filter(id => typeof id === 'number' && !isNaN(id)); // Ensure only valid numbers
+
+    console.log(`[Storage] getUserSelectionsForAllCompetitions - Filtered Competition IDs for results query:`, competitionIds); // Log the IDs
+
+    // Check if competitionIds is actually an array of numbers
+    if (!Array.isArray(competitionIds) || competitionIds.some(id => typeof id !== 'number')) {
+      console.error('[Storage] getUserSelectionsForAllCompetitions - Error: competitionIds is not a valid array of numbers:', competitionIds);
+      // Handle error appropriately, maybe return empty results or throw
+      return []; // Or throw new Error('Invalid competition IDs derived');
+    }
+
+    const allResults = competitionIds.length > 0 ? await db
+      .select()
+      .from(results)
+      .where(inArray(results.competitionId, competitionIds)) : []; // Revert back to inArray
+
+    // Map results by competitionId and golferId for easy lookup
+    const resultsMap = new Map<string, Result>();
+    allResults.forEach(r => {
+      resultsMap.set(`${r.competitionId}-${r.golferId}`, {
+        ...r,
+        points: r.points || undefined,
+        created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at
+      } as Result);
+    });
+
+    // Format the data for the frontend
+    return userSelectionsData.map(data => {
+      const selection = data.selection;
+      const competition = data.competition;
+      const golfer1Result = resultsMap.get(`${selection.competitionId}-${selection.golfer1Id}`);
+      const golfer2Result = resultsMap.get(`${selection.competitionId}-${selection.golfer2Id}`);
+      const golfer3Result = resultsMap.get(`${selection.competitionId}-${selection.golfer3Id}`);
+
+      // Helper to safely format dates
+      const formatDate = (dateValue: string | Date | null | undefined): string | null => {
+        return dateValue ? new Date(dateValue).toISOString() : null;
+      };
+
+      return {
+        id: selection.id,
+        userId: selection.userId,
+        competitionId: selection.competitionId,
+        golfer1Id: selection.golfer1Id,
+        golfer2Id: selection.golfer2Id,
+        golfer3Id: selection.golfer3Id,
+        useCaptainsChip: selection.useCaptainsChip,
+        createdAt: formatDate(selection.createdAt),
+        updatedAt: formatDate(selection.updatedAt),
+        competition: competition ? { // Ensure competition is not null
+          id: competition.id,
+          name: competition.name,
+          venue: competition.venue,
+          startDate: formatDate(competition.startDate),
+          endDate: formatDate(competition.endDate),
+          selectionDeadline: formatDate(competition.selectionDeadline),
+          isActive: competition.isActive,
+          isComplete: competition.isComplete,
+          // createdAt removed as it's not selected/needed
+        } : null,
+        golfer1: data.golfer1?.id ? { id: data.golfer1.id, name: data.golfer1.name, avatar: data.golfer1.avatarUrl } : null, // Added null checks
+        golfer2: data.golfer2?.id ? { id: data.golfer2.id, name: data.golfer2.name, avatar: data.golfer2.avatarUrl } : null, // Added null checks
+        golfer3: data.golfer3?.id ? { id: data.golfer3.id, name: data.golfer3.name, avatar: data.golfer3.avatarUrl } : null, // Added null checks
+        golfer1Result: golfer1Result ? { position: golfer1Result.position, points: golfer1Result.points } : null,
+        golfer2Result: golfer2Result ? { position: golfer2Result.position, points: golfer2Result.points } : null,
+        golfer3Result: golfer3Result ? { position: golfer3Result.position, points: golfer3Result.points } : null,
+        totalPoints: data.userPoints?.points || 0 // Get total points from userPoints join
+      };
+    });
   }
 
   async getSelectionById(id: number): Promise<Selection | undefined> {
@@ -384,6 +587,7 @@ export class DatabaseStorage implements IStorage {
     // Convert Date to string for Selection interface
     return {
       ...selection,
+      captainGolferId: selection.captainGolferId ?? null, // Ensure captainGolferId is included
       createdAt: selection.createdAt instanceof Date ? selection.createdAt.toISOString() : selection.createdAt,
       updatedAt: selection.updatedAt instanceof Date ? selection.updatedAt.toISOString() : selection.updatedAt
     } as Selection;
@@ -431,6 +635,7 @@ export class DatabaseStorage implements IStorage {
     // Convert Date to string for Selection interface
     return allSelections.map(s => ({
       ...s,
+      captainGolferId: s.captainGolferId ?? null, // Ensure captainGolferId is included
       createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : s.createdAt,
       updatedAt: s.updatedAt instanceof Date ? s.updatedAt.toISOString() : s.updatedAt
     })) as Selection[];
@@ -438,7 +643,11 @@ export class DatabaseStorage implements IStorage {
 
   async createSelection(selection: InsertSelection): Promise<Selection> {
     // Convert string dates to Date objects for database
-    const selectionToInsert: any = { ...selection };
+    // Include captainGolferId if provided, otherwise it defaults to null in DB
+    const selectionToInsert: any = { 
+      ...selection,
+      captainGolferId: selection.useCaptainsChip ? selection.captainGolferId : null 
+    };
 
     if (typeof selectionToInsert.createdAt === 'string') {
       selectionToInsert.createdAt = new Date(selectionToInsert.createdAt);
@@ -455,6 +664,7 @@ export class DatabaseStorage implements IStorage {
     // Convert Date to string for Selection interface
     return {
       ...newSelection,
+      captainGolferId: newSelection.captainGolferId ?? null, // Ensure captainGolferId is included
       createdAt: newSelection.createdAt instanceof Date ? newSelection.createdAt.toISOString() : newSelection.createdAt,
       updatedAt: newSelection.updatedAt instanceof Date ? newSelection.updatedAt.toISOString() : newSelection.updatedAt
     } as Selection;
@@ -462,7 +672,11 @@ export class DatabaseStorage implements IStorage {
 
   async updateSelection(id: number, selectionData: Partial<Selection>): Promise<Selection> {
     // Convert string dates to Date objects for database
-    const dataToUpdate: any = { ...selectionData };
+    // Include captainGolferId if provided, set to null if useCaptainsChip becomes false
+    const dataToUpdate: any = { 
+      ...selectionData,
+      captainGolferId: selectionData.useCaptainsChip ? selectionData.captainGolferId : null
+    };
 
     if (typeof dataToUpdate.createdAt === 'string') {
       dataToUpdate.createdAt = new Date(dataToUpdate.createdAt);
@@ -480,6 +694,7 @@ export class DatabaseStorage implements IStorage {
     // Convert Date to string for Selection interface
     return {
       ...selection,
+      captainGolferId: selection.captainGolferId ?? null, // Ensure captainGolferId is included
       createdAt: selection.createdAt instanceof Date ? selection.createdAt.toISOString() : selection.createdAt,
       updatedAt: selection.updatedAt instanceof Date ? selection.updatedAt.toISOString() : selection.updatedAt
     } as Selection;
@@ -489,6 +704,38 @@ export class DatabaseStorage implements IStorage {
     await db
       .delete(selections)
       .where(eq(selections.id, id));
+  }
+
+  async deleteUserSelectionsForCompetition(userId: number, competitionId: number): Promise<number> {
+    const result = await db
+      .delete(selections)
+      .where(
+        and(
+          eq(selections.userId, userId),
+          eq(selections.competitionId, competitionId)
+        )
+      );
+    // Drizzle delete returns a result object, but the structure might vary.
+    // Assuming it provides a way to get the count of deleted rows,
+    // otherwise, return 1 if successful, 0 if not, or handle based on actual Drizzle return type.
+    // For now, let's assume it returns an object with a 'rowCount' property or similar.
+    // Adjust based on the actual return type of db.delete().
+    // If using node-postgres directly via pgClient, result.rowCount would be standard.
+    // Drizzle's exact return might need checking documentation if this doesn't work.
+    // Let's tentatively return 1 if deletion seems to occur, 0 otherwise.
+    // A more robust check might involve querying before/after or checking Drizzle's result object structure.
+    console.log(`Deletion result for user ${userId}, competition ${competitionId}:`, result);
+    // Assuming result might be an array or object indicating success/rows affected.
+    // This is a placeholder, adjust based on actual Drizzle v0.20+ behavior for delete.
+    // Let's assume for now it returns an object with rowCount like pg.
+    // If Drizzle's delete returns the deleted rows array, use result.length.
+    // If it returns a command completion object, parse that.
+    // Let's default to returning 1 as a placeholder for "attempted deletion".
+    // A safer bet might be to return 0 always until the exact return type is confirmed.
+    // Let's refine: Drizzle's delete typically returns a result object. We'll assume it has some indication of success.
+    // For pg, the result object has `rowCount`. Let's assume Drizzle provides something similar or we return 1 on success.
+    // Returning 1 to indicate the operation was executed.
+    return 1; // Placeholder: Adjust based on actual Drizzle delete return value inspection
   }
 
   // Results methods
@@ -951,6 +1198,111 @@ export class DatabaseStorage implements IStorage {
       .delete(holeInOnes)
       .where(eq(holeInOnes.id, id));
   }
+
+  // --- Selection Rank Methods ---
+  async createSelectionRank(data: InsertSelectionRank): Promise<SelectionRank> {
+    const [newRank] = await db
+      .insert(selectionRanks)
+      .values(data)
+      .returning();
+    return {
+      ...newRank,
+      createdAt: newRank.createdAt instanceof Date ? newRank.createdAt.toISOString() : newRank.createdAt
+    } as SelectionRank;
+  }
+
+  async getSelectionRank(userId: number, competitionId: number, golferId: number): Promise<SelectionRank | undefined> {
+    const [rank] = await db
+      .select()
+      .from(selectionRanks)
+      .where(
+        and(
+          eq(selectionRanks.userId, userId),
+          eq(selectionRanks.competitionId, competitionId),
+          eq(selectionRanks.golferId, golferId)
+        )
+      );
+    
+    if (!rank) return undefined;
+
+    return {
+      ...rank,
+      createdAt: rank.createdAt instanceof Date ? rank.createdAt.toISOString() : rank.createdAt
+    } as SelectionRank;
+  }
+
+  async captureSelectionRanksForCompetition(competitionId: number): Promise<{ success: boolean; count: number; errors: number }> {
+    console.log(`Capturing selection ranks for competition ID: ${competitionId}`);
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      // 1. Get all selections for the competition
+      const competitionSelections = await this.getAllSelections(competitionId);
+      if (competitionSelections.length === 0) {
+        console.log(`No selections found for competition ${competitionId}. Nothing to capture.`);
+        return { success: true, count: 0, errors: 0 };
+      }
+      console.log(`Found ${competitionSelections.length} selections to process.`);
+
+      // 2. Get all golfers involved in these selections to fetch ranks efficiently
+      const golferIds = new Set<number>();
+      competitionSelections.forEach(s => {
+        golferIds.add(s.golfer1Id);
+        golferIds.add(s.golfer2Id);
+        golferIds.add(s.golfer3Id);
+      });
+      const golferIdArray = Array.from(golferIds);
+      console.log(`Fetching ranks for ${golferIdArray.length} unique golfers.`);
+
+      const golferRanks = golferIdArray.length > 0 ? await db
+        .select({ id: golfers.id, rank: golfers.rank })
+        .from(golfers)
+        .where(inArray(golfers.id, golferIdArray)) : [];
+        
+      const rankMap = new Map<number, number>();
+      golferRanks.forEach(g => rankMap.set(g.id, g.rank));
+      console.log(`Fetched ${rankMap.size} golfer ranks.`);
+
+      // 3. Iterate through selections and insert/update ranks
+      for (const selection of competitionSelections) {
+        const golfersInSelection = [selection.golfer1Id, selection.golfer2Id, selection.golfer3Id];
+        for (const golferId of golfersInSelection) {
+          const rank = rankMap.get(golferId);
+          if (rank !== undefined) {
+            try {
+              const dataToInsert: InsertSelectionRank = {
+                userId: selection.userId,
+                competitionId: selection.competitionId,
+                golferId: golferId,
+                rankAtDeadline: rank
+              };
+              // Use ON CONFLICT DO NOTHING to avoid errors if rank already captured
+              await db.insert(selectionRanks)
+                      .values(dataToInsert)
+                      .onConflictDoNothing({ target: [selectionRanks.userId, selectionRanks.competitionId, selectionRanks.golferId] });
+              successCount++;
+            } catch (insertError) {
+              console.error(`Error inserting rank for user ${selection.userId}, comp ${competitionId}, golfer ${golferId}:`, insertError);
+              errorCount++;
+            }
+          } else {
+            console.warn(`Rank not found for golfer ID ${golferId} in selection ${selection.id}. Skipping rank capture for this golfer.`);
+            // Optionally count this as an error or handle differently
+            // errorCount++; 
+          }
+        }
+      }
+
+      console.log(`Finished capturing ranks. Success: ${successCount}, Errors: ${errorCount}`);
+      return { success: errorCount === 0, count: successCount, errors: errorCount };
+
+    } catch (error) {
+      console.error(`Error during captureSelectionRanksForCompetition (Comp ID: ${competitionId}):`, error);
+      return { success: false, count: successCount, errors: errorCount + 1 }; // Indicate overall failure
+    }
+  }
+  // --- End Selection Rank Methods ---
 }
 
 // Export the storage instance

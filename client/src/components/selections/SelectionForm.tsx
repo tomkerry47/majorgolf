@@ -1,557 +1,584 @@
-import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useState, useEffect, useMemo } from "react"; // Combined imports
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Check, ChevronsUpDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { selectionFormSchema, type InsertSelection, type Golfer, type Competition, type Selection } from "@shared/schema";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+// Remove Select imports, add Combobox import
+// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox"; // Import Combobox
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertTriangle, Loader2 } from "lucide-react";
+// Import Competition type
+import { selectionFormSchema, type InsertSelection, type Golfer, type Selection, type Competition } from "@shared/schema";
+import { useAuth } from "@/context/AuthContext"; // Import useAuth
+import type { Control } from "react-hook-form"; // Import Control type
 
 interface SelectionFormProps {
   competitionId: number;
+  competitionName: string;
+  selectionDeadline: string;
   onSuccess?: () => void;
 }
 
-export default function SelectionForm({ competitionId, onSuccess }: SelectionFormProps) {
-  const { toast } = useToast();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [openPopover1, setOpenPopover1] = useState(false);
-  const [openPopover2, setOpenPopover2] = useState(false);
-  const [openPopover3, setOpenPopover3] = useState(false);
+// Define props for the inner content component
+interface SelectionFormContentProps extends SelectionFormProps {
+  form: ReturnType<typeof useForm<InsertSelection>>;
+  golfers: Golfer[];
+  existingSelection: Selection | null | undefined;
+  captainChipStatus: { hasUsedCaptainsChip: boolean } | undefined;
+  defaultValues: Partial<InsertSelection>; // Add defaultValues prop
+  isLoadingSelection: boolean;
+  isLoadingGolfers: boolean;
+  isLoadingChipStatus: boolean;
+  isEditing: boolean;
+  setIsEditing: React.Dispatch<React.SetStateAction<boolean>>;
+  showCaptainSelector: boolean;
+  setShowCaptainSelector: React.Dispatch<React.SetStateAction<boolean>>;
+  mutation: ReturnType<typeof useMutation<any, any, InsertSelection>>; // Adjust types as needed
+  // Add types for new data passed down
+  allUserSelections: Selection[];
+  // Remove competition props
+  // allCompetitions: Competition[];
+  // currentCompetition: Competition | undefined;
+  isLoadingAllSelections: boolean; // Pass loading states too
+  // Remove competition loading props
+  // isLoadingAllCompetitions: boolean;
+  // isLoadingCurrentCompetition: boolean;
+}
 
-  // Fetch competition details
-  const { data: competition, isLoading: isLoadingCompetition } = useQuery<Competition>({
-    queryKey: [`/api/competitions/${competitionId}`],
+
+export default function SelectionForm(props: SelectionFormProps) {
+  const { competitionId } = props; // Destructure competitionId early
+  const { toast } = useToast(); // Keep toast hook here if needed for mutation setup
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  // State hooks remain in the parent
+  const [isEditing, setIsEditing] = useState(false);
+  const [showCaptainSelector, setShowCaptainSelector] = useState(false);
+
+  // --- All Query Hooks remain in the parent ---
+  const { data: existingSelection, isLoading: isLoadingSelection } = useQuery<Selection | null>({
+    queryKey: ['/api/selections', competitionId], // Use competitionId in queryKey
+    queryFn: () => apiRequest<Selection | null>(`/api/selections/${competitionId}`), // Fetch specific selection
+    enabled: !!user && !!competitionId, // Only run if user and competitionId are available
+    retry: false, // Don't retry if selection not found (404)
   });
 
-  // Fetch available golfers
-  const { data: golfers, isLoading: isLoadingGolfers } = useQuery<Golfer[]>({
+  // Fetch user's captain chip status
+  const { data: captainChipStatus, isLoading: isLoadingChipStatus } = useQuery<{ hasUsedCaptainsChip: boolean }>({
+    queryKey: ['/api/users/me/has-used-captains-chip'], // Endpoint to check chip status for current user
+    enabled: !!user, // Only run if user is logged in
+  });
+
+  // Fetch golfers - Updated to expect { golfers: [...] } and select the array
+  const { data: golfers = [], isLoading: isLoadingGolfers } = useQuery<{ golfers: Golfer[] }, Error, Golfer[]>({
     queryKey: ['/api/golfers'],
+    queryFn: () => apiRequest<{ golfers: Golfer[] }>('/api/golfers'),
+    // More defensive select: ensure data exists and has the golfers property which is an array
+    select: (data) => (data && Array.isArray(data.golfers) ? data.golfers : []),
   });
 
-  // Fetch existing selections if any
-  const { data: existingSelections, isLoading: isLoadingSelections } = useQuery<Selection>({
-    queryKey: [`/api/selections/${competitionId}`],
-  });
-  
-  // Check if the user has already used their captain's chip
-  const { data: captainsChipStatus, isLoading: isLoadingCaptainsChip } = useQuery<{ hasUsedCaptainsChip: boolean }>({
-    queryKey: ['/api/users/me/has-used-captains-chip'],
+  // Fetch ALL user selections
+  const { data: allUserSelections = [], isLoading: isLoadingAllSelections } = useQuery<Selection[]>({
+    queryKey: ['/api/selections/my-all'],
+    queryFn: () => apiRequest<Selection[]>('/api/selections/my-all'),
+    enabled: !!user,
   });
 
-  // Define the extended form type
-  type SelectionFormValues = InsertSelection & { captainGolferId?: number };
-  
-  const form = useForm<SelectionFormValues>({
+  // Remove fetches for allCompetitions and currentCompetition
+
+
+  // --- useForm hook remains in the parent ---
+  // Memoize defaultValues to prevent unnecessary re-renders/effect triggers
+  const defaultValues = useMemo<Partial<InsertSelection>>(() => ({
+    competitionId: competitionId,
+    golfer1Id: 0,
+    golfer2Id: 0,
+    golfer3Id: 0,
+    useCaptainsChip: false,
+    captainGolferId: undefined,
+  }), [competitionId]); // Depend on competitionId
+
+  const form = useForm<InsertSelection>({
     resolver: zodResolver(selectionFormSchema),
-    defaultValues: {
-      competitionId,
-      userId: 0, // This will be set on the server
-      golfer1Id: 0,
-      golfer2Id: 0,
-      golfer3Id: 0,
-      useCaptainsChip: false,
-      captainGolferId: 0, // Track which golfer is the captain (not stored in DB)
-    },
+    defaultValues,
   });
 
-  // Set default values if we have existing selections
-  useEffect(() => {
-    if (existingSelections) {
-      // Type assertion to handle properties safely
-      const selection = existingSelections as unknown as InsertSelection;
-      
-      // Determine which golfer is the captain based on existing selections
-      let captainGolferId = 0;
-      if (selection.useCaptainsChip) {
-        // For now, we don't know which golfer is the captain
-        // In the future, we'll need to store this in the database
-        captainGolferId = selection.golfer1Id;
-      }
-      
-      form.reset({
-        competitionId,
-        userId: selection.userId || 0,
-        golfer1Id: selection.golfer1Id || 0,
-        golfer2Id: selection.golfer2Id || 0,
-        golfer3Id: selection.golfer3Id || 0,
-        useCaptainsChip: selection.useCaptainsChip || false,
-        captainGolferId: captainGolferId,
-      });
-    }
-  }, [existingSelections, competitionId, form]);
-
-  async function onSubmit(data: InsertSelection & { captainGolferId?: number }) {
-    setIsSubmitting(true);
-    try {
-      // Log the data received by onSubmit for debugging
-      console.log("Data submitted to onSubmit:", data);
-
-      // Remove captainGolferId from data before sending to server
-      // Create a new object without the captainGolferId property
-      const { captainGolferId, ...selectionData } = data;
-      
-      if (existingSelections) {
-        // Update existing selections (Corrected argument order)
-        await apiRequest(`/api/selections/${competitionId}`, 'PATCH', selectionData);
-        toast({
-          title: "Selections updated",
-          description: "Your selections have been updated successfully.",
-        });
+  // --- Mutation hook remains in the parent (needs toast, queryClient) ---
+   const mutation = useMutation({
+    mutationFn: (data: InsertSelection) => {
+      const payload = {
+        ...data,
+        // Ensure captainGolferId is only sent if useCaptainsChip is true
+        captainGolferId: data.useCaptainsChip ? data.captainGolferId : undefined,
+      };
+      // Use isEditing state from parent
+      if (isEditing && existingSelection) {
+        return apiRequest(`/api/selections/${competitionId}`, 'PATCH', payload);
       } else {
-        // Create new selections (Corrected argument order)
-        await apiRequest('/api/selections', 'POST', selectionData);
-        toast({
-          title: "Selections submitted",
-          description: "Your selections have been submitted successfully.",
-        });
+        return apiRequest('/api/selections', 'POST', payload);
       }
-      
-      // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: [`/api/selections/${competitionId}`] });
-      queryClient.invalidateQueries({ queryKey: ['/api/competitions/upcoming'] });
-      
-      if (onSuccess) {
-        onSuccess();
-      }
-    } catch (error: any) {
-      console.error("Error submitting selections:", error);
+    },
+    onSuccess: () => {
+      toast({
+        title: `Selection ${isEditing ? 'Updated' : 'Submitted'}`,
+        description: `Your selections for ${props.competitionName} have been saved.`, // Use props
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/selections', competitionId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/selections/my-all'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/users/me/has-used-captains-chip'] });
+      if (props.onSuccess) props.onSuccess(); // Use props
+    },
+    onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Submission failed",
-        description: error.message || "An error occurred while submitting your selections.",
+        title: `Error ${isEditing ? 'Updating' : 'Submitting'} Selection`,
+        description: error.message || "An unexpected error occurred.",
       });
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
+    },
+  });
+  // --- End Mutation Hook ---
 
-  if (isLoadingCompetition || isLoadingGolfers || isLoadingSelections || isLoadingCaptainsChip) {
+  // Update loading state check to include new queries
+  if (
+    isLoadingSelection ||
+    isLoadingGolfers ||
+    isLoadingChipStatus ||
+    isLoadingAllSelections // Remove competition loading states
+    // isLoadingAllCompetitions ||
+    // isLoadingCurrentCompetition
+  ) {
     return (
       <Card>
         <CardHeader>
-          <Skeleton className="h-6 w-1/2" />
-          <Skeleton className="h-4 w-2/3 mt-2" />
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
         </CardHeader>
         <CardContent className="space-y-4">
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-24" />
         </CardContent>
-        <CardFooter>
-          <Skeleton className="h-10 w-full" />
-        </CardFooter>
       </Card>
     );
   }
 
-  // Type guard to check if competition and its deadline are available
-  const hasDeadline = competition && competition.selectionDeadline ? true : false;
-  const selectionDeadline = hasDeadline && competition ? String(competition.selectionDeadline) : '';
-  const isDeadlinePassed = hasDeadline ? new Date(selectionDeadline) < new Date() : false;
-  
-  // Sort golfers by rank
-  const sortedGolfers = golfers ? [...golfers].sort((a: Golfer, b: Golfer) => {
-    // Handle null or undefined ranks by placing them at the end
-    if (a.rank === null || a.rank === undefined) return 1;
-    if (b.rank === null || b.rank === undefined) return -1;
-    return a.rank - b.rank;
-  }) : [];
-  
-  // Helper function to find golfer name by ID
-  const getGolferNameById = (id: number) => {
-    const golfer = golfers?.find((g: Golfer) => g.id === id);
-    return golfer ? `${golfer.name}${golfer.rank ? ` (Rank: ${golfer.rank})` : ''}` : 'Select a golfer';
+  // Render the inner component, passing down all necessary state and data
+  return (
+    <SelectionFormContent
+      {...props} // Pass original props
+      form={form}
+      golfers={golfers}
+      existingSelection={existingSelection}
+      captainChipStatus={captainChipStatus}
+      isLoadingSelection={isLoadingSelection}
+      isLoadingGolfers={isLoadingGolfers}
+      isLoadingChipStatus={isLoadingChipStatus}
+      isEditing={isEditing}
+      setIsEditing={setIsEditing}
+      showCaptainSelector={showCaptainSelector}
+      setShowCaptainSelector={setShowCaptainSelector}
+      mutation={mutation}
+      defaultValues={defaultValues} // Pass defaultValues down
+      // Pass new data and loading states
+      allUserSelections={allUserSelections}
+      // Remove competition props
+      // allCompetitions={allCompetitions}
+      // currentCompetition={currentCompetition}
+      isLoadingAllSelections={isLoadingAllSelections}
+      // Remove competition loading props
+      // isLoadingAllCompetitions={isLoadingAllCompetitions}
+      // isLoadingCurrentCompetition={isLoadingCurrentCompetition}
+    />
+  );
+}
+
+
+// --- Inner Component for Content Logic and Rendering ---
+function SelectionFormContent({
+  competitionId,
+  competitionName,
+  selectionDeadline,
+  onSuccess,
+  form,
+  golfers,
+  existingSelection,
+  captainChipStatus,
+  isLoadingSelection,
+  isLoadingGolfers,
+  isLoadingChipStatus,
+  isEditing,
+  setIsEditing,
+  showCaptainSelector,
+  setShowCaptainSelector,
+  mutation,
+  defaultValues, // Destructure defaultValues from props
+  // Destructure new props
+  allUserSelections,
+  isLoadingAllSelections // Destructure loading states
+  // Remove competition props destructuring
+  // allCompetitions,
+  // currentCompetition,
+  // isLoadingAllCompetitions,
+  // isLoadingCurrentCompetition
+}: SelectionFormContentProps) {
+
+  // --- Logic & Hooks specific to content rendering ---
+  const deadlinePassed = new Date() > new Date(selectionDeadline);
+  // Use passed-in status/selection
+  const hasUsedChip = captainChipStatus?.hasUsedCaptainsChip ?? false;
+  const canUseChip = !hasUsedChip || (isEditing && existingSelection?.useCaptainsChip);
+
+  // useMemo hooks are now inside the inner component
+
+  // Calculate filtered golfer options based on ALL previous selections
+  const filteredGolferOptions = useMemo(() => {
+    // Simplified check: only need golfers and allUserSelections
+    if (!golfers || !Array.isArray(golfers) || !allUserSelections) {
+      return [];
+    }
+
+    // Get golfer IDs selected in ANY past competition (excluding the current one)
+    const previouslySelectedGolferIds = new Set<number>();
+    allUserSelections.forEach(selection => {
+      // Only consider selections from *other* competitions
+      if (selection.competitionId !== competitionId) {
+        if (selection.golfer1Id) previouslySelectedGolferIds.add(selection.golfer1Id);
+        if (selection.golfer2Id) previouslySelectedGolferIds.add(selection.golfer2Id);
+        if (selection.golfer3Id) previouslySelectedGolferIds.add(selection.golfer3Id);
+        if (selection.captainGolferId) previouslySelectedGolferIds.add(selection.captainGolferId);
+      }
+    });
+
+    // Get the IDs of golfers currently selected in *this* form (if editing)
+    const currentlySelectedInThisForm = new Set<number>();
+    if (isEditing && existingSelection) {
+        if (existingSelection.golfer1Id) currentlySelectedInThisForm.add(existingSelection.golfer1Id);
+        if (existingSelection.golfer2Id) currentlySelectedInThisForm.add(existingSelection.golfer2Id);
+        if (existingSelection.golfer3Id) currentlySelectedInThisForm.add(existingSelection.golfer3Id);
+        if (existingSelection.captainGolferId) currentlySelectedInThisForm.add(existingSelection.captainGolferId);
+    }
+
+
+    // Filter the main golfer list
+    const availableGolfers = golfers.filter(golfer => {
+      // Allow if the golfer is part of the current selection being edited
+      if (isEditing && currentlySelectedInThisForm.has(golfer.id)) {
+        return true;
+      }
+      // Otherwise, exclude if they were selected in a previous competition of the same type
+      return !previouslySelectedGolferIds.has(golfer.id);
+    });
+
+    // Map to the format needed by the Combobox
+    return availableGolfers.map(golfer => ({
+      value: golfer.id,
+      label: `${golfer.firstName} ${golfer.lastName} ${golfer.rank ? `(#${golfer.rank})` : ''}`
+    }));
+    // Dependencies: golfers list, all user selections, current competitionId, editing state, and existing selection
+  }, [golfers, allUserSelections, competitionId, isEditing, existingSelection]);
+
+
+  // Watch relevant fields for captain options dependency
+  const watchedGolfer1Id = form.watch('golfer1Id');
+  const watchedGolfer2Id = form.watch('golfer2Id');
+  const watchedGolfer3Id = form.watch('golfer3Id');
+
+  // Prepare options for captain based on current selections
+  const captainOptions = useMemo(() => {
+    // Calculate selectedGolferIds inside useMemo using getValues
+    const currentSelectedGolferIds = [
+      form.getValues('golfer1Id'),
+      form.getValues('golfer2Id'),
+      form.getValues('golfer3Id')
+    ].filter(id => id && id > 0);
+
+    if (!golfers || !Array.isArray(golfers)) return [];
+    return golfers
+      .filter(g => currentSelectedGolferIds.includes(g.id)) // Use the calculated IDs
+      .map(golfer => ({
+        value: golfer.id,
+        label: `${golfer.firstName} ${golfer.lastName} ${golfer.rank ? `(#${golfer.rank})` : ''}`
+      }));
+  // Depend on golfers and the watched values from the parent form instance
+  }, [golfers, watchedGolfer1Id, watchedGolfer2Id, watchedGolfer3Id, form]);
+
+  // Watch the specific field value for the checkbox state
+  const watchedUseCaptainsChip = form.watch('useCaptainsChip');
+
+  // useEffect hooks are now inside the inner component
+  useEffect(() => {
+    if (existingSelection) {
+      form.reset({
+        competitionId: existingSelection.competitionId,
+        golfer1Id: existingSelection.golfer1Id || 0,
+        golfer2Id: existingSelection.golfer2Id || 0,
+        golfer3Id: existingSelection.golfer3Id || 0,
+        useCaptainsChip: existingSelection.useCaptainsChip || false,
+        captainGolferId: existingSelection.captainGolferId || undefined,
+      });
+      setIsEditing(true); // We are editing an existing selection
+      setShowCaptainSelector(existingSelection.useCaptainsChip || false); // Show captain selector if chip was used
+    } else {
+      // Reset to defaults if no existing selection (e.g., navigating between competitions)
+      form.reset(defaultValues);
+      setIsEditing(false);
+      setShowCaptainSelector(false);
+    }
+    // Revert: Add setters back to dependency array
+  }, [existingSelection, competitionId, setIsEditing, setShowCaptainSelector]);
+
+   // Update captain selector visibility based on the watched checkbox value
+   useEffect(() => {
+     // Update the state based on the watched value
+     setShowCaptainSelector(!!watchedUseCaptainsChip);
+
+     // Reset captainGolferId if checkbox is unchecked
+     if (!watchedUseCaptainsChip) {
+       // Use shouldValidate: true if you want validation to re-run after reset
+       form.setValue('captainGolferId', undefined, { shouldValidate: true });
+     }
+   // Revert: Add form back to dependency array
+   }, [watchedUseCaptainsChip, setShowCaptainSelector, form]);
+
+  // onSubmit logic is now inside the inner component
+  const onSubmit = (data: InsertSelection) => {
+    // Ensure captain is selected if chip is used
+    if (data.useCaptainsChip && !data.captainGolferId) {
+       form.setError("captainGolferId", { type: "manual", message: "Please select your captain." });
+       return;
+    }
+     // Ensure captain is one of the selected golfers
+     if (data.useCaptainsChip && data.captainGolferId) {
+       const selectedIds = [data.golfer1Id, data.golfer2Id, data.golfer3Id];
+       if (!selectedIds.includes(data.captainGolferId)) {
+         form.setError("captainGolferId", { type: "manual", message: "Captain must be one of your selected golfers." });
+         return;
+       }
+     }
+    // Use mutation passed from parent
+    mutation.mutate(data);
   };
-  
-  // Helper methods for form watching with correct types
-  const watchGolfer1Id = () => form.watch("golfer1Id") as number;
-  const watchGolfer2Id = () => form.watch("golfer2Id") as number;
-  const watchGolfer3Id = () => form.watch("golfer3Id") as number;
-  const watchCaptainGolferId = () => form.watch("captainGolferId") as number;
-  const watchUseCaptainsChip = () => form.watch("useCaptainsChip") as boolean;
-  
+
+  // Conditional returns are now inside the inner component
+  // Remove the loading check here as it's handled in the parent
+  /*
+  if (isLoadingSelection || isLoadingGolfers || isLoadingChipStatus) { // This check is now redundant
+    return (
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-24" />
+        </CardContent>
+      </Card>
+    );
+  }
+  */
+
+  if (deadlinePassed && !isEditing) {
+     return (
+       <Card>
+         <CardHeader>
+           <CardTitle>{competitionName}</CardTitle>
+           <CardDescription>Selection Deadline Passed</CardDescription>
+         </CardHeader>
+         <CardContent>
+           <Alert variant="destructive">
+             <AlertTriangle className="h-4 w-4" />
+             <AlertTitle>Deadline Passed</AlertTitle>
+             <AlertDescription>
+               The deadline for submitting selections for this competition ({new Date(selectionDeadline).toLocaleString()}) has passed.
+             </AlertDescription>
+           </Alert>
+         </CardContent>
+       </Card>
+     );
+   }
+
+  // Calculate selectedGolferIds needed for disabling combobox
+  const selectedGolferIds = [watchedGolfer1Id, watchedGolfer2Id, watchedGolfer3Id].filter(id => id && id > 0);
+
+  // Return the JSX from the inner component
   return (
     <Card>
       <CardHeader>
-        <CardTitle>
-          {existingSelections ? "Edit Your Selections" : "Make Your Selections"} - {competition?.name}
-        </CardTitle>
-        <CardDescription>
-          Select three golfers for this competition. 
-          {isDeadlinePassed ? (
-            <span className="text-error font-medium"> Note: The selection deadline has passed. Your changes may not be accepted.</span>
-          ) : (
-            hasDeadline && selectionDeadline
-              ? ` You can change your selections until ${new Date(selectionDeadline).toLocaleString()}.`
-              : ` You can change your selections until the deadline.`
-          )}
-        </CardDescription>
+        <CardTitle>{isEditing ? 'Edit Your Selection' : 'Make Your Selections'}</CardTitle>
+        <CardDescription>For {competitionName}. Deadline: {new Date(selectionDeadline).toLocaleString()}</CardDescription>
+        {isEditing && deadlinePassed && (
+           <Alert variant="default" className="mt-2 border-yellow-500 text-yellow-800"> {/* Change variant, maybe add custom styling */}
+             <AlertTriangle className="h-4 w-4" />
+             <AlertTitle>Deadline Passed</AlertTitle>
+             <AlertDescription>
+               The selection deadline has passed. You can view your selection but cannot make changes.
+             </AlertDescription>
+           </Alert>
+        )}
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="golfer1Id"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Selection 1</FormLabel>
-                  <Popover open={openPopover1} onOpenChange={setOpenPopover1}>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={openPopover1}
-                          className={cn(
-                            "w-full justify-between",
-                            !field.value && "text-muted-foreground"
-                          )}
-                          disabled={isDeadlinePassed}
-                        >
-                          {field.value ? getGolferNameById(field.value) : "Select a golfer"}
-                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[300px] p-0">
-                      <Command>
-                        <CommandInput placeholder="Search golfer..." />
-                        <CommandList>
-                          <CommandEmpty>No golfer found.</CommandEmpty>
-                          <CommandGroup>
-                            {sortedGolfers.map((golfer) => (
-                              <CommandItem
-                                key={golfer.id}
-                                value={golfer.name}
-                                onSelect={() => {
-                                  form.setValue("golfer1Id", golfer.id);
-                                  setOpenPopover1(false);
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    golfer.id === field.value
-                                      ? "opacity-100"
-                                      : "opacity-0"
-                                  )}
-                                />
-                                {golfer.name} {golfer.rank ? `(Rank: ${golfer.rank})` : ''}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={form.control}
-              name="golfer2Id"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Selection 2</FormLabel>
-                  <Popover open={openPopover2} onOpenChange={setOpenPopover2}>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={openPopover2}
-                          className={cn(
-                            "w-full justify-between",
-                            !field.value && "text-muted-foreground"
-                          )}
-                          disabled={isDeadlinePassed}
-                        >
-                          {field.value ? getGolferNameById(field.value) : "Select a golfer"}
-                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[300px] p-0">
-                      <Command>
-                        <CommandInput placeholder="Search golfer..." />
-                        <CommandList>
-                          <CommandEmpty>No golfer found.</CommandEmpty>
-                          <CommandGroup>
-                            {sortedGolfers.map((golfer) => (
-                              <CommandItem
-                                key={golfer.id}
-                                value={golfer.name}
-                                onSelect={() => {
-                                  form.setValue("golfer2Id", golfer.id);
-                                  setOpenPopover2(false);
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    golfer.id === field.value
-                                      ? "opacity-100"
-                                      : "opacity-0"
-                                  )}
-                                />
-                                {golfer.name} {golfer.rank ? `(Rank: ${golfer.rank})` : ''}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <FormField
-              control={form.control}
-              name="golfer3Id"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Selection 3</FormLabel>
-                  <Popover open={openPopover3} onOpenChange={setOpenPopover3}>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={openPopover3}
-                          className={cn(
-                            "w-full justify-between",
-                            !field.value && "text-muted-foreground"
-                          )}
-                          disabled={isDeadlinePassed}
-                        >
-                          {field.value ? getGolferNameById(field.value) : "Select a golfer"}
-                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[300px] p-0">
-                      <Command>
-                        <CommandInput placeholder="Search golfer..." />
-                        <CommandList>
-                          <CommandEmpty>No golfer found.</CommandEmpty>
-                          <CommandGroup>
-                            {sortedGolfers.map((golfer) => (
-                              <CommandItem
-                                key={golfer.id}
-                                value={golfer.name}
-                                onSelect={() => {
-                                  form.setValue("golfer3Id", golfer.id);
-                                  setOpenPopover3(false);
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    golfer.id === field.value
-                                      ? "opacity-100"
-                                      : "opacity-0"
-                                  )}
-                                />
-                                {golfer.name} {golfer.rank ? `(Rank: ${golfer.rank})` : ''}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            {/* Captain's Chip section */}
-            <div className="mt-8 mb-2">
-              <h3 className="text-lg font-medium">Captain's Chip</h3>
-              <p className="text-sm text-gray-500 mt-1 mb-4">
-                Select one golfer as your captain to double their points. You can only use this once per season.
-                {captainsChipStatus?.hasUsedCaptainsChip && 
-                  " You have already used your captain's chip in another tournament."}
-              </p>
-              
-              {/* Don't show captain options if chip already used */}
-              {!captainsChipStatus?.hasUsedCaptainsChip && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Golfer 1 Captain Option */}
-                  <div 
-                    className={`p-4 border rounded-lg cursor-pointer transition-all ${
-                      watchUseCaptainsChip() && watchCaptainGolferId() === watchGolfer1Id() 
-                        ? "border-primary bg-primary/10" 
-                        : "hover:bg-gray-50"
-                    }`}
-                    onClick={() => {
-                      if (watchGolfer1Id() === 0) {
-                        toast({
-                          title: "Please select golfer 1 first",
-                          variant: "destructive",
-                        });
-                        return;
-                      }
-                      
-                      const currentValue = watchUseCaptainsChip() && 
-                                          watchCaptainGolferId() === watchGolfer1Id();
-                      
-                      if (currentValue) {
-                        // Deselecting
-                        form.setValue("useCaptainsChip", false);
-                        form.setValue("captainGolferId", 0);
-                      } else {
-                        // Selecting
-                        form.setValue("useCaptainsChip", true);
-                        form.setValue("captainGolferId", watchGolfer1Id());
-                      }
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium">Golfer 1</h4>
-                        <p className="text-sm truncate">{getGolferNameById(watchGolfer1Id())}</p>
-                      </div>
-                      {watchUseCaptainsChip() && watchCaptainGolferId() === watchGolfer1Id() && (
-                        <span className="bg-primary text-white px-2 py-1 rounded text-xs">Captain</span>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Golfer 2 Captain Option */}
-                  <div 
-                    className={`p-4 border rounded-lg cursor-pointer transition-all ${
-                      watchUseCaptainsChip() && watchCaptainGolferId() === watchGolfer2Id() 
-                        ? "border-primary bg-primary/10" 
-                        : "hover:bg-gray-50"
-                    }`}
-                    onClick={() => {
-                      if (watchGolfer2Id() === 0) {
-                        toast({
-                          title: "Please select golfer 2 first",
-                          variant: "destructive",
-                        });
-                        return;
-                      }
-                      
-                      const currentValue = watchUseCaptainsChip() && 
-                                          watchCaptainGolferId() === watchGolfer2Id();
-                      
-                      if (currentValue) {
-                        // Deselecting
-                        form.setValue("useCaptainsChip", false);
-                        form.setValue("captainGolferId", 0);
-                      } else {
-                        // Selecting
-                        form.setValue("useCaptainsChip", true);
-                        form.setValue("captainGolferId", watchGolfer2Id());
-                      }
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium">Golfer 2</h4>
-                        <p className="text-sm truncate">{getGolferNameById(watchGolfer2Id())}</p>
-                      </div>
-                      {watchUseCaptainsChip() && watchCaptainGolferId() === watchGolfer2Id() && (
-                        <span className="bg-primary text-white px-2 py-1 rounded text-xs">Captain</span>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Golfer 3 Captain Option */}
-                  <div 
-                    className={`p-4 border rounded-lg cursor-pointer transition-all ${
-                      watchUseCaptainsChip() && watchCaptainGolferId() === watchGolfer3Id() 
-                        ? "border-primary bg-primary/10" 
-                        : "hover:bg-gray-50"
-                    }`}
-                    onClick={() => {
-                      if (watchGolfer3Id() === 0) {
-                        toast({
-                          title: "Please select golfer 3 first",
-                          variant: "destructive",
-                        });
-                        return;
-                      }
-                      
-                      const currentValue = watchUseCaptainsChip() && 
-                                          watchCaptainGolferId() === watchGolfer3Id();
-                      
-                      if (currentValue) {
-                        // Deselecting
-                        form.setValue("useCaptainsChip", false);
-                        form.setValue("captainGolferId", 0);
-                      } else {
-                        // Selecting
-                        form.setValue("useCaptainsChip", true);
-                        form.setValue("captainGolferId", watchGolfer3Id());
-                      }
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-medium">Golfer 3</h4>
-                        <p className="text-sm truncate">{getGolferNameById(watchGolfer3Id())}</p>
-                      </div>
-                      {watchUseCaptainsChip() && watchCaptainGolferId() === watchGolfer3Id() && (
-                        <span className="bg-primary text-white px-2 py-1 rounded text-xs">Captain</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <FormField
+                control={form.control}
+                name="golfer1Id"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col"> {/* Ensure proper layout */}
+                    <FormLabel>Selection 1</FormLabel>
+                    <Combobox
+                      options={filteredGolferOptions} // Use filtered options
+                      value={field.value} // Use field.value directly
+                      onChange={field.onChange} // Pass field.onChange directly
+                      placeholder="Select Golfer 1"
+                      searchPlaceholder="Search golfer..."
+                      emptyText="No golfer found."
+                      disabled={deadlinePassed}
+                    />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="golfer2Id"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col"> {/* Ensure proper layout */}
+                    <FormLabel>Selection 2</FormLabel>
+                     <Combobox
+                      options={filteredGolferOptions} // Use filtered options
+                      value={field.value} // Use field.value directly
+                      onChange={field.onChange} // Pass field.onChange directly
+                      placeholder="Select Golfer 2"
+                      searchPlaceholder="Search golfer..."
+                      emptyText="No golfer found."
+                      disabled={deadlinePassed}
+                    />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="golfer3Id"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col"> {/* Ensure proper layout */}
+                    <FormLabel>Selection 3</FormLabel>
+                     <Combobox
+                      options={filteredGolferOptions} // Use filtered options
+                      value={field.value} // Use field.value directly
+                      onChange={field.onChange} // Pass field.onChange directly
+                      placeholder="Select Golfer 3"
+                      searchPlaceholder="Search golfer..."
+                      emptyText="No golfer found."
+                      disabled={deadlinePassed}
+                    />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
-            
-            {/* Hidden field to track captain golfer ID */}
-            <input type="hidden" {...form.register("captainGolferId")} />
-            
-            <Button 
-              type="submit" 
-              className="w-full mt-6" 
-              disabled={isSubmitting || isDeadlinePassed}
-            >
-              {isSubmitting ? (
-                <div className="flex items-center">
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Saving...
-                </div>
-              ) : (
-                existingSelections ? "Update Selections" : "Save Selections"
-              )}
-            </Button>
+
+             {/* Captain's Chip Section */}
+             <FormField
+                control={form.control}
+                name="useCaptainsChip"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 shadow">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        disabled={deadlinePassed || !canUseChip} // Disable if deadline passed or chip already used (unless editing the one where it was used)
+                        id="useCaptainsChip"
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel htmlFor="useCaptainsChip">
+                        Use Captain's Chip? (Doubles your highest scorer's points - can only be used once!)
+                      </FormLabel>
+                      {!canUseChip && (
+                        <p className="text-sm text-muted-foreground">
+                          You have already used your Captain's Chip in another competition.
+                        </p>
+                      )}
+                    </div>
+                  </FormItem>
+                )}
+              />
+
+             {/* Captain's Chip Section - Always render, control visibility via prop */}
+             <CaptainCombobox
+                  show={showCaptainSelector && (canUseChip ?? false)} // Ensure show is always boolean
+                  control={form.control}
+                  name="captainGolferId"
+                  options={captainOptions}
+                  disabled={deadlinePassed || selectedGolferIds.length === 0}
+                  emptyText={selectedGolferIds.length > 0 ? "No selected golfer found." : "Select golfers first."}
+             />
+
+
+            {!deadlinePassed && (
+              <Button type="submit" disabled={mutation.isPending}>
+                {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {isEditing ? 'Update Selection' : 'Submit Selection'}
+              </Button>
+            )}
           </form>
         </Form>
       </CardContent>
     </Card>
   );
 }
+
+
+// --- Standalone CaptainCombobox Component (Remains the same) ---
+interface CaptainComboboxProps {
+  show: boolean; // New prop to control rendering
+  control: Control<InsertSelection>; // Use Control type from react-hook-form
+  name: "captainGolferId"; // Ensure the name is correct
+  options: { value: number; label: string }[];
+  disabled: boolean;
+  emptyText: string;
+}
+
+const CaptainCombobox = ({ show, control, name, options, disabled, emptyText }: CaptainComboboxProps) => {
+  // Return null if not supposed to be shown
+  if (!show) {
+    return null;
+  }
+
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem className="flex flex-col">
+          <FormLabel>Select Captain</FormLabel>
+          <Combobox
+            options={options}
+            value={field.value || ""}
+            onChange={field.onChange} // Pass field.onChange directly
+            placeholder="Select Captain"
+            searchPlaceholder="Search selected golfer..."
+            emptyText={emptyText}
+            disabled={disabled}
+          />
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+};
+// --- End Standalone Component ---
