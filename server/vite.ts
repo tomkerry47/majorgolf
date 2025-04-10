@@ -71,8 +71,8 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  // Correct the path to point to the client's build output directory
-  const distPath = path.resolve(__dirname, "..", "client", "dist"); 
+  // Correct the path to point to the client's build output directory relative to the running server script
+  const distPath = path.resolve(__dirname, "public"); // Client assets are in dist/public relative to project root
 
   if (!fs.existsSync(distPath)) {
     throw new Error(
