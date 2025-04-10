@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import * as schema from '../shared/schema'; // Import schema definitions
 
 const { Pool } = pg;
 
@@ -18,8 +19,8 @@ export const pgClient = {
   query: (text: string, params?: any[]) => pool.query(text, params)
 };
 
-// Export Drizzle ORM instance
-export const db = drizzle(pool);
+// Export Drizzle ORM instance, explicitly providing the schema
+export const db = drizzle(pool, { schema }); // Pass schema here
 
 // Export the pool itself for connection management in scripts
 export { pool };

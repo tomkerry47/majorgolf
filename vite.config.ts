@@ -33,5 +33,15 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
   },
+  server: {
+    fs: {
+      // Allow serving files from the project root (client), shared directory, and node_modules
+      allow: [
+        path.resolve(__dirname, "client"),
+        path.resolve(__dirname, "shared"),
+        path.resolve(__dirname, "node_modules"),
+      ],
+    },
+  },
   // Removed server.proxy configuration as it's not needed in middleware mode
 });
