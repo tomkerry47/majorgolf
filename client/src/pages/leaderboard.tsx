@@ -119,11 +119,22 @@ const Leaderboard = () => {
                     All Tournaments
                   </SelectItem>
                   {validCompetitions.length > 0 ? (
-                    validCompetitions.map((competition) => (
-                      <SelectItem key={competition.id} value={competition.id.toString()}>
-                        {competition.name} {competition.isActive ? '(Active)' : ''}
-                      </SelectItem>
-                    ))
+                    validCompetitions.map((competition) => {
+                      let statusLabel = '';
+                      if (competition.isComplete) {
+                        statusLabel = '(Completed)';
+                      } else if (competition.isActive) {
+                        statusLabel = '(Active)';
+                      } else {
+                        // Assuming if not active or complete, it's upcoming
+                        statusLabel = '(Upcoming)'; 
+                      }
+                      return (
+                        <SelectItem key={competition.id} value={competition.id.toString()}>
+                          {competition.name} {statusLabel}
+                        </SelectItem>
+                      );
+                    })
                   ) : (
                     <SelectItem value="none" disabled>No tournaments available</SelectItem>
                   )}

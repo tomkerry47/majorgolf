@@ -163,7 +163,7 @@ export default function Dashboard() {
 
         <CurrentCompetition />
         
-        <Leaderboard />
+        {/* Leaderboard component removed as requested */}
         
         <UpcomingCompetitions />
       </div>

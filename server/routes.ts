@@ -17,10 +17,11 @@ import {
   Golfer,
   type UserPoints,
   type SelectionRank, // Import SelectionRank type
-  type Result // Import Result type
+  type Result, // Import Result type
+  type WildcardGolfer // Import WildcardGolfer type
 } from '@shared/schema';
 import { generateToken, verifyToken, comparePassword, hashPassword } from './db'; // Import hashPassword
-import { ZodError } from 'zod';
+import { ZodError, z } from 'zod'; // Import z
 import { pgClient, pool } from './db';
 import { updateResultsAndAllocatePoints } from '../scripts/update_results_and_allocate_points';
 import { spawn } from 'child_process';
@@ -186,6 +187,22 @@ const upload = multer({
 });
 // --- End Avatar Upload Configuration ---
 
+// Base shape from selectionFormSchema in shared/schema.ts (before .refine)
+const baseSelectionFormShape = z.object({
+  competitionId: z.number(),
+  golfer1Id: z.number().refine(val => val > 0, "Please select a golfer"),
+  golfer2Id: z.number().refine(val => val > 0, "Please select a golfer"),
+  golfer3Id: z.number().refine(val => val > 0, "Please select a golfer"),
+  useCaptainsChip: z.boolean().default(false),
+  captainGolferId: z.number().optional().nullable(), // Match shared/schema definition
+});
+
+// Define a new schema specifically for admin creation by extending the base shape
+const adminCreateSelectionSchema = baseSelectionFormShape.extend({
+  userId: z.number().positive("User ID must be a positive number"),
+});
+// Note: We don't need the .refine for golfer uniqueness here as it's part of the base shape logic implicitly,
+// but if specific admin refinements were needed, they could be added here.
 
 // Register API routes
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -586,12 +603,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(null); // No selection found for this user/competition
       }
 
-      // Return the raw selection record directly
-      res.json(selectionRecord);
+      // 2. Fetch details for each golfer, results, and wildcards
+      const golferIds = [selectionRecord.golfer1Id, selectionRecord.golfer2Id, selectionRecord.golfer3Id];
+      const [golfer1, golfer2, golfer3, results, wildcards] = await Promise.all([
+        storage.getGolferById(selectionRecord.golfer1Id),
+        storage.getGolferById(selectionRecord.golfer2Id),
+        storage.getGolferById(selectionRecord.golfer3Id),
+        storage.getResults(competitionId),
+        storage.getWildcardGolfers(competitionId) // Fetch all wildcards for the competition
+      ]);
+
+      const golferMap = new Map<number, Golfer | undefined>();
+      if (golfer1) golferMap.set(golfer1.id, golfer1);
+      if (golfer2) golferMap.set(golfer2.id, golfer2);
+      if (golfer3) golferMap.set(golfer3.id, golfer3);
+
+      const resultMap = new Map<number, Result>(results.map((r: Result) => [r.golferId, r]));
+      const wildcardMap = new Map<number, boolean>(wildcards.map((w: WildcardGolfer) => [w.golferId, w.isWildcard])); // Map golferId to isWildcard status
+
+      // 3. Construct the enriched selection array
+      const enrichedSelections = golferIds.map(golferId => {
+        const golfer = golferMap.get(golferId);
+        const result = resultMap.get(golferId);
+        const isCaptain = golferId === selectionRecord.captainGolferId;
+        const isWildcard = wildcardMap.get(golferId) === true; // Check if the golfer is marked as a wildcard
+
+        return {
+          // Use golferId as the key for the frontend list rendering if needed,
+          // but the object itself represents one part of the user's selection.
+          // The 'id' field here might be confusing, let's stick to the structure expected by the frontend.
+          golfer: {
+            id: golferId,
+            name: golfer?.name ?? 'Unknown Golfer', // Use ?? for nullish coalescing
+            avatar: golfer?.avatarUrl, // Use correct property name
+            rank: golfer?.rank ?? 'N/A', // Use correct property name 'rank'
+          },
+          position: result?.position ?? 'N/A', // Use ??
+          points: result?.points ?? 0, // Use ??, default to 0
+          isCaptain: isCaptain,
+          isWildcard: isWildcard, // Add wildcard status
+        };
+      });
+
+      res.json(enrichedSelections); // Return the enriched array
 
     } catch (error) {
-      console.error('Get user selection error:', error); // Updated error message context
-      res.status(500).json({ error: 'Failed to fetch selections' });
+      console.error('Get user selection details error:', error); // Updated error message context
+      res.status(500).json({ error: 'Failed to fetch selection details' });
     }
   });
   app.post('/api/selections', validateJWT, async (req: Request, res: Response) => {
@@ -981,8 +1039,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to fetch user selection' });
     }
   });
-  // Reverted PUT to PATCH /api/admin/selections/:id
-  app.patch('/api/admin/selections/:id', validateJWT, async (req: Request, res: Response) => { // Changed back to app.patch
+
+  // Admin: Create a new selection for a user (e.g., if they missed the deadline)
+  app.post('/api/admin/selections', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      // Validate the incoming data using the admin-specific schema
+      const selectionData = adminCreateSelectionSchema.parse(req.body); // Use the new schema
+
+      // Check if a selection already exists for this user and competition
+      const existingSelection = await storage.getUserSelections(selectionData.userId, selectionData.competitionId);
+      if (existingSelection) {
+        return res.status(409).json({ error: 'A selection already exists for this user in this competition. Use the edit function instead.' });
+      }
+
+      // Create the new selection using the storage method
+      // Note: The schema expects userId, competitionId, golfer1Id, golfer2Id, golfer3Id.
+      // useCaptainsChip and captainGolferId are optional and default to false/null if not provided.
+      // Admin creation likely won't involve chips initially.
+      const newSelection = await storage.createSelection({
+        userId: selectionData.userId,
+        competitionId: selectionData.competitionId,
+        golfer1Id: selectionData.golfer1Id,
+        golfer2Id: selectionData.golfer2Id,
+        golfer3Id: selectionData.golfer3Id,
+        // Explicitly set chips to false/null for admin creation unless schema allows otherwise
+        useCaptainsChip: false, 
+        captainGolferId: null,
+          });
+          
+          // Use userId from the validated input data to avoid potential type issues with the returned object
+          const userIdForLookup = selectionData.userId; 
+
+          // Fetch details for the response (optional, but good practice)
+          const user = await storage.getUser(userIdForLookup); // Use userId from validated data
+          const golfer1 = await storage.getGolferById(newSelection.golfer1Id);
+          const golfer2 = await storage.getGolferById(newSelection.golfer2Id);
+      const golfer3 = await storage.getGolferById(newSelection.golfer3Id);
+
+      // Ensure the response includes the userId, using the one from validated data
+      res.status(201).json({
+        ...newSelection, 
+        userId: userIdForLookup, // Explicitly include the userId in the response object
+        user: user ? { id: user.id, username: user.username, email: user.email } : undefined,
+        golfer1: golfer1 ? { id: golfer1.id, name: golfer1.name } : undefined,
+        golfer2: golfer2 ? { id: golfer2.id, name: golfer2.name } : undefined,
+        golfer3: golfer3 ? { id: golfer3.id, name: golfer3.name } : undefined
+      });
+
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({ error: 'Invalid selection data', details: error.errors });
+      }
+      console.error('Admin create selection error:', error);
+      res.status(500).json({ error: 'Failed to create selection' });
+    }
+  });
+
+  // Admin: Update an existing selection
+  app.patch('/api/admin/selections/:id', validateJWT, async (req: Request, res: Response) => { 
     try {
       const { id } = req.params;
       const selectionId = parseInt(id);
@@ -1036,9 +1155,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`User ${targetUserId} waiver chip marked as used. Original: ${originalGolferId}, Replacement: ${newGolferId}`);
 
         // Prepare selection update data without the extra waiver fields
-        selectionUpdateData = restOfUpdateData;
-      }
-      // --- End Waiver Chip Logic ---
+         // Fetch the rank of the replacement golfer
+         const replacementGolfer = await storage.getGolferById(newGolferId);
+         if (!replacementGolfer) {
+           return res.status(404).json({ error: 'Replacement golfer not found.' });
+         }
+         const waiverRank = replacementGolfer.rank;
+         console.log(`Replacement golfer ${newGolferId} rank is ${waiverRank}. Adding to selection update.`);
+
+         // Add waiverRank to the data being sent to storage.updateSelection
+         selectionUpdateData = { ...restOfUpdateData, waiverRank: waiverRank };
+
+       } else {
+         // If not a waiver transaction, ensure waiverRank is not accidentally set
+         delete selectionUpdateData.waiverRank;
+       }
+       // --- End Waiver Chip Logic ---
 
 
       // --- Captain Chip Logic (existing) ---

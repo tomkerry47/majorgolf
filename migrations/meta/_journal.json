@@ -43,6 +43,13 @@
       "when": 1744279488214,
       "tag": "0005_sharp_wallow",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1744317420883,
+      "tag": "0006_motionless_inertia",
+      "breakpoints": true
     }
   ]
 }

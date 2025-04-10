@@ -245,8 +245,10 @@ export class DatabaseStorage implements IStorage {
       .from(competitions)
       .where(
         and(
-          eq(competitions.isActive, true),
-          eq(competitions.isComplete, false)
+          // A competition is active if the current date is between its start and end date
+          sql`NOW() >= ${competitions.startDate}`, 
+          sql`NOW() <= ${competitions.endDate}`,
+          eq(competitions.isComplete, false) // Keep the check for not completed
         )
       )
       .orderBy(competitions.startDate);
@@ -727,10 +729,22 @@ export class DatabaseStorage implements IStorage {
       selectionToInsert.updatedAt = new Date(selectionToInsert.updatedAt);
     }
 
+    // Explicitly return all columns to ensure the object type is correct
     const [newSelection] = await db
       .insert(selections)
       .values(selectionToInsert)
-      .returning();
+      .returning({
+        id: selections.id,
+        userId: selections.userId,
+        competitionId: selections.competitionId,
+        golfer1Id: selections.golfer1Id,
+        golfer2Id: selections.golfer2Id,
+        golfer3Id: selections.golfer3Id,
+        useCaptainsChip: selections.useCaptainsChip,
+        captainGolferId: selections.captainGolferId,
+        createdAt: selections.createdAt,
+        updatedAt: selections.updatedAt,
+      });
 
     // Convert Date to string for Selection interface
     return {

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"; // Import useMemo
+import { useState, useMemo, useEffect } from "react"; // Import useMemo and useEffect
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query"; // Add useMutation
@@ -60,6 +60,7 @@ export default function AdminResults() {
   const [selectedResult, setSelectedResult] = useState<any>(null);
   const [selectedCompetition, setSelectedCompetition] = useState<number | null>(null);
   const [formAction, setFormAction] = useState<'create' | 'edit'>('create');
+  const [captureTimes, setCaptureTimes] = useState<Record<number, Date | null>>({}); // State for capture timestamps
 
   // --- Start: Modified Update Results Logic ---
   // Mutation for triggering result updates for a SPECIFIC tournament
@@ -78,8 +79,10 @@ export default function AdminResults() {
          queryClient.refetchQueries({ queryKey: [`/api/leaderboard/${variables.competitionId}`] }); // Refetch specific leaderboard
        }
        // Refetch competitions list (status might change) and overall leaderboard
-      queryClient.refetchQueries({ queryKey: ['/api/competitions'] }); 
+      queryClient.refetchQueries({ queryKey: ['/api/competitions'] });
       queryClient.refetchQueries({ queryKey: ['/api/leaderboard'] }); // Refetch overall leaderboard
+      // Store the capture time for this specific competition
+      setCaptureTimes(prev => ({ ...prev, [variables.competitionId]: new Date() }));
     },
     onError: (error: any) => {
       toast({
@@ -363,20 +366,38 @@ export default function AdminResults() {
                      <Button
                        // Pass selectedCompetition to the mutation
                        onClick={() => updateSelectedResults({ competitionId: selectedCompetition })}
-                       disabled={!selectedCompetition || isUpdatingSelected || isLoadingCompetitions || isLoadingResults} // Disable if no competition selected or updating
+                       disabled={
+                         !selectedCompetition ||
+                         isUpdatingSelected ||
+                         isLoadingCompetitions ||
+                         isLoadingResults ||
+                         !!captureTimes[selectedCompetition] // Disable if already captured for this competition
+                       }
                        className="w-full md:w-auto"
                      >
                        {isUpdatingSelected ? (
                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                       ) : captureTimes[selectedCompetition] ? ( // Check if captured
+                         <i className="fas fa-check mr-2"></i> // Show checkmark if captured
                        ) : (
-                         <RefreshCw className="mr-2 h-4 w-4" />
+                         <RefreshCw className="mr-2 h-4 w-4" /> // Show refresh icon otherwise
                        )}
-                       {/* Changed Button Text */}
-                       {isUpdatingSelected ? 'Updating Results...' : 'Update Selected Results'}
-                   </Button>
-                 </div>
-               </CardContent>
-             </Card>
+                       {/* Change Button Text based on state */}
+                       {isUpdatingSelected
+                         ? 'Updating Results...'
+                         : captureTimes[selectedCompetition]
+                         ? 'Ranks Captured' // Text when captured
+                         : 'Update Selected Results'}
+                     </Button>
+                     {/* Display capture time if available */}
+                     {captureTimes[selectedCompetition] && (
+                       <p className="text-sm text-gray-500 mt-2 text-center md:text-left">
+                         Last captured on: {captureTimes[selectedCompetition]?.toLocaleString()}
+                       </p>
+                     )}
+                   </div>
+                 </CardContent>
+               </Card>
            </div>
          )}
          {/* --- End: Modified Update Selected Results Section --- */}

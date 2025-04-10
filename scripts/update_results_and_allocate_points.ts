@@ -46,6 +46,7 @@ interface Selection {
   golfer3Id: number;
   useCaptainsChip?: boolean; // Optional based on schema
   captainGolferId?: number; // Optional based on schema
+  waiverRank?: number | null; // Add waiverRank from schema
   // Add other fields as necessary
 }
 
@@ -66,6 +67,8 @@ interface PointDetail {
   position: number | string; // Can be number or 'MC/WD'
   basePoints: number; // Points based on position only
   rankAtDeadline?: number | null; // Rank at deadline
+  waiverRankUsed?: number | null; // Rank used if waiver applied
+  rankSource: 'deadline' | 'waiver' | 'none'; // Source of the rank used for bonus
   doubledPoints: boolean; // Was rank bonus applied?
   finalPoints: number; // Points after rank bonus (before captain)
   possibleCaptain: boolean;
@@ -423,6 +426,14 @@ async function completeCompetition(client: PoolClient, competitionId: number): P
 }
 
 // Calculate and allocate points based on results and captured ranks
+// Define User interface subset needed for waiver logic
+interface UserWaiverInfo {
+  id: number;
+  hasUsedWaiverChip: boolean;
+  waiverChipUsedCompetitionId?: number | null;
+  waiverChipReplacementGolferId?: number | null;
+}
+
 async function allocatePoints(client: PoolClient, competitionId: number): Promise<void> {
   console.log(`Allocating points for competition ${competitionId}...`);
 
@@ -469,8 +480,8 @@ async function allocatePoints(client: PoolClient, competitionId: number): Promis
     // --- End Step 2.5 ---
 
 
-    // 3. Get selections for the competition
-    const selectionsRes: QueryResult<Selection> = await client.query('SELECT * FROM selections WHERE "competitionId" = $1', [competitionId]);
+    // 3. Get selections for the competition, including waiverRank
+    const selectionsRes: QueryResult<Selection> = await client.query('SELECT *, "waiverRank" FROM selections WHERE "competitionId" = $1', [competitionId]);
     const selections: Selection[] = getRows(selectionsRes);
     console.log(`Found ${selections.length} user selections for competition ${competitionId}`);
 
@@ -484,12 +495,23 @@ async function allocatePoints(client: PoolClient, competitionId: number): Promis
     selectionRanksData.forEach(r => rankMap.set(`${r.userId}-${r.golferId}`, r.rankAtDeadline));
     console.log(`Found ${rankMap.size} captured rank entries for competition ${competitionId}`);
 
+    // 4.5 Get waiver info for all relevant users
+    const userIds = selections.map(s => s.userId);
+    const usersWaiverInfoRes: QueryResult<UserWaiverInfo> = await client.query(
+      'SELECT id, "hasUsedWaiverChip", "waiverChipUsedCompetitionId", "waiverChipReplacementGolferId" FROM users WHERE id = ANY($1::int[])',
+      [userIds]
+    );
+    const userWaiverMap = new Map<number, UserWaiverInfo>();
+    getRows(usersWaiverInfoRes).forEach(u => userWaiverMap.set(u.id, u));
+    console.log(`Fetched waiver info for ${userWaiverMap.size} users.`);
+
     // 5. Process each selection
     for (const selection of selections) {
       let totalPoints = 0;
       const pointDetails: PointDetail[] = [];
       const golferIds = [selection.golfer1Id, selection.golfer2Id, selection.golfer3Id].filter((id): id is number => Boolean(id)); // Type guard
       const useCaptainsChip = selection.useCaptainsChip || false;
+      const userWaiverInfo = userWaiverMap.get(selection.userId); // Get waiver info for this user
 
       for (const golferId of golferIds) {
         const result = results.find(r => r.golferId === golferId); // Find the updated result
@@ -506,25 +528,43 @@ async function allocatePoints(client: PoolClient, competitionId: number): Promis
            position = 'MC/WD';
         }
 
-        // Apply rank bonus (> 50 gets double points)
+        // Determine which rank to use for bonus calculation
+        let rankToUse: number | undefined | null = rankAtDeadline; // Default to deadline rank
+        let rankSource: PointDetail['rankSource'] = rankAtDeadline !== undefined ? 'deadline' : 'none';
+        let waiverRankUsed: number | null = null;
+
+        if (userWaiverInfo?.hasUsedWaiverChip &&
+            userWaiverInfo.waiverChipUsedCompetitionId === competitionId &&
+            userWaiverInfo.waiverChipReplacementGolferId === golferId &&
+            selection.waiverRank != null) // Check if waiverRank exists in the selection record
+        {
+          rankToUse = selection.waiverRank;
+          rankSource = 'waiver';
+          waiverRankUsed = selection.waiverRank;
+          console.log(`Using waiver rank ${rankToUse} for golfer ${golferId} (User: ${selection.userId})`);
+        }
+
+        // Apply rank bonus (> 50 gets double points) based on rankToUse
         let pointsMultiplier = 1;
         let doubledPoints = false;
-        if (rankAtDeadline !== undefined && rankAtDeadline > 50) {
+        if (rankToUse != null && rankToUse > 50) { // Use rankToUse here
           pointsMultiplier = 2;
           doubledPoints = true;
-          console.log(`Applying x2 points for golfer ${golferId} (Rank: ${rankAtDeadline})`);
+          console.log(`Applying x2 points for golfer ${golferId} (Rank: ${rankToUse}, Source: ${rankSource})`);
         }
 
         const finalPoints = basePoints * pointsMultiplier; // Points after rank bonus
-        
-        pointDetails.push({ 
-          golferId, 
-          position, 
-          basePoints, 
-          rankAtDeadline: rankAtDeadline ?? null, // Store rank or null
-          doubledPoints, 
-          finalPoints, 
-          possibleCaptain: true 
+
+        pointDetails.push({
+          golferId,
+          position,
+          basePoints,
+          rankAtDeadline: rankAtDeadline ?? null, // Still store deadline rank for info
+          waiverRankUsed: waiverRankUsed, // Store the waiver rank if used
+          rankSource, // Store the source of the rank used for bonus
+          doubledPoints,
+          finalPoints,
+          possibleCaptain: true
         });
         totalPoints += finalPoints; // Add points after rank bonus
       }

@@ -54,6 +54,7 @@ export default function CurrentCompetition() {
     endDate: string;
     selectionDeadline: string;
     isActive: boolean;
+    imageUrl?: string; // Add optional imageUrl
   }
 
   // Updated Selection interface to match the new API response
@@ -181,14 +182,26 @@ export default function CurrentCompetition() {
       
       <Card className="mt-4">
         <CardHeader className="bg-secondary/5 px-4 py-5 sm:px-6">
-          <div className="flex justify-between">
-            <div>
+          <div className="flex justify-between items-start"> {/* Use items-start to align top */}
+            {/* Competition Image (if available) */}
+            {currentCompetition.imageUrl && (
+              <div className="flex-shrink-0 mr-4">
+                <img 
+                  className="h-16 w-16 rounded-md object-cover" 
+                  src={currentCompetition.imageUrl} 
+                  alt={`${currentCompetition.name} logo`} 
+                />
+              </div>
+            )}
+            {/* Competition Details */}
+            <div className="flex-grow"> {/* Allow details to take remaining space */}
               <h3 className="text-lg font-medium leading-6 text-gray-900">{currentCompetition.name}</h3>
               <p className="mt-1 max-w-2xl text-sm text-gray-500">
                 {currentCompetition.venue} • {startDateString} - {endDateString}
               </p>
             </div>
-            <div className="flex items-center">
+            {/* Status Badge */}
+            <div className="flex-shrink-0 ml-4"> {/* Add margin left */}
               <Badge variant="outline" className="bg-amber-500/10 text-amber-700 border-amber-200">
                 <i className="fas fa-flag mr-1"></i> In Progress
               </Badge>

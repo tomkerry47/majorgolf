@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react"; // Import useMemo
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"; // Added useQueryClient
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -45,10 +45,31 @@ import {
 } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Check, ChevronsUpDown } from "lucide-react"; // Add back icons
 import { useLocation } from "wouter";
 import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"; // Add back Popover
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList, // Import CommandList
+} from "@/components/ui/command"; // Add back Command components
+import { cn } from "@/lib/utils"; // Add back cn utility
 import type { User, Competition, Golfer, Selection } from "@shared/schema"; // Import necessary types
+
+// Define type for the detailed selection history fetched for filtering
+interface HistoricalSelectionDetail {
+  selectionId: number;
+  competitionId: number;
+  competitionName: string;
+  golfer1: { id: number; name: string; } | null;
+  golfer2: { id: number; name: string; } | null;
+  golfer3: { id: number; name: string; } | null;
+  // Add other fields if needed, but only golfer IDs are essential for filtering
+}
 
 // Admin selection update form schema
 const adminSelectionFormSchema = z.object({
@@ -168,6 +189,25 @@ const Admin = () => {
     enabled: !!selectedUserId && !!isAdmin, // Enable only when a user is selected
   });
 
+  // Fetch user's full selection history for filtering dropdowns
+  const { data: userSelectionHistory = [], isLoading: isLoadingHistory } = useQuery<HistoricalSelectionDetail[]>({
+    queryKey: [`/api/admin/users/${selectedUserId}/selections`],
+    queryFn: () => apiRequest<HistoricalSelectionDetail[]>(`/api/admin/users/${selectedUserId}/selections`),
+    enabled: !!selectedUserId && !!isAdmin, // Enable only when a user is selected
+  });
+
+  // Create a set of historically selected golfer IDs for the selected user
+  const historicalGolferIds = useMemo(() => {
+    const ids = new Set<string>();
+    userSelectionHistory.forEach(sel => {
+      if (sel.golfer1?.id) ids.add(sel.golfer1.id.toString());
+      if (sel.golfer2?.id) ids.add(sel.golfer2.id.toString());
+      if (sel.golfer3?.id) ids.add(sel.golfer3.id.toString());
+    });
+    console.log(`[Admin Page] Historical Golfer IDs for user ${selectedUserId}:`, Array.from(ids)); // Debug log
+    return ids;
+  }, [userSelectionHistory, selectedUserId]);
+
 
   // Find the currently selected user's data (needed for disabling waiver checkbox)
   const currentUserData = users?.find(u => u.id.toString() === selectedUserId);
@@ -197,46 +237,73 @@ const Admin = () => {
   // Update selections mutation (Needs selection ID)
   const updateMutation = useMutation({
     mutationFn: async (values: AdminSelectionFormValues) => {
+      // Ensure userSelection exists before proceeding
       if (!userSelection?.id) {
-        throw new Error("Cannot update selection: Selection ID is missing.");
+        throw new Error("Cannot update selection: Selection ID is missing or user selection data is not loaded.");
       }
 
-      let payload: any = {
+      // Base payload with standard fields
+      const basePayload = {
         golfer1Id: parseInt(values.playerOneId),
         golfer2Id: parseInt(values.playerTwoId),
         golfer3Id: parseInt(values.playerThreeId),
-        // Include captain fields from form values
         useCaptainsChip: values.useCaptainsChip,
-        captainGolferId: values.useCaptainsChip ? parseInt(values.captainGolferId || "0") : undefined, // Parse if chip used
+        captainGolferId: values.useCaptainsChip ? parseInt(values.captainGolferId || "0") : undefined,
       };
-      let updatedGolferSlot: number | null = null;
-      let newGolferId: number | null = null;
 
-      // Determine which golfer changed if waiver is used
+      let finalPayload: any = { ...basePayload }; // Start with base
+
+      // Determine waiver details if waiver is used
       if (useWaiver) {
         let changes = 0;
-        if (payload.golfer1Id !== userSelection.golfer1Id) { changes++; updatedGolferSlot = 1; newGolferId = payload.golfer1Id; }
-        if (payload.golfer2Id !== userSelection.golfer2Id) { changes++; updatedGolferSlot = 2; newGolferId = payload.golfer2Id; }
-        if (payload.golfer3Id !== userSelection.golfer3Id) { changes++; updatedGolferSlot = 3; newGolferId = payload.golfer3Id; }
+        let updatedGolferSlot: number | null = null;
+        let newGolferId: number | null = null;
 
-        if (changes !== 1) {
-          throw new Error("Waiver chip can only be used when swapping exactly one golfer.");
+        // Check each slot for changes against the existing userSelection
+        if (basePayload.golfer1Id !== userSelection.golfer1Id) {
+          changes++;
+          updatedGolferSlot = 1;
+          newGolferId = basePayload.golfer1Id;
+        }
+        if (basePayload.golfer2Id !== userSelection.golfer2Id) {
+          if (changes === 0) {
+            updatedGolferSlot = 2;
+            newGolferId = basePayload.golfer2Id;
+          }
+          changes++;
+        }
+        if (basePayload.golfer3Id !== userSelection.golfer3Id) {
+          if (changes === 0) {
+            updatedGolferSlot = 3;
+            newGolferId = basePayload.golfer3Id;
+          }
+          changes++;
         }
 
-        // Add waiver details to payload
-        payload = {
-          ...payload,
+        // Validate exactly one change occurred
+        if (changes !== 1 || updatedGolferSlot === null || newGolferId === null) {
+          console.error("Waiver logic error: Expected exactly one golfer change, but found", changes);
+          throw new Error("Waiver chip requires swapping exactly one golfer.");
+        }
+
+        // Add waiver-specific fields to the payload
+        finalPayload = {
+          ...finalPayload,
           isWaiverChipTransaction: true,
           updatedGolferSlot: updatedGolferSlot,
           newGolferId: newGolferId,
         };
+        console.log("Waiver transaction payload:", finalPayload);
       } else {
-         payload = { ...payload, isWaiverChipTransaction: false };
+        // Ensure waiver flag is false if not a waiver transaction
+        finalPayload = { ...finalPayload, isWaiverChipTransaction: false };
+        console.log("Standard update payload:", finalPayload);
       }
 
-      // Corrected argument order: url, method, payload
-      return apiRequest(`/api/admin/selections/${userSelection.id}`, "PATCH", payload);
+      // Make the API request
+      return apiRequest(`/api/admin/selections/${userSelection.id}`, "PATCH", finalPayload);
     },
+    // onSuccess and onError are defined outside mutationFn but within useMutation options
     onSuccess: () => {
       toast({
         title: "Selections updated",
@@ -287,6 +354,79 @@ const Admin = () => {
      }
      updateMutation.mutate(values);
   };
+
+  // Create selections mutation
+  const createMutation = useMutation({
+    mutationFn: async (values: AdminSelectionFormValues) => {
+      // Construct payload for creation
+      const payload = {
+        userId: parseInt(values.userId), // Ensure userId is included and parsed
+        competitionId: parseInt(values.tournamentId), // Ensure competitionId is included and parsed
+        golfer1Id: parseInt(values.playerOneId),
+        golfer2Id: parseInt(values.playerTwoId),
+        golfer3Id: parseInt(values.playerThreeId),
+        // Chips are typically not set during admin creation
+        useCaptainsChip: false, 
+        captainGolferId: null,
+      };
+      // Use the admin endpoint for creating selections
+      return apiRequest(`/api/admin/selections`, "POST", payload);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Selection Created",
+        description: "Player selection has been created successfully.",
+      });
+      // Invalidate queries to refetch data
+      queryClient.invalidateQueries({ 
+        queryKey: ["/api/admin/user-selection", selectedUserId, selectedTournamentId] 
+      });
+      queryClient.invalidateQueries({ 
+        queryKey: ["/api/admin/competitions", selectedTournamentId, "selections"] 
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] }); // Invalidate users if needed
+      setUseWaiver(false); // Reset waiver state
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error Creating Selection",
+        description: error.message || "Failed to create selection. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Modified onSubmit to handle both create and update
+  const handleFormSubmit = (values: AdminSelectionFormValues) => {
+    if (userSelection) {
+      // Update existing selection
+      // Check waiver condition before mutating
+      if (useWaiver) {
+         let changes = 0;
+         if (parseInt(values.playerOneId) !== userSelection.golfer1Id) changes++;
+         if (parseInt(values.playerTwoId) !== userSelection.golfer2Id) changes++;
+         if (parseInt(values.playerThreeId) !== userSelection.golfer3Id) changes++;
+         if (changes !== 1) {
+            toast({ variant: "destructive", title: "Waiver Error", description: "Waiver chip can only be used when swapping exactly one golfer." });
+            return;
+         }
+         if (currentUserData?.hasUsedWaiverChip) {
+            toast({ variant: "destructive", title: "Waiver Error", description: "This user has already used their waiver chip." });
+            return;
+         }
+      }
+      updateMutation.mutate(values);
+    } else {
+      // Create new selection
+      // Basic validation check before creating
+      if (!values.playerOneId || !values.playerTwoId || !values.playerThreeId) {
+         toast({ title: "Missing Selections", description: "Please select all three golfers.", variant: "destructive"});
+         return;
+      }
+      createMutation.mutate(values);
+    }
+  };
+
 
   // Add console logs for debugging
   console.log("Admin Page Render State:");
@@ -345,7 +485,8 @@ const Admin = () => {
             </CardHeader>
             <CardContent>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                {/* Use handleFormSubmit instead of onSubmit */}
+                <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6"> 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* User Select */}
                     <FormField
@@ -469,97 +610,282 @@ const Admin = () => {
                         )}
                       </div>
                       
-                      {/* Update Selections Form Fields */}
+                      {/* Update/Create Selections Form Fields */}
                       <div className="mb-6">
-                        <h4 className="text-md font-semibold text-gray-800 mb-3">Update Selections</h4>
+                         {/* Dynamic Heading */}
+                        <h4 className="text-md font-semibold text-gray-800 mb-3">
+                          {userSelection ? 'Update Selections' : 'Create Selections'}
+                        </h4>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                          {/* Player 1 Select */}
+                          {/* Player 1 Combobox */}
+                          {/* Player 1 Combobox */}
                           <FormField
                             control={form.control}
                             name="playerOneId"
-                            render={({ field }) => (
-                              <FormItem>
+                            render={({ field }) => {
+                              // Watch other selections to filter them out
+                              const selectedGolfer2 = form.watch("playerTwoId");
+                              const selectedGolfer3 = form.watch("playerThreeId");
+                              // Add waiver chip filtering
+                              const waiverOriginalId = currentUserData?.hasUsedWaiverChip ? currentUserData.waiverChipOriginalGolferId?.toString() : undefined;
+                              const waiverReplacementId = currentUserData?.hasUsedWaiverChip ? currentUserData.waiverChipReplacementGolferId?.toString() : undefined;
+                              
+                              const filteredGolfers = golfPlayers?.filter(golfer => {
+                                const golferIdStr = golfer.id.toString();
+                                return golferIdStr !== selectedGolfer2 && 
+                                       golferIdStr !== selectedGolfer3 &&
+                                       golferIdStr !== waiverOriginalId && 
+                                       golferIdStr !== waiverReplacementId &&
+                                       !historicalGolferIds.has(golferIdStr); // Exclude historically selected
+                              });
+
+                              return (
+                              <FormItem className="flex flex-col">
                                 <FormLabel>Selection 1</FormLabel>
-                                <Select value={field.value} onValueChange={field.onChange}>
-                                  <FormControl>
-                                    <SelectTrigger><SelectValue placeholder="Select a player" /></SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    {isLoadingPlayers ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                     golfPlayers && golfPlayers.map((player: Golfer) => ( // Add check for golfPlayers array
-                                      <SelectItem key={player.id} value={player.id.toString()}>
-                                        {/* Use firstName and lastName */}
-                                        {player.firstName} {player.lastName} {player.rank ? `(#${player.rank})` : ''}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <FormControl>
+                                      <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        className={cn(
+                                          "w-full justify-between",
+                                          !field.value && "text-muted-foreground"
+                                        )}
+                                      >
+                                        {field.value
+                                          ? golfPlayers?.find(
+                                              (golfer) => golfer.id.toString() === field.value
+                                            )?.name // Use name property if available, or construct
+                                            ?? `${golfPlayers?.find((golfer) => golfer.id.toString() === field.value)?.firstName ?? ''} ${golfPlayers?.find((golfer) => golfer.id.toString() === field.value)?.lastName ?? ''}`.trim() // Construct name safely
+                                          : "Select player"}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                      </Button>
+                                    </FormControl>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0"> {/* Dynamic width/height */}
+                                    <Command>
+                                      <CommandInput placeholder="Search player..." />
+                                      <CommandList>
+                                        <CommandEmpty>No player found.</CommandEmpty>
+                                        <CommandGroup>
+                                          {isLoadingPlayers ? (
+                                            <CommandItem disabled>Loading...</CommandItem>
+                                          ) : (
+                                            // Use the filtered list
+                                            filteredGolfers?.map((player) => (
+                                              <CommandItem
+                                                // Use combined name for search value, handle potential nulls
+                                                value={`${player.firstName ?? ''} ${player.lastName ?? ''}`.trim()}
+                                                key={player.id}
+                                                onSelect={() => {
+                                                  form.setValue("playerOneId", player.id.toString());
+                                                }}
+                                              >
+                                                <Check
+                                                  className={cn(
+                                                    "mr-2 h-4 w-4",
+                                                    player.id.toString() === field.value
+                                                      ? "opacity-100"
+                                                      : "opacity-0"
+                                                  )}
+                                                />
+                                                {/* Display combined name safely */}
+                                                {`${player.firstName ?? ''} ${player.lastName ?? ''}`.trim()} {player.rank ? `(#${player.rank})` : ''}
+                                              </CommandItem>
+                                            ))
+                                          )}
+                                        </CommandGroup>
+                                      </CommandList>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
                                 <FormMessage />
                               </FormItem>
-                            )}
+                            )}}
                           />
-                           {/* Player 2 Select */}
-                           <FormField
+                          {/* Player 2 Combobox */}
+                          <FormField
                             control={form.control}
                             name="playerTwoId"
-                            render={({ field }) => (
-                              <FormItem>
+                            render={({ field }) => {
+                              // Watch other selections
+                              const selectedGolfer1 = form.watch("playerOneId");
+                              const selectedGolfer3 = form.watch("playerThreeId");
+                              // Add waiver chip filtering
+                              const waiverOriginalId = currentUserData?.hasUsedWaiverChip ? currentUserData.waiverChipOriginalGolferId?.toString() : undefined;
+                              const waiverReplacementId = currentUserData?.hasUsedWaiverChip ? currentUserData.waiverChipReplacementGolferId?.toString() : undefined;
+
+                              const filteredGolfers = golfPlayers?.filter(golfer => {
+                                const golferIdStr = golfer.id.toString();
+                                return golferIdStr !== selectedGolfer1 &&
+                                       golferIdStr !== selectedGolfer3 &&
+                                       golferIdStr !== waiverOriginalId && 
+                                       golferIdStr !== waiverReplacementId &&
+                                       !historicalGolferIds.has(golferIdStr); // Exclude historically selected
+                              });
+
+                              return (
+                              <FormItem className="flex flex-col">
                                 <FormLabel>Selection 2</FormLabel>
-                                <Select value={field.value} onValueChange={field.onChange}>
-                                  <FormControl>
-                                    <SelectTrigger><SelectValue placeholder="Select a player" /></SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                     {isLoadingPlayers ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                     golfPlayers && golfPlayers.map((player: Golfer) => ( // Add check for golfPlayers array
-                                      <SelectItem key={player.id} value={player.id.toString()}>
-                                        {/* Use firstName and lastName */}
-                                        {player.firstName} {player.lastName} {player.rank ? `(#${player.rank})` : ''}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <FormControl>
+                                      <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        className={cn(
+                                          "w-full justify-between",
+                                          !field.value && "text-muted-foreground"
+                                        )}
+                                      >
+                                        {field.value
+                                          ? golfPlayers?.find(
+                                              (golfer) => golfer.id.toString() === field.value
+                                            )?.name
+                                            ?? `${golfPlayers?.find((golfer) => golfer.id.toString() === field.value)?.firstName ?? ''} ${golfPlayers?.find((golfer) => golfer.id.toString() === field.value)?.lastName ?? ''}`.trim()
+                                          : "Select player"}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                      </Button>
+                                    </FormControl>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
+                                    <Command>
+                                      <CommandInput placeholder="Search player..." />
+                                      <CommandList>
+                                        <CommandEmpty>No player found.</CommandEmpty>
+                                        <CommandGroup>
+                                          {isLoadingPlayers ? (
+                                            <CommandItem disabled>Loading...</CommandItem>
+                                          ) : (
+                                            // Use the filtered list
+                                            filteredGolfers?.map((player) => (
+                                              <CommandItem
+                                                value={`${player.firstName ?? ''} ${player.lastName ?? ''}`.trim()}
+                                                key={player.id}
+                                                onSelect={() => {
+                                                  form.setValue("playerTwoId", player.id.toString());
+                                                }}
+                                              >
+                                                <Check
+                                                  className={cn(
+                                                    "mr-2 h-4 w-4",
+                                                    player.id.toString() === field.value
+                                                      ? "opacity-100"
+                                                      : "opacity-0"
+                                                  )}
+                                                />
+                                                {`${player.firstName ?? ''} ${player.lastName ?? ''}`.trim()} {player.rank ? `(#${player.rank})` : ''}
+                                              </CommandItem>
+                                            ))
+                                          )}
+                                        </CommandGroup>
+                                      </CommandList>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
                                 <FormMessage />
                               </FormItem>
-                            )}
+                            )}}
                           />
-                           {/* Player 3 Select */}
-                           <FormField
+                          {/* Player 3 Combobox */}
+                          <FormField
                             control={form.control}
                             name="playerThreeId"
-                            render={({ field }) => (
-                              <FormItem>
+                            render={({ field }) => {
+                              // Watch other selections
+                              const selectedGolfer1 = form.watch("playerOneId");
+                              const selectedGolfer2 = form.watch("playerTwoId");
+                              // Add waiver chip filtering
+                              const waiverOriginalId = currentUserData?.hasUsedWaiverChip ? currentUserData.waiverChipOriginalGolferId?.toString() : undefined;
+                              const waiverReplacementId = currentUserData?.hasUsedWaiverChip ? currentUserData.waiverChipReplacementGolferId?.toString() : undefined;
+
+                              const filteredGolfers = golfPlayers?.filter(golfer => {
+                                const golferIdStr = golfer.id.toString();
+                                return golferIdStr !== selectedGolfer1 &&
+                                       golferIdStr !== selectedGolfer2 &&
+                                       golferIdStr !== waiverOriginalId &&
+                                       golferIdStr !== waiverReplacementId &&
+                                       !historicalGolferIds.has(golferIdStr); // Exclude historically selected
+                              });
+
+                              return (
+                              <FormItem className="flex flex-col">
                                 <FormLabel>Selection 3</FormLabel>
-                                <Select value={field.value} onValueChange={field.onChange}>
-                                  <FormControl>
-                                    <SelectTrigger><SelectValue placeholder="Select a player" /></SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                     {isLoadingPlayers ? <SelectItem value="loading" disabled>Loading...</SelectItem> :
-                                     golfPlayers && golfPlayers.map((player: Golfer) => ( // Add check for golfPlayers array
-                                      <SelectItem key={player.id} value={player.id.toString()}>
-                                        {/* Use firstName and lastName */}
-                                        {player.firstName} {player.lastName} {player.rank ? `(#${player.rank})` : ''}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <FormControl>
+                                      <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        className={cn(
+                                          "w-full justify-between",
+                                          !field.value && "text-muted-foreground"
+                                        )}
+                                      >
+                                        {field.value
+                                          ? golfPlayers?.find(
+                                              (golfer) => golfer.id.toString() === field.value
+                                            )?.name
+                                            ?? `${golfPlayers?.find((golfer) => golfer.id.toString() === field.value)?.firstName ?? ''} ${golfPlayers?.find((golfer) => golfer.id.toString() === field.value)?.lastName ?? ''}`.trim()
+                                          : "Select player"}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                      </Button>
+                                    </FormControl>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
+                                    <Command>
+                                      <CommandInput placeholder="Search player..." />
+                                      <CommandList>
+                                        <CommandEmpty>No player found.</CommandEmpty>
+                                        <CommandGroup>
+                                          {isLoadingPlayers ? (
+                                            <CommandItem disabled>Loading...</CommandItem>
+                                          ) : (
+                                            // Use the filtered list
+                                            filteredGolfers?.map((player) => (
+                                              <CommandItem
+                                                value={`${player.firstName ?? ''} ${player.lastName ?? ''}`.trim()}
+                                                key={player.id}
+                                                onSelect={() => {
+                                                  form.setValue("playerThreeId", player.id.toString());
+                                                }}
+                                              >
+                                                <Check
+                                                  className={cn(
+                                                    "mr-2 h-4 w-4",
+                                                    player.id.toString() === field.value
+                                                      ? "opacity-100"
+                                                      : "opacity-0"
+                                                  )}
+                                                />
+                                                {`${player.firstName ?? ''} ${player.lastName ?? ''}`.trim()} {player.rank ? `(#${player.rank})` : ''}
+                                              </CommandItem>
+                                            ))
+                                          )}
+                                        </CommandGroup>
+                                      </CommandList>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
                                 <FormMessage />
                               </FormItem>
-                            )}
+                            )}}
                           />
                         </div>
-                         {/* Waiver Chip Checkbox */}
+                        {/* Waiver Chip Checkbox */}
                          <div className="flex items-center space-x-2 pt-4">
                            <Checkbox
                              id="useWaiverAdmin" // Unique ID
                              checked={useWaiver}
                              onCheckedChange={(checked: boolean | 'indeterminate') => setUseWaiver(Boolean(checked))}
-                             disabled={currentUserData?.hasUsedWaiverChip}
+                             // Disable if creating OR if user already used waiver
+                             disabled={!userSelection || currentUserData?.hasUsedWaiverChip} 
                            />
                            <label
                              htmlFor="useWaiverAdmin"
-                             className={`text-sm font-medium leading-none ${currentUserData?.hasUsedWaiverChip ? 'text-gray-400 cursor-not-allowed' : 'peer-disabled:cursor-not-allowed peer-disabled:opacity-70'}`}
+                             // Adjust class based on disabled state
+                             className={`text-sm font-medium leading-none ${!userSelection || currentUserData?.hasUsedWaiverChip ? 'text-gray-400 cursor-not-allowed' : 'peer-disabled:cursor-not-allowed peer-disabled:opacity-70'}`}
                            >
                              Use Waiver Chip for this swap? {currentUserData?.hasUsedWaiverChip ? '(Already Used)' : ''}
                            </label>
@@ -575,15 +901,16 @@ const Admin = () => {
                                  <Checkbox
                                    checked={field.value}
                                    onCheckedChange={field.onChange}
-                                   // Disable if the selected user has already used the chip globally
-                                   disabled={selectedUserCaptainChipStatus?.hasUsedCaptainsChip && !(userSelection?.useCaptainsChip)} // Allow unchecking if currently checked
+                                   // Disable if creating OR if user already used chip globally (and not currently set)
+                                   disabled={!userSelection || (selectedUserCaptainChipStatus?.hasUsedCaptainsChip && !(userSelection?.useCaptainsChip))} 
                                    id="useCaptainAdmin"
                                  />
                                </FormControl>
-                               <FormLabel htmlFor="useCaptainAdmin" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                 Assign Captain's Chip? (Overrides user's choice if they used it)
-                                 {/* Display message if chip already used */}
-                                 {selectedUserCaptainChipStatus?.hasUsedCaptainsChip && !(userSelection?.useCaptainsChip) && (
+                               {/* Adjust label class based on disabled state */}
+                               <FormLabel htmlFor="useCaptainAdmin" className={`text-sm font-medium leading-none ${!userSelection || (selectedUserCaptainChipStatus?.hasUsedCaptainsChip && !(userSelection?.useCaptainsChip)) ? 'text-gray-400 cursor-not-allowed' : 'peer-disabled:cursor-not-allowed peer-disabled:opacity-70'}`}>
+                                 Assign Captain's Chip? {userSelection ? '(Overrides user\'s choice if they used it)' : '(N/A for creation)'}
+                                 {/* Display message if chip already used (only relevant for updates) */}
+                                 {userSelection && selectedUserCaptainChipStatus?.hasUsedCaptainsChip && !(userSelection?.useCaptainsChip) && (
                                     <p className="text-xs text-muted-foreground pt-1">
                                       This user has already used their Captain's Chip.
                                     </p>
@@ -593,8 +920,8 @@ const Admin = () => {
                            )}
                          />
 
-                         {/* Captain Select Dropdown (Conditional) */}
-                         {form.watch("useCaptainsChip") && (
+                         {/* Captain Select Dropdown (Conditional - only show if updating AND chip selected) */}
+                         {userSelection && form.watch("useCaptainsChip") && (
                            <FormField
                              control={form.control}
                              name="captainGolferId"
@@ -645,9 +972,13 @@ const Admin = () => {
                         <Button 
                           type="submit"
                           variant="default"
-                          disabled={updateMutation.isPending || !userSelection} // Disable if no selection exists to update
+                          // Disable if either mutation is pending
+                          disabled={updateMutation.isPending || createMutation.isPending} 
                         >
-                          {updateMutation.isPending ? "Updating..." : "Update Selections"}
+                          {/* Dynamic Button Text */}
+                          {userSelection 
+                            ? (updateMutation.isPending ? "Updating..." : "Update Selections")
+                            : (createMutation.isPending ? "Creating..." : "Create Selection")}
                         </Button>
                       </div>
                     </>

@@ -51,6 +51,7 @@ export default function AdminCompetitions() {
   const [isCreatingTournaments, setIsCreatingTournaments] = useState(false);
   const [capturingRanksId, setCapturingRanksId] = useState<number | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null); // State for the image preview
+  const [captureTimes, setCaptureTimes] = useState<Record<number, Date | null>>({}); // State for capture timestamps
 
   const { data: competitions = [], isLoading } = useQuery<Competition[]>({
     queryKey: ['/api/admin/competitions'],
@@ -217,10 +218,12 @@ export default function AdminCompetitions() {
     onSuccess: (data: any, competitionId: number) => { // Add type
       toast({
         title: "Ranks Captured",
-        description: `Successfully captured ${data?.count ?? 'N/A'} ranks for competition ${competitionId}. Errors: ${data?.errors ?? 'N/A'}.`,
-      });
-    },
-    onError: (error: any, competitionId: number) => { // Add type
+         description: `Successfully captured ${data?.count ?? 'N/A'} ranks for competition ${competitionId}. Errors: ${data?.errors ?? 'N/A'}.`,
+       });
+       // Store the capture time for this specific competition
+       setCaptureTimes(prev => ({ ...prev, [competitionId]: new Date() }));
+     },
+     onError: (error: any, competitionId: number) => { // Add type
       toast({
         variant: "destructive",
         title: "Error Capturing Ranks",
@@ -439,23 +442,41 @@ export default function AdminCompetitions() {
                       <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => openDeleteDialog(competition)}>
                         <i className="fas fa-trash mr-1"></i> Delete
                       </Button>
-                      {/* Capture Ranks Button */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="ml-2"
-                        onClick={() => handleCaptureRanks(competition.id, competition.selectionDeadline)}
-                        disabled={capturingRanksId === competition.id || new Date() < new Date(competition.selectionDeadline)}
-                        title={new Date() < new Date(competition.selectionDeadline) ? "Deadline not passed" : "Capture ranks at deadline"}
-                      >
-                        {capturingRanksId === competition.id ? (
-                          <Clock className="mr-1 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Clock className="mr-1 h-4 w-4" />
-                        )}
-                        Capture Ranks
-                      </Button>
-                    </TableCell>
+                       {/* Capture Ranks Button */}
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         className="ml-2"
+                         onClick={() => handleCaptureRanks(competition.id, competition.selectionDeadline)}
+                         disabled={
+                           capturingRanksId === competition.id ||
+                           new Date() < new Date(competition.selectionDeadline) ||
+                           !!captureTimes[competition.id] // Disable if already captured
+                         }
+                         title={
+                           captureTimes[competition.id]
+                             ? `Ranks captured on ${captureTimes[competition.id]?.toLocaleString()}`
+                             : new Date() < new Date(competition.selectionDeadline)
+                             ? "Deadline not passed"
+                             : "Capture ranks at deadline"
+                         }
+                       >
+                         {capturingRanksId === competition.id ? (
+                           <Clock className="mr-1 h-4 w-4 animate-spin" /> // Still show spinner when capturing
+                         ) : captureTimes[competition.id] ? (
+                           <i className="fas fa-check mr-1"></i> // Show checkmark if captured
+                         ) : (
+                           <Clock className="mr-1 h-4 w-4" /> // Default clock icon
+                         )}
+                         {captureTimes[competition.id] ? 'Ranks Captured' : 'Capture Ranks'}
+                       </Button>
+                       {/* Display capture time if available */}
+                       {captureTimes[competition.id] && (
+                         <span className="text-xs text-gray-500 ml-1 align-middle">
+                           ({captureTimes[competition.id]?.toLocaleTimeString()})
+                         </span>
+                       )}
+                     </TableCell>
                   </TableRow>
                 ))
               )}

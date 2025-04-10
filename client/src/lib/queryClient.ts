@@ -37,8 +37,24 @@ export async function apiRequest<T = any>(
     credentials: "include",
   });
 
-  await throwIfResNotOk(res);
-  return await res.json() as T;
+  // Handle 404 specifically: return null to indicate resource not found
+  if (res.status === 404) {
+    console.log(`API request to ${url} returned 404, returning null.`);
+    return null as T; // Return null for 404
+  }
+
+  // For other errors, use the existing helper
+  await throwIfResNotOk(res); 
+  
+  // Handle potential empty response body for non-error statuses (e.g., 204 No Content)
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch (e) {
+    // If parsing fails but status was ok, return null or handle as appropriate
+    console.warn(`Failed to parse JSON response from ${url}, but status was ${res.status}. Returning null.`);
+    return null as T; 
+  }
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";

@@ -57,6 +57,7 @@ export const selections = pgTable("selections", {
   golfer3Id: integer("golfer3Id").notNull(),
   useCaptainsChip: boolean("useCaptainsChip").default(false).notNull(),
   captainGolferId: integer("captainGolferId"), // Added nullable integer for captain ID
+  waiverRank: integer("waiverRank"), // Rank of the golfer when selected via waiver
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull()
 });
@@ -182,6 +183,7 @@ export interface Selection {
   golfer3Id: number;
   useCaptainsChip: boolean;
   captainGolferId?: number | null; // Added optional captain ID
+  waiverRank?: number | null; // Add waiverRank type
   createdAt: string;
   updatedAt: string;
 }
@@ -269,6 +271,7 @@ export const insertSelectionSchema = createInsertSchema(selections)
   .omit({ id: true, createdAt: true, updatedAt: true })
   .extend({
     captainGolferId: z.number().optional().nullable(), // Ensure captainGolferId is optional and nullable
+    waiverRank: z.number().optional().nullable(), // Add waiverRank to Zod schema
   });
 
 export const insertResultSchema = createInsertSchema(results)
