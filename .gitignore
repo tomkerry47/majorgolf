@@ -9,3 +9,5 @@ yarn-error.log*
 .idea/
 *.log
 .env
+local_data_only.sql
+local_dump.sql
