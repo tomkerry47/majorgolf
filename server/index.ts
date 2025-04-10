@@ -3,7 +3,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from 'cookie-parser'; // Import cookie-parser
 import cors from 'cors'; // Import cors
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import { setupVite, log } from "./vite"; // Remove serveStatic import
+import fs from "fs"; // Import fs for checking directory existence
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -18,8 +19,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // --- CORS Configuration ---
-// Allow requests from the Vite dev server and the backend itself
-const allowedOrigins = ['http://127.0.0.1:5173', 'http://localhost:5173', 'http://127.0.0.1:5000', 'http://localhost:5000'];
+// Allow requests from the Vite dev server and the backend itself (now potentially on 5001 locally)
+const allowedOrigins = ['http://127.0.0.1:5173', 'http://localhost:5173', 'http://127.0.0.1:5000', 'http://localhost:5000', 'http://127.0.0.1:5001', 'http://localhost:5001'];
 const corsOptions: cors.CorsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -165,8 +166,40 @@ app.use((req, res, next) => {
     }
   } else {
     console.log("Setting up static serving in production mode");
-    serveStatic(app);
+    // --- Production Static Serving Logic ---
+    const distPath = path.resolve(__dirname, "public"); // dist/public relative to project root
+    if (!fs.existsSync(distPath)) {
+      // Log error and potentially exit or throw, as the app can't serve the frontend
+      console.error(`Build directory not found at: ${distPath}. Cannot serve static assets.`);
+      // Optionally: process.exit(1); or throw new Error(...)
+    } else {
+      // Serve static assets (CSS, JS, images) from dist/public
+      app.use(express.static(distPath));
+
+      // SPA Fallback: Handle client-side routing by serving index.html for non-API GET requests
+      app.get('*', (req, res, next) => {
+        // If the request path starts with /api/, it's an API request, let it fall through (to 404 eventually if not matched)
+        if (req.originalUrl.startsWith('/api/')) {
+          return next();
+        }
+        // If the request accepts HTML, serve index.html
+        if (req.accepts('html')) {
+          res.sendFile(path.resolve(distPath, 'index.html'), (err) => {
+            // Handle potential errors sending the file (e.g., file not found)
+            if (err) {
+              console.error("Error sending index.html:", err);
+              next(err); // Pass error to the main error handler
+            }
+          });
+        } else {
+          // For non-HTML requests that didn't match static files (e.g., missing images), let them fall through
+          next();
+        }
+      });
+    }
+    // --- End Production Static Serving Logic ---
   }
+
 
   // Use PORT from environment variable if available, otherwise default to 5000
   // this serves both the API and the client.

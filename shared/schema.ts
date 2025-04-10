@@ -15,6 +15,7 @@ export const users = pgTable("users", {
   waiverChipUsedCompetitionId: integer("waiverChipUsedCompetitionId").references(() => competitions.id), // Added
   waiverChipOriginalGolferId: integer("waiverChipOriginalGolferId").references(() => golfers.id),       // Added
   waiverChipReplacementGolferId: integer("waiverChipReplacementGolferId").references(() => golfers.id), // Added
+  hasPaid: boolean("hasPaid").default(false).notNull(), // Added paid status
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   lastLoginAt: timestamp("lastLoginAt") // Added last login timestamp (nullable)
 });
@@ -141,6 +142,7 @@ export interface User {
   waiverChipReplacementGolferId?: number | null; // Added
   createdAt: string;
   lastLoginAt?: string | null; // Added last login timestamp type
+  hasPaid: boolean; // Added paid status type
   selectionCount?: number; // Added count of selections
   hasUsedCaptainsChip?: boolean; // Added optional field for calculated status
 }

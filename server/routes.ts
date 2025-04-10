@@ -676,7 +676,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin update user details (username, email, fullName)
+  // Admin create new user
+  app.post('/api/admin/users', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      // Validate input (consider a specific Zod schema for admin creation if needed)
+      const { email, username, fullName, password, isAdmin } = req.body;
+      if (!email || !username || !fullName || !password) {
+        return res.status(400).json({ error: 'Email, username, full name, and password are required' });
+      }
+      if (typeof password !== 'string' || password.length < 6) {
+         return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+      }
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(409).json({ error: 'User with this email already exists' });
+      }
+
+      // Create user (storage.createUser handles password hashing)
+      const newUser = await storage.createUser({
+        email,
+        username,
+        fullName,
+        password, // Pass plain text password to storage function
+        isAdmin: isAdmin === true // Default to false if not provided or not true
+      });
+
+      const { password: _, ...userData } = newUser; // Exclude password from response
+      res.status(201).json(userData);
+
+    } catch (error) {
+      console.error('Admin create user error:', error);
+      // Handle potential unique constraint errors (e.g., username already exists if you add that constraint)
+      if (error instanceof Error && error.message.includes('duplicate key value violates unique constraint')) {
+         return res.status(409).json({ error: 'Username or Email already in use.' }); // Adjust based on actual constraints
+      }
+      res.status(500).json({ error: 'Failed to create user' });
+    }
+  });
+
+
+  // Admin update user details (username, email, fullName, hasPaid, isAdmin)
   app.patch('/api/admin/users/:id', validateJWT, async (req: Request, res: Response) => {
     try {
       const tokenUser = req.user as ExtendedUser;
@@ -695,11 +741,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (username !== undefined) updateData.username = username;
       if (email !== undefined) updateData.email = email; // Add validation if needed
       if (fullName !== undefined) updateData.fullName = fullName;
-      if (isAdmin !== undefined && typeof isAdmin === 'boolean') { // Check if isAdmin is provided and is a boolean
-        updateData.isAdmin = isAdmin;
-      }
+    if (isAdmin !== undefined && typeof isAdmin === 'boolean') {
+      updateData.isAdmin = isAdmin;
+    }
+    // Add check for hasPaid
+    const { hasPaid } = req.body;
+    if (hasPaid !== undefined && typeof hasPaid === 'boolean') {
+      updateData.hasPaid = hasPaid;
+    }
 
-      if (Object.keys(updateData).length === 0) {
+    if (Object.keys(updateData).length === 0) {
         return res.status(400).json({ error: 'No valid fields provided for update' });
       }
 

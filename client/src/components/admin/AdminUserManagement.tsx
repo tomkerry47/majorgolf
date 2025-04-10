@@ -3,9 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import EditUserModal from './EditUserModal';
+import CreateUserModal from './CreateUserModal'; // Import the create modal
 import ViewUserSelectionsModal from './ViewUserSelectionsModal'; // Import the selections modal
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox'; // Import Checkbox
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast'; // Import useToast
 import {
@@ -25,17 +27,19 @@ import type { User } from '@shared/schema'; // Assuming User type is defined her
 interface AdminUser extends User {
   lastLoginAt?: string | null; // Add last login time
   hasUsedCaptainsChip?: boolean; // Add captain chip status
+  hasPaid: boolean; // Ensure hasPaid is included (already added in schema.ts)
   // hasUsedWaiverChip is already defined in the base User interface as boolean
   // TODO: Add field for selections (might be an array or specific structure)
 }
 
 const AdminUserManagement: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false); // State for create modal
   const [isViewSelectionsModalOpen, setIsViewSelectionsModalOpen] = useState(false); // State for selections modal
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null); // User for editing or viewing selections
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  // const [showResetConfirm, setShowResetConfirm] = useState(false); // Remove this state, use userToReset directly
   const [userToReset, setUserToReset] = useState<AdminUser | null>(null);
-  const [newPassword, setNewPassword] = useState<string | null>(null);
+  // const [newPassword, setNewPassword] = useState<string | null>(null); // Remove state for displaying password in dialog
 
   const queryClient = useQueryClient(); // Get query client instance
   const { toast } = useToast(); // Get toast function
@@ -56,13 +60,15 @@ const AdminUserManagement: React.FC = () => {
   const resetPasswordMutation = useMutation({
     mutationFn: (userId: number) => apiRequest(`/api/admin/users/${userId}/reset-password`, 'POST'),
     onSuccess: (data: any) => { // Expect data with temporaryPassword
-      setNewPassword(data.temporaryPassword); // Store the new password to display
-      // No need to invalidate user list query as password isn't shown
+      console.log("Received temporary password:", data.temporaryPassword);
+      // setNewPassword(data.temporaryPassword); // Don't store in state for dialog
       toast({
         title: "Password Reset Successful",
-        description: `Password for ${userToReset?.username} has been reset.`,
+        // Display password in the toast description
+        description: `Password for ${userToReset?.username} reset. Temp PW: ${data.temporaryPassword}`,
+        duration: 9000 // Increase duration to allow reading the password
       });
-      // Keep the confirmation dialog open to show the password
+      closeResetDialog(); // Close the dialog on success
     },
     onError: (error: any) => {
       toast({
@@ -70,10 +76,34 @@ const AdminUserManagement: React.FC = () => {
         description: error.response?.data?.error || error.message || "Could not reset password.",
         variant: "destructive",
       });
-      setShowResetConfirm(false); // Close dialog on error
-      setUserToReset(null);
+      // setShowResetConfirm(false); // Close dialog on error - handled by setting userToReset to null
+      setUserToReset(null); // Also closes dialog on error
     },
   });
+
+  // Mutation for updating user details (including hasPaid)
+  const updateUserMutation = useMutation({
+    mutationFn: ({ userId, data }: { userId: number; data: Partial<AdminUser> }) =>
+      apiRequest(`/api/admin/users/${userId}`, 'PATCH', data),
+    onSuccess: (updatedUser: AdminUser) => {
+      // Invalidate the users query to refetch and update the table
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users/details'] });
+      toast({
+        title: "User Updated",
+        description: `User ${updatedUser.username} has been updated.`,
+      });
+    },
+    onError: (error: any, variables) => {
+      toast({
+        title: "Update Failed",
+        description: `Could not update user ${variables.userId}: ${error.response?.data?.error || error.message}`,
+        variant: "destructive",
+      });
+      // Optionally refetch to revert optimistic updates if implemented
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users/details'] });
+    },
+  });
+
 
   const handleEditClick = (user: AdminUser) => {
     setSelectedUser(user);
@@ -83,6 +113,14 @@ const AdminUserManagement: React.FC = () => {
   const handleCloseEditModal = () => {
     setIsEditModalOpen(false);
     setSelectedUser(null);
+  };
+
+  const handleOpenCreateModal = () => {
+    setIsCreateModalOpen(true);
+  };
+
+  const handleCloseCreateModal = () => {
+    setIsCreateModalOpen(false);
   };
 
   const handleViewSelectionsClick = (user: AdminUser) => {
@@ -97,22 +135,26 @@ const AdminUserManagement: React.FC = () => {
 
   const handleResetPasswordClick = (user: AdminUser) => {
     setUserToReset(user);
-    setNewPassword(null); // Clear previous password if any
-    setShowResetConfirm(true);
+    // setNewPassword(null); // No longer needed
   };
 
   const confirmPasswordReset = () => {
     if (userToReset) {
       resetPasswordMutation.mutate(userToReset.id);
+      // Let onSuccess or onError handle closing the dialog via setUserToReset(null)
     }
-    // Don't close the dialog immediately, wait for onSuccess to show password
   };
 
   const closeResetDialog = () => {
-    setShowResetConfirm(false);
     setUserToReset(null);
-    setNewPassword(null);
+    // setNewPassword(null); // No longer needed
   }
+
+  // Handler for changing the 'hasPaid' status
+  const handlePaidChange = (userId: number, currentStatus: boolean) => {
+    updateUserMutation.mutate({ userId, data: { hasPaid: !currentStatus } });
+  };
+
 
   if (isLoading) {
     return (
@@ -144,9 +186,12 @@ const AdminUserManagement: React.FC = () => {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>User Management</CardTitle>
-        <CardDescription>View and manage registered users.</CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <div>
+          <CardTitle>User Management</CardTitle>
+          <CardDescription>View, manage, and create registered users.</CardDescription>
+        </div>
+        <Button onClick={handleOpenCreateModal}>Create User</Button>
       </CardHeader>
       <CardContent>
         <Table>
@@ -156,10 +201,11 @@ const AdminUserManagement: React.FC = () => {
               <TableHead>Username</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Last Login</TableHead>
-              <TableHead>Selections</TableHead> {/* Placeholder */}
-              <TableHead>Captain's Chip</TableHead> {/* Added Captain's Chip column */}
-              <TableHead>Waiver Chip</TableHead> {/* Placeholder */}
-              <TableHead>Admin Status</TableHead> {/* Added Admin Status column */}
+              <TableHead>Selections</TableHead>
+              <TableHead>Captain's Chip</TableHead>
+              <TableHead>Waiver Chip</TableHead>
+              <TableHead>Paid Status</TableHead> {/* Added Paid Status column */}
+              <TableHead>Admin Status</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -189,43 +235,42 @@ const AdminUserManagement: React.FC = () => {
                       View ({user.selectionCount ?? 0})
                     </Button>
                   </TableCell>
-                  <TableCell>{user.hasUsedCaptainsChip ? 'Used' : 'Available'}</TableCell> {/* Display Captain's Chip status */}
+                  <TableCell>{user.hasUsedCaptainsChip ? 'Used' : 'Available'}</TableCell>
                   <TableCell> {user.hasUsedWaiverChip ? 'Used' : 'Available'} </TableCell>
-                  <TableCell>{user.isAdmin ? 'Yes' : 'No'}</TableCell> {/* Display Admin Status */}
+                  {/* Paid Status Checkbox */}
+                  <TableCell>
+                    <Checkbox
+                      id={`paid-${user.id}`}
+                      checked={user.hasPaid}
+                      onCheckedChange={() => handlePaidChange(user.id, user.hasPaid)}
+                      disabled={updateUserMutation.isPending && updateUserMutation.variables?.userId === user.id} // Disable while updating this user
+                    />
+                  </TableCell>
+                  <TableCell>{user.isAdmin ? 'Yes' : 'No'}</TableCell>
                   <TableCell>
                     <div className="flex space-x-2">
                       <Button variant="outline" size="sm" onClick={() => handleEditClick(user)}>Edit</Button>
-                      {/* Use AlertDialogTrigger for the reset button */}
-                      <AlertDialog open={showResetConfirm && userToReset?.id === user.id} onOpenChange={(open) => { if (!open) closeResetDialog(); }}>
+                      {/* Use AlertDialogTrigger for the reset button - open controlled by userToReset state */}
+                      <AlertDialog open={userToReset?.id === user.id} onOpenChange={(open) => { if (!open) closeResetDialog(); }}>
                         <AlertDialogTrigger asChild>
                           <Button variant="destructive" size="sm" onClick={() => handleResetPasswordClick(user)}>Reset PW</Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
                             <AlertDialogTitle>Reset Password for {userToReset?.username}?</AlertDialogTitle>
-                            {newPassword ? (
-                              <AlertDialogDescription>
-                                Password has been reset. The temporary password is:
-                                <strong className="block text-lg my-2 p-2 bg-muted rounded">{newPassword}</strong>
-                                Please provide this to the user immediately. They should change it upon next login.
-                              </AlertDialogDescription>
-                            ) : (
-                              <AlertDialogDescription>
-                                This action cannot be undone. A new temporary password will be generated.
-                              </AlertDialogDescription>
-                            )}
+                            {/* Always show the confirmation message */}
+                            <AlertDialogDescription>
+                              This action cannot be undone. A new temporary password will be generated and shown in a notification.
+                            </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            {newPassword ? (
-                              <AlertDialogAction onClick={closeResetDialog}>Close</AlertDialogAction>
-                            ) : (
-                              <>
-                                <AlertDialogCancel onClick={closeResetDialog}>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={confirmPasswordReset} disabled={resetPasswordMutation.isPending}>
-                                  {resetPasswordMutation.isPending ? 'Resetting...' : 'Confirm Reset'}
-                                </AlertDialogAction>
-                              </>
-                            )}
+                            {/* Always show Cancel and Confirm */}
+                            <>
+                              <AlertDialogCancel onClick={closeResetDialog}>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={confirmPasswordReset} disabled={resetPasswordMutation.isPending}>
+                                {resetPasswordMutation.isPending ? 'Resetting...' : 'Confirm Reset'}
+                              </AlertDialogAction>
+                            </>
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
@@ -235,7 +280,7 @@ const AdminUserManagement: React.FC = () => {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={9} className="text-center">No users found.</TableCell> {/* Adjusted colSpan */}
+                <TableCell colSpan={10} className="text-center">No users found.</TableCell> {/* Adjusted colSpan */}
               </TableRow>
             )}
           </TableBody>
@@ -251,6 +296,10 @@ const AdminUserManagement: React.FC = () => {
         user={selectedUser}
         isOpen={isViewSelectionsModalOpen}
         onClose={handleCloseViewSelectionsModal}
+      />
+      <CreateUserModal
+        isOpen={isCreateModalOpen}
+        onClose={handleCloseCreateModal}
       />
     </Card>
   );
