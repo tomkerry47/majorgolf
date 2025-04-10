@@ -168,6 +168,7 @@ app.use((req, res, next) => {
     console.log("Setting up static serving in production mode");
     // --- Production Static Serving Logic ---
     const distPath = path.resolve(__dirname, "public"); // dist/public relative to project root
+    console.log(`[Production Static] Calculated distPath: ${distPath}`); // Log the calculated path
     if (!fs.existsSync(distPath)) {
       // Log error and potentially exit or throw, as the app can't serve the frontend
       console.error(`Build directory not found at: ${distPath}. Cannot serve static assets.`);
