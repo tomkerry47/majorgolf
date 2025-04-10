@@ -62,14 +62,14 @@ export default function Competitions() {
 
     let status;
     let statusClass;
-    
-    if (competition.isActive) {
-      status = "Active";
-      statusClass = "bg-amber-500/10 text-amber-700 border-amber-200";
-    } else if (competition.isComplete) {
+
+    if (competition.isComplete) { // Check if complete first
       status = "Completed";
       statusClass = "bg-slate-500/10 text-slate-700 border-slate-200";
-    } else {
+    } else if (competition.isActive) { // Then check if active
+      status = "Active";
+      statusClass = "bg-amber-500/10 text-amber-700 border-amber-200";
+    } else { // Otherwise it's upcoming
       status = "Upcoming";
       statusClass = "bg-primary/10 text-primary border-primary/20";
     }
@@ -115,24 +115,37 @@ export default function Competitions() {
             </div>
             
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-4 sm:mt-0"> {/* Container for buttons */}
-              {/* View Competition Button (Always Enabled) */}
-              <Link href={`/competitions/${competition.id}`} className="w-full sm:w-auto">
-                <Button size="sm" variant="secondary" className="w-full"> 
-                  View Competition
-                </Button>
-              </Link>
+              {/* Conditionally render buttons based on completion status */}
+              {competition.isComplete ? (
+                // Only show View Results button if complete
+                <Link href={`/competitions/${competition.id}`} className="w-full sm:w-auto">
+                  <Button size="sm" variant="default" className="w-full">
+                    View Results
+                  </Button>
+                </Link>
+              ) : (
+                // Show both buttons if not complete
+                <>
+                  {/* View Competition Button */}
+                  <Link href={`/competitions/${competition.id}`} className="w-full sm:w-auto">
+                    <Button size="sm" variant="secondary" className="w-full"> 
+                      View Competition
+                    </Button>
+                  </Link>
 
-              {/* Make/Change Selections Button (Conditionally Enabled) */}
-              <Link href={`/competitions/${competition.id}`} className="w-full sm:w-auto">
-                <Button 
-                  size="sm" 
-                  variant={hasSubmitted ? "outline" : "default"} // Use passed prop
-                  className="w-full" // Make button full width on small screens
-                  disabled={!canMakeSelection} 
-                >
-                  {competition.isComplete ? "View Results" : (hasSubmitted ? "Change Selections" : "Make Selections")} {/* Use passed prop */}
-                </Button>
-              </Link>
+                  {/* Make/Change Selections Button */}
+                  <Link href={`/competitions/${competition.id}`} className="w-full sm:w-auto">
+                    <Button 
+                      size="sm" 
+                      variant={hasSubmitted ? "outline" : "default"} // Use passed prop
+                      className="w-full" // Make button full width on small screens
+                      disabled={!canMakeSelection} 
+                    >
+                      {hasSubmitted ? "Change Selections" : "Make Selections"} {/* Use passed prop */}
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </CardContent>
