@@ -36,10 +36,8 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
         open ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}>
         <div className="flex flex-col flex-grow pt-5 bg-secondary overflow-y-auto [&_*]:text-black"> {/* Force all elements to be black */}
-          <div className="flex items-center flex-shrink-0 px-4 mb-5">
-            <span className="text-xl font-semibold text-black">Golf Syndicate</span>
-          </div>
-          <nav className="flex-1 px-2 pb-4 space-y-1">
+          {/* Removed the div containing the "Golf Syndicate" title */}
+          <nav className="flex-1 px-2 pb-4 space-y-1 pt-5"> {/* Added pt-5 to compensate for removed title div */}
             <Link 
               href="/"
               className={cn(
@@ -90,7 +88,8 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
                   href="/admin"
                   className={cn(
                     "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
-                    isActivePath('/admin') && !isActivePath('/admin/point-system') ? "bg-primary" : "hover:bg-primary/20"
+                    // Only active if exactly '/admin', not sub-paths
+                    location === '/admin' ? "bg-primary" : "hover:bg-primary/20" 
                   )}
                   onClick={closeSidebar}
                 >
@@ -99,6 +98,7 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
                 </Link>
                 {/* Removed Point System Link */}
                 {/* Removed Tournament Results Link */}
+                {/* Removed User Management Link */}
                </>
              )}
            </nav>

@@ -1,0 +1,102 @@
+# Azure DevOps Pipeline for deploying Node.js App to Azure App Service (Linux)
+
+trigger:
+- main # Trigger deployment on pushes to the main branch
+
+variables:
+  # Define variables for your Azure resources
+  # Recommendation: Store secrets like AZURE_SUBSCRIPTION in a Variable Group linked to the pipeline
+  # Create a Service Connection in Project Settings -> Service connections -> New service connection -> Azure Resource Manager
+  azureSubscription: 'YOUR_AZURE_SERVICE_CONNECTION_NAME' # The name of your Azure Service Connection
+  resourceGroupName: 'YOUR_RESOURCE_GROUP_NAME'          # The name of the Azure Resource Group you created
+  webAppName: 'YOUR_AZURE_APP_SERVICE_NAME'             # The name of the Azure App Service instance you created
+  nodeVersion: '20.x'                                   # Specify Node.js version (matches package.json and App Service runtime)
+  vmImageName: 'ubuntu-latest'                          # Build agent image
+
+stages:
+- stage: Build
+  displayName: Build stage
+  jobs:
+  - job: BuildJob
+    displayName: Build Job
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: $(nodeVersion)
+      displayName: 'Install Node.js $(nodeVersion)'
+
+    - script: npm install
+      displayName: 'npm install (dependencies)'
+
+    - script: npm run build
+      displayName: 'npm run build (Vite client + esbuild server)'
+      env:
+        NODE_ENV: 'production' # Ensure build runs in production mode
+
+    # Archive the necessary files for deployment artifact
+    # Includes the built server (dist/), built client (dist/public/), package files for runtime install, etc.
+    - task: ArchiveFiles@2
+      displayName: 'Archive deployment package'
+      inputs:
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+        replaceExistingArchive: true
+        # Explicitly include only what's needed for runtime to keep the package small
+        # - dist/ contains the built server and client assets
+        # - package.json and package-lock.json are needed by App Service for 'npm install --production'
+        # - node_modules is excluded; App Service will handle production dependencies
+        # - Ensure any other necessary runtime files/folders are included if needed
+        # filesToInclude: |
+        #  dist/**
+        #  package.json
+        #  package-lock.json
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifact: drop'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop' # Name of the artifact containing the zip file
+        publishLocation: 'Container'
+
+- stage: Deploy
+  displayName: Deploy stage
+  dependsOn: Build
+  condition: succeeded() # Only run if Build stage succeeded
+  jobs:
+  - deployment: DeployJob # Use deployment job for traceability and environment targeting
+    displayName: Deploy to Azure App Service
+    environment: 'production' # Optional: Define an environment in Azure DevOps for approval gates, etc.
+    pool:
+      vmImage: $(vmImageName)
+    strategy:
+      runOnce: # Simple deployment strategy
+        deploy:
+          steps:
+          # Download the build artifact (the zip file)
+          - task: DownloadBuildArtifacts@1
+            displayName: 'Download artifact: drop'
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: 'drop'
+              downloadPath: '$(System.ArtifactsDirectory)'
+
+          # Deploy to Azure App Service
+          - task: AzureWebApp@1
+            displayName: 'Deploy Azure App Service: $(webAppName)'
+            inputs:
+              azureSubscription: '$(azureSubscription)' # Service Connection name
+              appType: 'webAppLinux'                   # Deploying to Linux App Service
+              appName: '$(webAppName)'                 # Target App Service name
+              resourceGroupName: '$(resourceGroupName)' # Target Resource Group name
+              package: '$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip' # Path to the zip file artifact
+              runtimeStack: 'NODE|$(nodeVersion)'      # Specify the runtime stack (matches build)
+              startupCommand: 'npm start'              # Command from package.json to start the app
+              # App Settings can be set here, but it's better practice to manage secrets/configs
+              # in Azure Portal or Azure DevOps Variable Groups linked to the pipeline.
+              # Example: appSettings: '-NODE_ENV production -DATABASE_URL $(dbUrlFromVariableGroup)'
+              # Ensure DATABASE_URL, JWT_SECRET, NODE_ENV=production are set in Azure App Service Configuration.

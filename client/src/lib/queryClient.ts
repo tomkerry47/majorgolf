@@ -20,24 +20,19 @@ export async function apiRequest<T = any>(
   method: string = 'GET',
   data?: unknown | undefined,
 ): Promise<T> {
-  // Get token from localStorage
+  // Restored header logic
   const token = getToken();
-  
   const headers: Record<string, string> = {};
-  
-  // Add Content-Type for requests with body
   if (data) {
     headers["Content-Type"] = "application/json";
   }
-  
-  // Add Authorization header if token exists
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  
+
   const res = await fetch(url, {
     method,
-    headers,
+    headers, // Restored headers
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });

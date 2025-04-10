@@ -21,7 +21,8 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, userData: Partial<User>): Promise<User>;
-  getAllUsers(): Promise<User[]>;
+  getAllUsers(): Promise<User[]>; // Will update this to include selection count
+  updateUserPassword(id: number, passwordHash: string): Promise<void>; // Added method for password reset
   hasUsedWaiverChip(userId: number): Promise<boolean>;
   markWaiverChipAsUsed(userId: number): Promise<User>;
 
@@ -43,7 +44,8 @@ export interface IStorage {
 
   // Selection methods
   getUserSelections(userId: number, competitionId: number): Promise<Selection | undefined>;
-  getUserSelectionsForAllCompetitions(userId: number): Promise<Selection[]>; // Added method
+  getUserSelectionsForAllCompetitions(userId: number): Promise<any[]>; // Return type updated
+  getUserSelectionsDetails(userId: number): Promise<any[]>; // Added method for admin view
   getSelectionById(id: number): Promise<Selection | undefined>;
   hasUsedCaptainsChip(userId: number): Promise<boolean>;
   getAllSelections(competitionId: number): Promise<Selection[]>;
@@ -77,7 +79,8 @@ export interface IStorage {
   deleteWildcardGolfer(id: number): Promise<void>;
 
   // Leaderboard methods
-  getLeaderboard(competitionId?: number): Promise<any[]>;
+  // Return type updated to include lastUpdated timestamp
+  getLeaderboard(competitionId?: number): Promise<{ standings: any[], lastUpdated?: string | null }>;
 
   // Hole In One methods
   getHoleInOnes(competitionId: number): Promise<HoleInOne[]>;
@@ -93,13 +96,18 @@ export interface IStorage {
   captureSelectionRanksForCompetition(competitionId: number): Promise<{ success: boolean; count: number; errors: number }>;
 }
 
-// Helper function to convert DB user to User interface type
-function formatUserForResponse(user: any): User | undefined {
+// Helper function to convert DB user to User interface type, now includes selectionCount and captain chip status
+function formatUserForResponse(user: any, selectionCount?: number, hasUsedCaptainsChip?: boolean): User | undefined {
   if (!user) return undefined;
-  
+
+  // Format dates and handle potential nulls/undefined
+  // Add hasUsedCaptainsChip to the returned object
   return {
     ...user,
-    createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt
+    createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt,
+    lastLoginAt: user.lastLoginAt instanceof Date ? user.lastLoginAt.toISOString() : user.lastLoginAt ?? null, // Format lastLoginAt if it exists
+    selectionCount: selectionCount ?? 0, // Add selection count
+    hasUsedCaptainsChip: hasUsedCaptainsChip ?? false // Add captain chip status
   };
 }
 
@@ -158,6 +166,11 @@ export class DatabaseStorage implements IStorage {
     if (typeof dataToUpdate.createdAt === 'string') {
       dataToUpdate.createdAt = new Date(dataToUpdate.createdAt);
     }
+    // Add check for lastLoginAt
+    if (typeof dataToUpdate.lastLoginAt === 'string') {
+      dataToUpdate.lastLoginAt = new Date(dataToUpdate.lastLoginAt);
+    }
+
 
     const [user] = await db
       .update(users)
@@ -167,9 +180,30 @@ export class DatabaseStorage implements IStorage {
     return formatUserForResponse(user)!;
   }
 
-  async getAllUsers(): Promise<User[]> {
-    const userList = await db.select().from(users).orderBy(users.username);
-    return userList.map(user => formatUserForResponse(user)!) as User[];
+  async getAllUsers(): Promise<User[]> { // Updated to include selection count
+    // Fetch users and join with selections to count them
+    // Fetch users and join with selections to count them AND check for captain chip usage
+    const userListWithDetails = await db
+      .select({
+        user: users,
+        selectionCount: sql<number>`count(distinct ${selections.id})`.mapWith(Number), // Count distinct selections
+        hasUsedCaptainsChip: sql<boolean>`BOOL_OR(${selections.useCaptainsChip})`.mapWith(Boolean) // Check if any selection used the chip
+      })
+      .from(users)
+      .leftJoin(selections, eq(users.id, selections.userId)) // Join selections
+      .groupBy(users.id) // Group by user
+      .orderBy(users.username);
+
+    // Map the result using the updated helper function
+    return userListWithDetails.map(item => formatUserForResponse(item.user, item.selectionCount, item.hasUsedCaptainsChip)!) as User[];
+  }
+
+
+  async updateUserPassword(id: number, passwordHash: string): Promise<void> {
+    await db
+      .update(users)
+      .set({ password: passwordHash })
+      .where(eq(users.id, id));
   }
 
   // Competition methods
@@ -362,7 +396,9 @@ export class DatabaseStorage implements IStorage {
       .select({
         id: golfers.id,
         name: golfers.name,
-        shortName: golfers.shortName, // Select shortName
+        shortName: golfers.shortName,
+        firstName: golfers.firstName, // Select firstName
+        lastName: golfers.lastName,   // Select lastName
         rank: golfers.rank,
         avatarUrl: golfers.avatarUrl
       })
@@ -372,10 +408,13 @@ export class DatabaseStorage implements IStorage {
     if (!result) return undefined;
 
     // Convert to Golfer type with optional fields
+    // Convert to Golfer type with optional fields
     return {
       ...result,
-      shortName: result.shortName ?? null, // Handle null shortName
-      country: undefined, 
+      shortName: result.shortName ?? null,
+      firstName: result.firstName ?? null, // Add firstName
+      lastName: result.lastName ?? null,   // Add lastName
+      country: undefined,
       createdAt: undefined,
       avatarUrl: result.avatarUrl || undefined
     } as Golfer;
@@ -502,26 +541,20 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(userPoints, and(eq(selections.userId, userPoints.userId), eq(selections.competitionId, userPoints.competitionId)))
       .orderBy(desc(competitions.startDate)); // Order by competition start date
 
-    // Fetch results separately for each competition to avoid complex joins/aggregation in the main query
+    // Fetch results separately for each competition
     const competitionIds = userSelectionsData
       .map(s => s.selection.competitionId)
-      .filter(id => typeof id === 'number' && !isNaN(id)); // Ensure only valid numbers
+      .filter((id): id is number => typeof id === 'number' && !isNaN(id)); // Type guard
 
-    console.log(`[Storage] getUserSelectionsForAllCompetitions - Filtered Competition IDs for results query:`, competitionIds); // Log the IDs
+    console.log(`[Storage] getUserSelectionsForAllCompetitions - Filtered Competition IDs for results/ranks query:`, competitionIds);
 
-    // Check if competitionIds is actually an array of numbers
-    if (!Array.isArray(competitionIds) || competitionIds.some(id => typeof id !== 'number')) {
-      console.error('[Storage] getUserSelectionsForAllCompetitions - Error: competitionIds is not a valid array of numbers:', competitionIds);
-      // Handle error appropriately, maybe return empty results or throw
-      return []; // Or throw new Error('Invalid competition IDs derived');
-    }
-
+    // Fetch all results for these competitions
     const allResults = competitionIds.length > 0 ? await db
       .select()
       .from(results)
-      .where(inArray(results.competitionId, competitionIds)) : []; // Revert back to inArray
+      .where(inArray(results.competitionId, competitionIds)) : [];
 
-    // Map results by competitionId and golferId for easy lookup
+    // Map results by competitionId and golferId
     const resultsMap = new Map<string, Result>();
     allResults.forEach(r => {
       resultsMap.set(`${r.competitionId}-${r.golferId}`, {
@@ -531,6 +564,21 @@ export class DatabaseStorage implements IStorage {
       } as Result);
     });
 
+    // Fetch all selection ranks for this user and these competitions
+    const allRanks = competitionIds.length > 0 ? await db
+      .select()
+      .from(selectionRanks)
+      .where(and(
+        eq(selectionRanks.userId, userId),
+        inArray(selectionRanks.competitionId, competitionIds)
+      )) : [];
+
+    // Map ranks by competitionId and golferId
+    const ranksMap = new Map<string, number | undefined>();
+    allRanks.forEach(r => {
+      ranksMap.set(`${r.competitionId}-${r.golferId}`, r.rankAtDeadline);
+    });
+
     // Format the data for the frontend
     return userSelectionsData.map(data => {
       const selection = data.selection;
@@ -538,6 +586,11 @@ export class DatabaseStorage implements IStorage {
       const golfer1Result = resultsMap.get(`${selection.competitionId}-${selection.golfer1Id}`);
       const golfer2Result = resultsMap.get(`${selection.competitionId}-${selection.golfer2Id}`);
       const golfer3Result = resultsMap.get(`${selection.competitionId}-${selection.golfer3Id}`);
+
+      // Get ranks for wildcard check
+      const rank1 = ranksMap.get(`${selection.competitionId}-${selection.golfer1Id}`);
+      const rank2 = ranksMap.get(`${selection.competitionId}-${selection.golfer2Id}`);
+      const rank3 = ranksMap.get(`${selection.competitionId}-${selection.golfer3Id}`);
 
       // Helper to safely format dates
       const formatDate = (dateValue: string | Date | null | undefined): string | null => {
@@ -565,9 +618,27 @@ export class DatabaseStorage implements IStorage {
           isComplete: competition.isComplete,
           // createdAt removed as it's not selected/needed
         } : null,
-        golfer1: data.golfer1?.id ? { id: data.golfer1.id, name: data.golfer1.name, avatar: data.golfer1.avatarUrl } : null, // Added null checks
-        golfer2: data.golfer2?.id ? { id: data.golfer2.id, name: data.golfer2.name, avatar: data.golfer2.avatarUrl } : null, // Added null checks
-        golfer3: data.golfer3?.id ? { id: data.golfer3.id, name: data.golfer3.name, avatar: data.golfer3.avatarUrl } : null, // Added null checks
+        golfer1: data.golfer1?.id ? { 
+          id: data.golfer1.id, 
+          name: data.golfer1.name, 
+          avatar: data.golfer1.avatarUrl,
+          isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer1.id,
+          isWildcard: rank1 !== undefined && rank1 >= 51
+        } : null,
+        golfer2: data.golfer2?.id ? { 
+          id: data.golfer2.id, 
+          name: data.golfer2.name, 
+          avatar: data.golfer2.avatarUrl,
+          isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer2.id,
+          isWildcard: rank2 !== undefined && rank2 >= 51
+        } : null,
+        golfer3: data.golfer3?.id ? { 
+          id: data.golfer3.id, 
+          name: data.golfer3.name, 
+          avatar: data.golfer3.avatarUrl,
+          isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer3.id,
+          isWildcard: rank3 !== undefined && rank3 >= 51
+        } : null,
         golfer1Result: golfer1Result ? { position: golfer1Result.position, points: golfer1Result.points } : null,
         golfer2Result: golfer2Result ? { position: golfer2Result.position, points: golfer2Result.points } : null,
         golfer3Result: golfer3Result ? { position: golfer3Result.position, points: golfer3Result.points } : null,
@@ -738,13 +809,95 @@ export class DatabaseStorage implements IStorage {
     return 1; // Placeholder: Adjust based on actual Drizzle delete return value inspection
   }
 
+  // Get detailed selections for a specific user (for admin view)
+  async getUserSelectionsDetails(userId: number): Promise<any[]> {
+    // This logic is identical to getUserSelectionsForAllCompetitions, just filtered by userId
+    // Consider refactoring later if needed
+    const golfer1 = alias(golfers, "golfer1"); 
+    const golfer2 = alias(golfers, "golfer2"); 
+    const golfer3 = alias(golfers, "golfer3"); 
+
+    const userSelectionsData = await db
+      .select({
+        selection: selections,
+        competition: competitions,
+        golfer1: { id: golfer1.id, name: golfer1.name, avatarUrl: golfer1.avatarUrl, rank: golfer1.rank }, // Include rank
+        golfer2: { id: golfer2.id, name: golfer2.name, avatarUrl: golfer2.avatarUrl, rank: golfer2.rank }, // Include rank
+        golfer3: { id: golfer3.id, name: golfer3.name, avatarUrl: golfer3.avatarUrl, rank: golfer3.rank }, // Include rank
+        userPoints: userPoints 
+      })
+      .from(selections)
+      .where(eq(selections.userId, userId)) // Filter by the specific user ID
+      .leftJoin(competitions, eq(selections.competitionId, competitions.id))
+      .leftJoin(golfer1, eq(selections.golfer1Id, golfer1.id))
+      .leftJoin(golfer2, eq(selections.golfer2Id, golfer2.id))
+      .leftJoin(golfer3, eq(selections.golfer3Id, golfer3.id))
+      .leftJoin(userPoints, and(eq(selections.userId, userPoints.userId), eq(selections.competitionId, userPoints.competitionId)))
+      .orderBy(desc(competitions.startDate)); 
+
+    // Fetch results separately for each competition the user participated in
+    const competitionIds = userSelectionsData
+      .map(s => s.selection.competitionId)
+      .filter((id): id is number => typeof id === 'number' && !isNaN(id)); 
+
+    const allResults = competitionIds.length > 0 ? await db
+      .select()
+      .from(results)
+      .where(and(
+        eq(results.competitionId, competitionIds[0]), // Assuming results are per competition, adjust if needed
+        inArray(results.golferId, userSelectionsData.flatMap(s => [s.selection.golfer1Id, s.selection.golfer2Id, s.selection.golfer3Id]))
+      )) : []; // Fetch results only for golfers in this user's selections for relevant comps
+
+    // Map results by competitionId and golferId
+    const resultsMap = new Map<string, Result>();
+    allResults.forEach(r => {
+      resultsMap.set(`${r.competitionId}-${r.golferId}`, {
+        ...r,
+        points: r.points || undefined,
+        created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at
+      } as Result);
+    });
+    
+    // No need to fetch ranks again if they are static per golfer (assuming getGolfers already has rank)
+    // If ranks change per competition deadline, fetch from selectionRanks table as in getUserSelectionsForAllCompetitions
+
+    // Format the data
+    return userSelectionsData.map(data => {
+      const selection = data.selection;
+      const competition = data.competition;
+      const golfer1Result = resultsMap.get(`${selection.competitionId}-${selection.golfer1Id}`);
+      const golfer2Result = resultsMap.get(`${selection.competitionId}-${selection.golfer2Id}`);
+      const golfer3Result = resultsMap.get(`${selection.competitionId}-${selection.golfer3Id}`);
+
+      const formatDate = (dateValue: string | Date | null | undefined): string | null => {
+        return dateValue ? new Date(dateValue).toISOString() : null;
+      };
+
+      return {
+        selectionId: selection.id,
+        competitionId: selection.competitionId,
+        competitionName: competition?.name || 'N/A',
+        competitionStartDate: formatDate(competition?.startDate),
+        isCompetitionComplete: competition?.isComplete ?? false,
+        golfer1: data.golfer1?.id ? { id: data.golfer1.id, name: data.golfer1.name, rank: data.golfer1.rank, result: golfer1Result ? { position: golfer1Result.position, points: golfer1Result.points } : null } : null,
+        golfer2: data.golfer2?.id ? { id: data.golfer2.id, name: data.golfer2.name, rank: data.golfer2.rank, result: golfer2Result ? { position: golfer2Result.position, points: golfer2Result.points } : null } : null,
+        golfer3: data.golfer3?.id ? { id: data.golfer3.id, name: data.golfer3.name, rank: data.golfer3.rank, result: golfer3Result ? { position: golfer3Result.position, points: golfer3Result.points } : null } : null,
+        useCaptainsChip: selection.useCaptainsChip,
+        captainGolferId: selection.captainGolferId,
+        totalPoints: data.userPoints?.points || 0,
+      };
+    });
+  }
+
+
   // Results methods
   async getResults(competitionId: number): Promise<Result[]> {
     const resultsData = await db
       .select()
       .from(results)
       .where(eq(results.competitionId, competitionId))
-      .orderBy(results.position);
+      // Sort by position, but treat 0 as the highest number (put CUT/WD at the bottom)
+      .orderBy(sql`(CASE WHEN position = 0 THEN 1 ELSE 0 END), position ASC`);
 
     // Format for Result interface
     return resultsData.map(r => ({
@@ -1043,7 +1196,38 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Leaderboard methods
-  async getLeaderboard(competitionId?: number): Promise<any[]> {
+  async getLeaderboard(competitionId?: number): Promise<{ standings: any[], lastUpdated?: string | null }> {
+    let lastUpdated: string | null = null;
+    let latestCompId: number | null = null;
+
+    // Find the latest update timestamp and the ID of the most recently completed competition
+    try {
+      if (competitionId) {
+        // For specific competition, find the latest update within that competition
+        const lastUpdateRes = await db.select({ updatedAt: sql<string>`MAX(updated_at)` })
+                                      .from(userPoints)
+                                      .where(eq(userPoints.competitionId, competitionId));
+        lastUpdated = lastUpdateRes[0]?.updatedAt ?? null;
+        latestCompId = competitionId; // The "latest" competition is the one selected
+      } else {
+        // For overall, find the overall latest update time
+        const lastUpdateRes = await db.select({ updatedAt: sql<string>`MAX(updated_at)` }).from(userPoints);
+        lastUpdated = lastUpdateRes[0]?.updatedAt ?? null;
+
+        // Find the ID of the most recently completed competition
+        const latestCompRes = await db.select({ id: competitions.id })
+                                      .from(competitions)
+                                      .where(eq(competitions.isComplete, true))
+                                      .orderBy(desc(competitions.endDate))
+                                      .limit(1);
+        latestCompId = latestCompRes[0]?.id ?? null;
+      }
+    } catch (e) {
+       console.error("Error fetching last updated time or latest competition:", e);
+       // Continue without lastUpdated or lastPointsChange if this fails
+    }
+
+
     // If we're querying for a specific competition
     if (competitionId) {
       const leaderboardQuery = `
@@ -1054,6 +1238,8 @@ export class DatabaseStorage implements IStorage {
           u."avatarUrl",
           up.points,
           up.details,
+          -- Fetch points from the specific competition for 'lastPointsChange'
+          (SELECT points FROM user_points up_last WHERE up_last."userId" = u.id AND up_last."competitionId" = $1) as "lastPointsChange",
           ROW_NUMBER() OVER (ORDER BY up.points DESC) AS rank
         FROM 
           user_points up
@@ -1062,14 +1248,17 @@ export class DatabaseStorage implements IStorage {
         WHERE 
           up."competitionId" = $1
         ORDER BY 
-          up.points DESC
+          up.points DESC NULLS LAST
       `;
 
       const result = await pgClient.query(leaderboardQuery, [competitionId]);
-      return result.rows;
+      // Add null check for lastPointsChange
+      const standings = result.rows.map(row => ({ ...row, lastPointsChange: row.lastPointsChange ?? null }));
+      return { standings, lastUpdated };
     }
 
     // Otherwise get the overall leaderboard
+    // We need the latest completed competition ID to fetch last points
     const overallLeaderboardQuery = `
       SELECT 
         u.id AS "userId",
@@ -1077,6 +1266,8 @@ export class DatabaseStorage implements IStorage {
         u.email,
         u."avatarUrl",
         SUM(up.points) AS points,
+        -- Fetch points from the latest completed competition (if found)
+        (SELECT points FROM user_points up_last WHERE up_last."userId" = u.id AND up_last."competitionId" = ${latestCompId ?? 'NULL'}) as "lastPointsChange",
         ROW_NUMBER() OVER (ORDER BY SUM(up.points) DESC) AS rank
       FROM 
         users u
@@ -1085,11 +1276,13 @@ export class DatabaseStorage implements IStorage {
       GROUP BY 
         u.id, u.username, u.email, u."avatarUrl"
       ORDER BY 
-        points DESC
+        points DESC NULLS LAST
     `;
 
     const result = await pgClient.query(overallLeaderboardQuery);
-    return result.rows;
+    // Add null check for lastPointsChange
+    const standings = result.rows.map(row => ({ ...row, lastPointsChange: row.lastPointsChange ?? null }));
+    return { standings, lastUpdated };
   }
 
   // Hole In One methods

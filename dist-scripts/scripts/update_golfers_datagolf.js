@@ -55,31 +55,49 @@ async function updateGolfersFromDataGolf() {
         // Make filter more specific: find script whose content *starts* with the assignment
         const scriptContent = $('script').filter((i, el) => {
             const htmlContent = $(el).html()?.trim(); // Get trimmed content
-            return htmlContent?.startsWith('reload_data = JSON.parse') ?? false;
+            return htmlContent?.includes('reload_data = JSON.parse') ?? false;
         }).html();
         if (!scriptContent) {
             throw new Error('Could not find the script tag containing reload_data.');
         }
         console.log('Found script tag. Raw content length:', scriptContent.length); // Log raw content length
-        // More robust JSON extraction
-        let jsonString = scriptContent.trim();
-        const prefix = 'reload_data = JSON.parse(';
-        const suffix = ');';
-        // Removed the start/end logging as it's no longer needed with the improved filter
-        if (jsonString.startsWith(prefix) && jsonString.endsWith(suffix)) {
-            jsonString = jsonString.substring(prefix.length, jsonString.length - suffix.length);
-            if ((jsonString.startsWith("'") && jsonString.endsWith("'")) || (jsonString.startsWith('"') && jsonString.endsWith('"'))) {
-                jsonString = jsonString.substring(1, jsonString.length - 1);
-            }
+        // More robust JSON extraction using Regex
+        let jsonString = '';
+        // Try non-greedy match first for single quotes
+        const regex = /reload_data\s*=\s*JSON\.parse\(\s*'(.*?)'\s*\);/s; // Use non-greedy .*?
+        const match = scriptContent.match(regex);
+        if (match && match[1]) {
+            jsonString = match[1];
+            // Manual unescaping might still be needed if the source escapes quotes within the string literal
             try {
-                jsonString = jsonString.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                // Handle escaped single quotes and backslashes within the JSON string literal
+                jsonString = jsonString.replace(/\\'/g, "'").replace(/\\\\/g, '\\');
+                // Note: We don't need to unescape double quotes (\") here because the outer quotes are single (')
             }
             catch (e) {
                 console.error("Error during manual unescaping:", e);
+                // Decide if you want to throw or continue with potentially problematic string
             }
         }
         else {
-            throw new Error('Script content format unexpected. Could not isolate JSON string.');
+            // Fallback for double quotes (also non-greedy)
+            const doubleQuoteRegex = /reload_data\s*=\s*JSON\.parse\(\s*"(.*?)"\s*\);/s; // Use non-greedy .*?
+            const doubleQuoteMatch = scriptContent.match(doubleQuoteRegex);
+            if (doubleQuoteMatch && doubleQuoteMatch[1]) {
+                jsonString = doubleQuoteMatch[1];
+                try {
+                    // Handle escaped double quotes and backslashes
+                    jsonString = jsonString.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                    // Note: We don't need to unescape single quotes (\') here
+                }
+                catch (e) {
+                    console.error("Error during manual unescaping (double quotes):", e);
+                }
+            }
+            else {
+                console.error("Failed to find reload_data JSON string with regex. Script content snippet:", scriptContent.substring(0, 500)); // Log snippet
+                throw new Error('Script content format unexpected. Could not isolate JSON string using regex.');
+            }
         }
         console.log('Extracted JSON string (before parsing, length):', jsonString.length); // Log extracted string length
         let leaderboardJson;
@@ -114,7 +132,12 @@ async function updateGolfersFromDataGolf() {
             }
             const fullName = `${firstName} ${lastName}`;
             const shortName = createShortName(firstName, lastName);
-            const rank = parseInt(golferData.rank, 10); // Use OWGR rank
+            let rank = parseInt(golferData.rank, 10); // Use OWGR rank
+            // Check for -9999 rank and replace with 500
+            if (rank === -9999) {
+                console.log(`Adjusting rank for ${fullName} from -9999 to 500.`);
+                rank = 500;
+            }
             if (isNaN(rank)) {
                 console.warn(`Skipping golfer ${fullName} due to invalid rank: ${golferData.rank}`);
                 skippedCount++;

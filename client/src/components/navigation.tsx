@@ -67,12 +67,9 @@ const Navigation = () => {
   return (
     <header className="bg-primary-600 text-white shadow-md">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-        <div className="flex items-center space-x-2">
-          <Shield className="h-8 w-8" />
-          <h1 className="text-xl font-bold">Golf Syndicate Tracker</h1>
-        </div>
+        {/* Removed the div containing the Shield icon and title */}
         
-        {/* Mobile menu button */}
+        {/* Mobile menu button - Kept for mobile navigation toggle */}
         <button type="button" className="block sm:hidden text-white focus:outline-none" onClick={toggleMobileMenu}>
           {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>

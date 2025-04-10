@@ -1,5 +1,5 @@
 import 'dotenv/config'; // Load .env file variables
-import { pool } from '../server/db';
+import { pool } from '../server/db.js';
 
 async function clearUserPoints() {
   console.log('Attempting to clear user_points table...');

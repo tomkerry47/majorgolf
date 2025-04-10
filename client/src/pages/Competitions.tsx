@@ -77,6 +77,14 @@ export default function Competitions() {
     return (
       <Card className="mb-4">
         <CardContent className="p-6">
+          {/* Add Competition Image */}
+          {competition.imageUrl && (
+            <img
+              src={competition.imageUrl}
+              alt={`${competition.name} banner`}
+              className="w-full max-h-24 object-cover rounded-md mb-4" // Full width, max height 24 (6rem), cover, rounded corners, margin bottom
+            />
+          )}
           <div className="flex justify-between items-start">
             <div>
               <div className="flex items-center mb-2">

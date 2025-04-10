@@ -33,4 +33,5 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
   },
+  // Removed server.proxy configuration as it's not needed in middleware mode
 });

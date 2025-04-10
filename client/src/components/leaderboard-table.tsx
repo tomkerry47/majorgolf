@@ -16,7 +16,8 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+// Import AvatarImage as well
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 // Define leaderboard entry type
 interface LeaderboardEntry {
@@ -30,7 +31,7 @@ interface LeaderboardEntry {
     playerName: string;
     position?: number;
   }[];
-  lastPointsChange?: number; // Make lastPointsChange optional
+  lastPointsChange?: number | null; // Allow null as well
 }
 
 interface LeaderboardTableProps {
@@ -41,7 +42,7 @@ interface LeaderboardTableProps {
 
 const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) => {
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const itemsPerPage = 30; // Changed from 10 to 30
   
   // Calculate pagination
   const totalPages = Math.ceil(data.length / itemsPerPage);
@@ -176,15 +177,18 @@ const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) =>
                 <TableCell className="font-medium">{entry.rank}</TableCell>
                 <TableCell>
                   <div className="flex items-center">
-                    <Avatar className="h-8 w-8 mr-4">
-                      {entry.avatarUrl && <img src={entry.avatarUrl} alt={entry.username} />}
+                    {/* Add flex-shrink-0 to prevent avatar shrinking */}
+                    <Avatar className="h-9 w-9 mr-4 overflow-hidden flex-shrink-0">
+                      {/* Use AvatarImage component */}
+                      <AvatarImage src={entry.avatarUrl} alt={entry.username} className="object-cover" />
                       <AvatarFallback className="bg-primary-600 text-white">
                         {entry.username.slice(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{entry.username}</div>
-                      <div className="text-sm text-gray-500">@{entry.username.toLowerCase().replace(/\s+/g, '')}</div>
+                    {/* Add min-w-0 to allow shrinking and truncate for text overflow */}
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">{entry.username}</div>
+                      <div className="text-sm text-gray-500 truncate">@{entry.username.toLowerCase().replace(/\s+/g, '')}</div>
                     </div>
                   </div>
                 </TableCell>
@@ -208,23 +212,22 @@ const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) =>
                   })()}
                 </TableCell>
                 <TableCell>
-                  {/* Conditionally render last points change */}
-                  {entry.lastPointsChange !== undefined ? (
+                  {/* Conditionally render last points change, checking for null/undefined */}
+                  {entry.lastPointsChange !== undefined && entry.lastPointsChange !== null ? (
                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full
                       ${entry.lastPointsChange > 0
                         ? 'bg-green-100 text-green-800'
                         : entry.lastPointsChange < 0
                           ? 'bg-red-100 text-red-800'
-                          : 'bg-gray-100 text-gray-800'
+                          : 'bg-gray-100 text-gray-800' // Handle 0 points case
                       }`}>
                       {entry.lastPointsChange > 0 ? '+' : ''}{entry.lastPointsChange}
                     </span>
                   ) : (
                     <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                      N/A
-                    </span> // Display N/A if undefined
+                      -
+                    </span> // Display dash if null/undefined
                   )}
-                  {/* Removed extra closing span from previous attempt */}
                 </TableCell>
               </TableRow>
             ))}

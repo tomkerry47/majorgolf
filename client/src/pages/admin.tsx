@@ -12,8 +12,9 @@ import AdminHoleInOne from "@/components/admin/AdminHoleInOne";
 import AdminWaiverChips from "@/components/admin/AdminWaiverChips";
 import AdminResults from "@/components/admin/AdminResults";
 import AdminPointSystem from "@/components/admin/AdminPointSystem";
-import AdminCompetitions from "@/components/admin/AdminCompetitions"; 
+import AdminCompetitions from "@/components/admin/AdminCompetitions";
 import AdminGolfers from "@/components/admin/AdminGolfers"; // Import AdminGolfers component
+import AdminUserManagement from "@/components/admin/AdminUserManagement"; // Import the new component
 import {
   Card,
   CardContent,
@@ -46,6 +47,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
+import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
 import type { User, Competition, Golfer, Selection } from "@shared/schema"; // Import necessary types
 
 // Admin selection update form schema
@@ -55,15 +57,40 @@ const adminSelectionFormSchema = z.object({
   playerOneId: z.string().min(1, "Selection 1 is required"),
   playerTwoId: z.string().min(1, "Selection 2 is required"),
   playerThreeId: z.string().min(1, "Selection 3 is required"),
+  // Add captain fields
+  useCaptainsChip: z.boolean().optional().default(false),
+  captainGolferId: z.string().optional(), // Store as string initially from select
 }).refine(data => {
+  // Refine player uniqueness
   const { playerOneId, playerTwoId, playerThreeId } = data;
   const validIds = [playerOneId, playerTwoId, playerThreeId].filter(id => id && id !== "0");
   const uniqueIds = new Set(validIds);
   return uniqueIds.size === 3;
 }, {
   message: "Players must be unique and selected",
-  path: ["playerThreeId"],
-});
+  path: ["playerThreeId"], // Keep existing refinement for player uniqueness
+}).refine(data => {
+  // Refine captain selection: if chip is used, captain must be selected
+  if (data.useCaptainsChip && !data.captainGolferId) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Captain must be selected if using the Captain's Chip.",
+  path: ["captainGolferId"],
+}).refine(data => {
+   // Refine captain selection: captain must be one of the three selected players
+   if (data.useCaptainsChip && data.captainGolferId) {
+     const selectedIds = [data.playerOneId, data.playerTwoId, data.playerThreeId];
+     if (!selectedIds.includes(data.captainGolferId)) {
+       return false;
+     }
+   }
+   return true;
+ }, {
+   message: "Captain must be one of the selected golfers.",
+   path: ["captainGolferId"],
+ });
 
 type AdminSelectionFormValues = z.infer<typeof adminSelectionFormSchema>;
 
@@ -83,6 +110,7 @@ const Admin = () => {
   const queryClient = useQueryClient(); // Use the hook
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [selectedTournamentId, setSelectedTournamentId] = useState<string>("");
+  const [useWaiver, setUseWaiver] = useState(false); // State for waiver checkbox
 
   const [, setLocation] = useLocation();
 
@@ -133,20 +161,36 @@ const Admin = () => {
     retry: false, // Don't retry on 404 (selection not found)
   });
 
+  // Fetch the selected user's global captain chip status
+  const { data: selectedUserCaptainChipStatus, isLoading: isLoadingSelectedUserChipStatus } = useQuery<{ hasUsedCaptainsChip: boolean }>({
+    queryKey: ['/api/users', selectedUserId, 'has-used-captains-chip'], // Use selectedUserId
+    queryFn: () => apiRequest<{ hasUsedCaptainsChip: boolean }>(`/api/users/${selectedUserId}/has-used-captains-chip`),
+    enabled: !!selectedUserId && !!isAdmin, // Enable only when a user is selected
+  });
+
+
+  // Find the currently selected user's data (needed for disabling waiver checkbox)
+  const currentUserData = users?.find(u => u.id.toString() === selectedUserId);
+
   // Update form when selection data changes or user/tournament changes
   useEffect(() => {
     form.setValue("userId", selectedUserId);
     form.setValue("tournamentId", selectedTournamentId);
     
     if (userSelection) {
-      form.setValue("playerOneId", userSelection.golfer1Id?.toString() || ""); 
+      form.setValue("playerOneId", userSelection.golfer1Id?.toString() || "");
       form.setValue("playerTwoId", userSelection.golfer2Id?.toString() || "");
       form.setValue("playerThreeId", userSelection.golfer3Id?.toString() || "");
+      // Set captain fields based on fetched selection
+      form.setValue("useCaptainsChip", userSelection.useCaptainsChip || false);
+      form.setValue("captainGolferId", userSelection.captainGolferId?.toString() || undefined);
     } else {
-      // Reset player fields if no selection or user/tournament changes
+      // Reset player and captain fields if no selection or user/tournament changes
       form.setValue("playerOneId", "");
       form.setValue("playerTwoId", "");
       form.setValue("playerThreeId", "");
+      form.setValue("useCaptainsChip", false);
+      form.setValue("captainGolferId", undefined);
     }
   }, [selectedUserId, selectedTournamentId, userSelection, form]);
 
@@ -156,14 +200,42 @@ const Admin = () => {
       if (!userSelection?.id) {
         throw new Error("Cannot update selection: Selection ID is missing.");
       }
-      // Use the correct PATCH endpoint with the selection ID
-      return apiRequest("PATCH", `/api/admin/selections/${userSelection.id}`, {
-        // Send only the golfer IDs as per the backend route expectation
+
+      let payload: any = {
         golfer1Id: parseInt(values.playerOneId),
         golfer2Id: parseInt(values.playerTwoId),
         golfer3Id: parseInt(values.playerThreeId),
-        // userId and competitionId are not needed for PATCH by ID
-      });
+        // Include captain fields from form values
+        useCaptainsChip: values.useCaptainsChip,
+        captainGolferId: values.useCaptainsChip ? parseInt(values.captainGolferId || "0") : undefined, // Parse if chip used
+      };
+      let updatedGolferSlot: number | null = null;
+      let newGolferId: number | null = null;
+
+      // Determine which golfer changed if waiver is used
+      if (useWaiver) {
+        let changes = 0;
+        if (payload.golfer1Id !== userSelection.golfer1Id) { changes++; updatedGolferSlot = 1; newGolferId = payload.golfer1Id; }
+        if (payload.golfer2Id !== userSelection.golfer2Id) { changes++; updatedGolferSlot = 2; newGolferId = payload.golfer2Id; }
+        if (payload.golfer3Id !== userSelection.golfer3Id) { changes++; updatedGolferSlot = 3; newGolferId = payload.golfer3Id; }
+
+        if (changes !== 1) {
+          throw new Error("Waiver chip can only be used when swapping exactly one golfer.");
+        }
+
+        // Add waiver details to payload
+        payload = {
+          ...payload,
+          isWaiverChipTransaction: true,
+          updatedGolferSlot: updatedGolferSlot,
+          newGolferId: newGolferId,
+        };
+      } else {
+         payload = { ...payload, isWaiverChipTransaction: false };
+      }
+
+      // Corrected argument order: url, method, payload
+      return apiRequest(`/api/admin/selections/${userSelection.id}`, "PATCH", payload);
     },
     onSuccess: () => {
       toast({
@@ -178,14 +250,19 @@ const Admin = () => {
       queryClient.invalidateQueries({ 
         queryKey: ["/api/admin/competitions", selectedTournamentId, "selections"] 
       });
+      // Invalidate users query as well in case waiver status changed
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+      setUseWaiver(false); // Reset waiver state after successful submission
     },
     onError: (error: any) => {
       toast({
         title: "Error updating selections",
         description: error.message || "Failed to update selections. Please try again.",
-        variant: "destructive",
+        variant: "destructive", // Removed duplicate variant property
       });
-    },
+      // Note: Removed misplaced invalidateQueries and setUseWaiver from here
+    }, 
+    // Removed the duplicate onError handler that was here
   });
 
   const onSubmit = (values: AdminSelectionFormValues) => {
@@ -193,7 +270,22 @@ const Admin = () => {
        toast({ title: "Cannot Update", description: "No existing selection found to update.", variant: "destructive"});
        return;
      }
-     updateMutation.mutate(values); 
+     // Check waiver condition before mutating
+     if (useWaiver) {
+        let changes = 0;
+        if (parseInt(values.playerOneId) !== userSelection.golfer1Id) changes++;
+        if (parseInt(values.playerTwoId) !== userSelection.golfer2Id) changes++;
+        if (parseInt(values.playerThreeId) !== userSelection.golfer3Id) changes++;
+        if (changes !== 1) {
+           toast({ variant: "destructive", title: "Waiver Error", description: "Waiver chip can only be used when swapping exactly one golfer." });
+           return;
+        }
+        if (currentUserData?.hasUsedWaiverChip) {
+           toast({ variant: "destructive", title: "Waiver Error", description: "This user has already used their waiver chip." });
+           return;
+        }
+     }
+     updateMutation.mutate(values);
   };
 
   // Add console logs for debugging
@@ -240,6 +332,7 @@ const Admin = () => {
           <TabsTrigger value="point-system">Point System</TabsTrigger> {/* Add Point System Trigger */}
           <TabsTrigger value="hole-in-ones">Hole-in-Ones</TabsTrigger>
           <TabsTrigger value="waiver-chips">Waiver Chips</TabsTrigger>
+          <TabsTrigger value="user-management">User Management</TabsTrigger> {/* Add User Management Trigger */}
         </TabsList>
         
         <TabsContent value="player-selections">
@@ -456,12 +549,86 @@ const Admin = () => {
                             )}
                           />
                         </div>
+                         {/* Waiver Chip Checkbox */}
+                         <div className="flex items-center space-x-2 pt-4">
+                           <Checkbox
+                             id="useWaiverAdmin" // Unique ID
+                             checked={useWaiver}
+                             onCheckedChange={(checked: boolean | 'indeterminate') => setUseWaiver(Boolean(checked))}
+                             disabled={currentUserData?.hasUsedWaiverChip}
+                           />
+                           <label
+                             htmlFor="useWaiverAdmin"
+                             className={`text-sm font-medium leading-none ${currentUserData?.hasUsedWaiverChip ? 'text-gray-400 cursor-not-allowed' : 'peer-disabled:cursor-not-allowed peer-disabled:opacity-70'}`}
+                           >
+                             Use Waiver Chip for this swap? {currentUserData?.hasUsedWaiverChip ? '(Already Used)' : ''}
+                           </label>
+                         </div>
+
+                         {/* Captain's Chip Checkbox */}
+                         <FormField
+                           control={form.control}
+                           name="useCaptainsChip"
+                           render={({ field }) => (
+                             <FormItem className="flex flex-row items-center space-x-2 pt-4">
+                               <FormControl>
+                                 <Checkbox
+                                   checked={field.value}
+                                   onCheckedChange={field.onChange}
+                                   // Disable if the selected user has already used the chip globally
+                                   disabled={selectedUserCaptainChipStatus?.hasUsedCaptainsChip && !(userSelection?.useCaptainsChip)} // Allow unchecking if currently checked
+                                   id="useCaptainAdmin"
+                                 />
+                               </FormControl>
+                               <FormLabel htmlFor="useCaptainAdmin" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                 Assign Captain's Chip? (Overrides user's choice if they used it)
+                                 {/* Display message if chip already used */}
+                                 {selectedUserCaptainChipStatus?.hasUsedCaptainsChip && !(userSelection?.useCaptainsChip) && (
+                                    <p className="text-xs text-muted-foreground pt-1">
+                                      This user has already used their Captain's Chip.
+                                    </p>
+                                  )}
+                               </FormLabel>
+                             </FormItem>
+                           )}
+                         />
+
+                         {/* Captain Select Dropdown (Conditional) */}
+                         {form.watch("useCaptainsChip") && (
+                           <FormField
+                             control={form.control}
+                             name="captainGolferId"
+                             render={({ field }) => (
+                               <FormItem>
+                                 <FormLabel>Select Captain</FormLabel>
+                                 <Select value={field.value} onValueChange={field.onChange}>
+                                   <FormControl>
+                                     <SelectTrigger><SelectValue placeholder="Select captain" /></SelectTrigger>
+                                   </FormControl>
+                                   <SelectContent>
+                                     {[form.watch("playerOneId"), form.watch("playerTwoId"), form.watch("playerThreeId")]
+                                       .filter(id => id && id !== "0") // Filter out empty/placeholder values
+                                       .map(golferId => {
+                                         const player = golfPlayers?.find(p => p.id.toString() === golferId);
+                                         return player ? (
+                                           <SelectItem key={player.id} value={player.id.toString()}>
+                                             {player.firstName} {player.lastName}
+                                           </SelectItem>
+                                         ) : null;
+                                       })}
+                                   </SelectContent>
+                                 </Select>
+                                 <FormMessage />
+                               </FormItem>
+                             )}
+                           />
+                         )}
                       </div>
-                      
+
                       {/* Action Buttons */}
-                      <div className="flex justify-end space-x-3">
-                        <Button 
-                          type="button" 
+                      <div className="flex justify-end space-x-3 mt-6"> {/* Added margin-top */}
+                        <Button
+                          type="button"
                           variant="outline"
                           onClick={() => { // Reset form including player selections
                             form.reset({ 
@@ -509,6 +676,9 @@ const Admin = () => {
         </TabsContent>
         <TabsContent value="waiver-chips">
           <AdminWaiverChips />
+        </TabsContent>
+        <TabsContent value="user-management"> {/* Add User Management Content */}
+          <AdminUserManagement />
         </TabsContent>
       </Tabs>
     </div>

@@ -16,9 +16,9 @@ import {
 import { Competition } from "@shared/schema";
 
 interface LeaderboardData {
-  standings: Array<any>;
+  standings: Array<any>; // Consider defining a more specific type for standings entries later
   currentUserId?: number;
-  lastUpdated?: string;
+  lastUpdated?: string | null; // Corrected: Use nullable string
   currentRound?: number;
   roundCompleted?: boolean;
 }
@@ -41,10 +41,11 @@ const Leaderboard = () => {
   
   // Fetch leaderboard data based on selected competition
   const { 
-    data: leaderboard = { standings: [] } as LeaderboardData, // Provide a default matching the interface
+    // Correct default value and destructuring
+    data: leaderboardData = { standings: [], lastUpdated: null }, 
     isLoading: isLoadingLeaderboard,
     refetch: refetchLeaderboard
-  } = useQuery<LeaderboardData, Error>({ // Specify Error type for the second generic argument
+  } = useQuery<LeaderboardData, Error>({ 
     queryKey: [
       "/api/leaderboard", 
       selectedCompetitionId === "all" ? undefined : selectedCompetitionId
@@ -63,7 +64,7 @@ const Leaderboard = () => {
         // If it's just the array (likely overall standings), wrap it
         return { standings: fetchedData } as LeaderboardData; 
       }
-      // If it's already the object structure (likely specific competition), return as is
+      // If it's already the object structure, return as is
       return fetchedData as LeaderboardData; 
     },
     enabled: true // Keep enabled
@@ -72,8 +73,12 @@ const Leaderboard = () => {
 
   // Find currently selected competition
   const selectedCompetition = selectedCompetitionId === "all" 
-    ? allOption 
+    ? allOption
     : validCompetitions.find(c => c.id.toString() === selectedCompetitionId);
+    
+  // Extract standings and lastUpdated from the fetched data
+  const leaderboardStandings = leaderboardData?.standings || [];
+  const lastUpdatedTimestamp = leaderboardData?.lastUpdated;
 
   // Set "All Tournaments" as default view
   useEffect(() => {
@@ -86,9 +91,10 @@ const Leaderboard = () => {
   const competitionStatus = selectedCompetitionId === "all" 
     ? undefined
     : (selectedCompetition as Competition)?.isActive ? 'active' : 'completed';
-  
-  const lastUpdated = leaderboard?.lastUpdated 
-    ? new Date(leaderboard.lastUpdated).toLocaleString()
+    
+  // Format the last updated timestamp for display
+  const formattedLastUpdated = lastUpdatedTimestamp
+    ? new Date(lastUpdatedTimestamp).toLocaleString()
     : 'Never';
 
   return (
@@ -147,14 +153,15 @@ const Leaderboard = () => {
               `}>
                 {competitionStatus === 'active' ? 'ACTIVE' : 'COMPLETED'}
               </span>
-              {competitionStatus === 'active' && leaderboard?.currentRound && (
+              {/* Use leaderboardData here */}
+              {competitionStatus === 'active' && leaderboardData?.currentRound && (
                 <span className="text-sm text-gray-500">
-                  Round {leaderboard.currentRound} of 4 {leaderboard.roundCompleted ? 'completed' : 'in progress'}
+                  Round {leaderboardData.currentRound} of 4 {leaderboardData.roundCompleted ? 'completed' : 'in progress'}
                 </span>
               )}
             </div>
             <div className="text-sm text-gray-500">
-              Last updated: {lastUpdated}
+              Last updated: {formattedLastUpdated}
             </div>
           </div>
         </div>
@@ -170,7 +177,7 @@ const Leaderboard = () => {
               </span>
             </div>
             <div className="text-sm text-gray-500">
-              Last updated: {lastUpdated}
+              Last updated: {formattedLastUpdated}
             </div>
           </div>
         </div>
@@ -178,9 +185,9 @@ const Leaderboard = () => {
       
       {/* Leaderboard table */}
       <LeaderboardTable 
-        data={leaderboard?.standings || []} 
+        data={leaderboardStandings} // Pass the extracted standings
         isLoading={isLoadingLeaderboard}
-        userId={leaderboard?.currentUserId}
+        userId={leaderboardData?.currentUserId} // Use leaderboardData here too
       />
     </div>
   );

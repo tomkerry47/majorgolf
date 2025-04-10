@@ -34,9 +34,9 @@ interface EnrichedSelection {
     isActive: boolean;
     isComplete: boolean;
   } | null;
-  golfer1: { id: number; name: string; avatar: string | null } | null;
-  golfer2: { id: number; name: string; avatar: string | null } | null;
-  golfer3: { id: number; name: string; avatar: string | null } | null;
+  golfer1: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added flags
+  golfer2: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added flags
+  golfer3: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added flags
   golfer1Result: { position: number; points: number | null } | null;
   golfer2Result: { position: number; points: number | null } | null;
   golfer3Result: { position: number; points: number | null } | null;
@@ -77,7 +77,8 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
         throw new Error(`Failed to fetch user selections: ${response.status} ${errorText}`); // Include status/text
       }
       const jsonData = await response.json();
-      console.log("[ProfileSelections] Fetch successful, data received:", jsonData); // Added log
+      // Removed raw data logging
+      console.log(`[ProfileSelections] Fetch successful, received ${jsonData?.length ?? 0} selections.`); // Keep count log
       return jsonData;
     },
     // enabled check removed as userId is no longer needed
@@ -150,11 +151,18 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
   // --- Data is available, proceed with filtering ---
   console.log("[ProfileSelections] Data available, proceeding to filter.");
 
-  // Filter selections into categories
-  const upcomingSelections = userSelections.filter((s: EnrichedSelection) => !s.competition?.isActive && !s.competition?.isComplete);
-  const activeSelections = userSelections.filter((s: EnrichedSelection) => s.competition?.isActive);
-  const completedSelections = userSelections.filter((s: EnrichedSelection) => s.competition?.isComplete);
- 
+  // Filter selections into categories based on deadline and completion status
+  const now = new Date(); // Get current time for comparison
+  const upcomingSelections = userSelections.filter((s: EnrichedSelection) => {
+    // Upcoming if selection deadline has NOT passed
+    return s.competition?.selectionDeadline && new Date(s.competition.selectionDeadline) >= now;
+  });
+  const activeSelections = userSelections.filter((s: EnrichedSelection) => {
+     // Active if selection deadline HAS passed AND competition is NOT complete
+     return s.competition?.selectionDeadline && new Date(s.competition.selectionDeadline) < now && !s.competition?.isComplete;
+  });
+  const completedSelections = userSelections.filter((s: EnrichedSelection) => s.competition?.isComplete); // Completed remains the same
+
    // Log the filtered data
    console.log("[ProfileSelections] Filtered Selections:", { upcomingSelections, activeSelections, completedSelections });
  
@@ -229,7 +237,11 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
                         </div>
                       )}
                       <div>
-                        <div>{selection.golfer1?.name || 'N/A'}</div>
+                        <div>
+                          {selection.golfer1?.name || 'N/A'}
+                          {selection.golfer1?.isCaptain && <span className="ml-1 text-xs font-bold text-primary">(C)</span>}
+                          {selection.golfer1?.isWildcard && <span className="ml-1 text-xs font-bold text-info">(W)</span>}
+                        </div>
                         {selection.golfer1Result && (selection.competition?.isComplete || selection.competition?.isActive) && (
                           <div className="text-xs text-gray-500">
                             Pos: {selection.golfer1Result.position}, Pts: <span className="text-success font-medium">+{selection.golfer1Result.points ?? 0}</span>
@@ -250,7 +262,11 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
                         </div>
                       )}
                       <div>
-                        <div>{selection.golfer2?.name || 'N/A'}</div>
+                        <div>
+                          {selection.golfer2?.name || 'N/A'}
+                          {selection.golfer2?.isCaptain && <span className="ml-1 text-xs font-bold text-primary">(C)</span>}
+                          {selection.golfer2?.isWildcard && <span className="ml-1 text-xs font-bold text-info">(W)</span>}
+                        </div>
                         {selection.golfer2Result && (selection.competition?.isComplete || selection.competition?.isActive) && (
                           <div className="text-xs text-gray-500">
                             Pos: {selection.golfer2Result.position}, Pts: <span className="text-success font-medium">+{selection.golfer2Result.points ?? 0}</span>
@@ -271,7 +287,11 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
                         </div>
                       )}
                       <div>
-                        <div>{selection.golfer3?.name || 'N/A'}</div>
+                        <div>
+                          {selection.golfer3?.name || 'N/A'}
+                          {selection.golfer3?.isCaptain && <span className="ml-1 text-xs font-bold text-primary">(C)</span>}
+                          {selection.golfer3?.isWildcard && <span className="ml-1 text-xs font-bold text-info">(W)</span>}
+                        </div>
                         {selection.golfer3Result && (selection.competition?.isComplete || selection.competition?.isActive) && (
                           <div className="text-xs text-gray-500">
                             Pos: {selection.golfer3Result.position}, Pts: <span className="text-success font-medium">+{selection.golfer3Result.points ?? 0}</span>

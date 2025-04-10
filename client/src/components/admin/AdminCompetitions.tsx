@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useState, useEffect } from "react"; // Import useEffect
+import { useForm, useWatch } from "react-hook-form"; // Import useWatch
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query"; // Add useMutation import
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+// Removed ScrollArea import
 import {
   Dialog,
   DialogContent,
@@ -41,43 +42,52 @@ import { Switch } from "@/components/ui/switch";
 import { Clock } from 'lucide-react'; // Import Clock icon
 
 // Ensure the component is exported as default
-export default function AdminCompetitions() { 
+export default function AdminCompetitions() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedCompetition, setSelectedCompetition] = useState<Competition | null>(null);
   const [formAction, setFormAction] = useState<'create' | 'edit'>('create');
   const [isCreatingTournaments, setIsCreatingTournaments] = useState(false);
-  const [capturingRanksId, setCapturingRanksId] = useState<number | null>(null); 
-  
+  const [capturingRanksId, setCapturingRanksId] = useState<number | null>(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null); // State for the image preview
+
   const { data: competitions = [], isLoading } = useQuery<Competition[]>({
     queryKey: ['/api/admin/competitions'],
   });
-  
+
   const defaultValues: Partial<InsertCompetition> = {
     name: '',
     venue: '',
     startDate: '',
     endDate: '',
     selectionDeadline: '',
-    externalLeaderboardUrl: '', 
+    externalLeaderboardUrl: '',
+    imageUrl: '', // Add imageUrl here
     isActive: false,
     isComplete: false
   };
-  
+
   const form = useForm<InsertCompetition>({
     resolver: zodResolver(insertCompetitionSchema),
     defaultValues,
-    shouldUnregister: false
+    shouldUnregister: false,
   });
-  
+
+  // Watch the externalLeaderboardUrl field
+  const externalLeaderboardUrlValue = useWatch({
+    control: form.control,
+    name: 'externalLeaderboardUrl',
+  });
+
   const openCreateDialog = () => {
     form.reset(defaultValues);
+    setPreviewImageUrl(null); // Reset preview state
     setFormAction('create');
     setSelectedCompetition(null);
     setIsDialogOpen(true);
   };
-  
+
   const formatDateForInput = (dateString: string | Date | null | undefined): string => {
     if (!dateString) return '';
     try {
@@ -91,7 +101,7 @@ export default function AdminCompetitions() {
       return `${year}-${month}-${day}T${hours}:${minutes}`;
     } catch (e) {
       console.error("Error formatting date:", e);
-      return ''; 
+      return '';
     }
   };
 
@@ -103,20 +113,20 @@ export default function AdminCompetitions() {
       selectionDeadline: formatDateForInput(competition.selectionDeadline),
       description: competition.description || '',
       imageUrl: competition.imageUrl || '',
-      externalLeaderboardUrl: competition.externalLeaderboardUrl || '' 
+      externalLeaderboardUrl: competition.externalLeaderboardUrl || ''
     };
-    
-    form.reset(formattedCompetition);
+    setPreviewImageUrl(null); // Ensure preview is null when dialog opens *before* reset
+    form.reset(formattedCompetition); // Reset form with existing data
     setFormAction('edit');
     setSelectedCompetition(competition);
     setIsDialogOpen(true);
   };
-  
+
   const openDeleteDialog = (competition: Competition) => {
     setSelectedCompetition(competition);
     setIsDeleteDialogOpen(true);
   };
-  
+
   const onSubmit = async (data: InsertCompetition) => {
     try {
       const dataToSend = {
@@ -124,34 +134,35 @@ export default function AdminCompetitions() {
         startDate: data.startDate ? new Date(data.startDate).toISOString() : null,
         endDate: data.endDate ? new Date(data.endDate).toISOString() : null,
         selectionDeadline: data.selectionDeadline ? new Date(data.selectionDeadline).toISOString() : null,
-        externalLeaderboardUrl: data.externalLeaderboardUrl || null, 
+        externalLeaderboardUrl: data.externalLeaderboardUrl || null,
+        imageUrl: data.imageUrl || null, // Use the value directly from the form field
       };
 
       if (formAction === 'create') {
-        await apiRequest('/api/competitions', 'POST', dataToSend); 
+        await apiRequest('/api/competitions', 'POST', dataToSend);
         toast({
           title: "Competition created",
           description: "The competition has been successfully created."
         });
       } else if (selectedCompetition) {
-        await apiRequest(`/api/admin/competitions/${selectedCompetition.id}`, 'PATCH', dataToSend); 
+        await apiRequest(`/api/admin/competitions/${selectedCompetition.id}`, 'PATCH', dataToSend);
         toast({
           title: "Competition updated",
           description: "The competition has been successfully updated."
         });
       } else {
-        throw new Error("Selected competition not found for update."); 
+        throw new Error("Selected competition not found for update.");
       }
-      
+
       queryClient.invalidateQueries({ queryKey: ['/api/admin/competitions'] });
       queryClient.invalidateQueries({ queryKey: ['/api/competitions'] });
       queryClient.invalidateQueries({ queryKey: ['/api/competitions/all'] });
       queryClient.invalidateQueries({ queryKey: ['/api/competitions/active'] });
       queryClient.invalidateQueries({ queryKey: ['/api/competitions/upcoming'] });
-      
-      setIsDialogOpen(false); 
+
+      setIsDialogOpen(false);
     } catch (error: any) {
-      console.error(`Error submitting competition form (action: ${formAction}):`, error); 
+      console.error(`Error submitting competition form (action: ${formAction}):`, error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -159,16 +170,16 @@ export default function AdminCompetitions() {
       });
     }
   };
-  
+
   const handleDelete = async () => {
     try {
       if (!selectedCompetition) return;
-      await apiRequest(`/api/admin/competitions/${selectedCompetition.id}`, 'DELETE', {}); 
+      await apiRequest(`/api/admin/competitions/${selectedCompetition.id}`, 'DELETE', {});
       toast({
         title: "Competition deleted",
         description: "The competition has been successfully deleted."
       });
-      
+
       queryClient.invalidateQueries({ queryKey: ['/api/admin/competitions'] });
       queryClient.invalidateQueries({ queryKey: ['/api/competitions'] });
       queryClient.invalidateQueries({ queryKey: ['/api/competitions/all'] });
@@ -183,13 +194,25 @@ export default function AdminCompetitions() {
       });
     }
   };
-  
+
+  // Function to update the preview image state
+  const handlePreviewImage = () => {
+    const currentImageUrl = form.getValues('imageUrl');
+    console.log("Attempting to preview:", currentImageUrl); // For debugging
+    setPreviewImageUrl(currentImageUrl || null);
+     if (!currentImageUrl) {
+         // Optionally notify user if they click preview with empty field
+         // toast({ variant: "default", title: "Preview Cleared", description: "Image URL is empty." });
+    }
+  };
+
+
   // Mutation for capturing ranks
   const captureRanksMutation = useMutation({
-    mutationFn: (competitionId: number) => 
+    mutationFn: (competitionId: number) =>
       apiRequest(`/api/admin/competitions/${competitionId}/capture-ranks`, 'POST'),
     onMutate: (competitionId: number) => { // Add type
-      setCapturingRanksId(competitionId); 
+      setCapturingRanksId(competitionId);
     },
     onSuccess: (data: any, competitionId: number) => { // Add type
       toast({
@@ -205,7 +228,7 @@ export default function AdminCompetitions() {
       });
     },
     onSettled: () => {
-      setCapturingRanksId(null); 
+      setCapturingRanksId(null);
     },
   });
 
@@ -225,7 +248,7 @@ export default function AdminCompetitions() {
     // ... (createMajorTournaments function remains the same) ...
      try {
       setIsCreatingTournaments(true);
-      
+
       const tournaments = [
         {
           name: "The Masters",
@@ -262,7 +285,7 @@ export default function AdminCompetitions() {
         },
         {
           name: "The Open Championship",
-          venue: "Royal Liverpool Golf Club", 
+          venue: "Royal Liverpool Golf Club",
           startDate: new Date("2025-07-17T08:00:00"),
           endDate: new Date("2025-07-20T20:00:00"),
           selectionDeadline: new Date("2025-07-16T23:59:59"),
@@ -283,9 +306,9 @@ export default function AdminCompetitions() {
           imageUrl: "https://www.theplayers.com/content/dam/pga/tournaments/tournament-sites/the-players-championship/the-players-logo.svg"
         }
       ];
-      
+
       let successCount = 0;
-      
+
       for (const tournament of tournaments) {
         try {
           const formattedTournament = {
@@ -294,20 +317,20 @@ export default function AdminCompetitions() {
             endDate: tournament.endDate.toISOString(),
             selectionDeadline: tournament.selectionDeadline.toISOString()
           };
-          
-          await apiRequest('/api/competitions', 'POST', formattedTournament); 
+
+          await apiRequest('/api/competitions', 'POST', formattedTournament);
           successCount++;
         } catch (error: any) {
           console.error(`Error creating ${tournament.name}:`, error);
         }
       }
-      
+
       if (successCount > 0) {
         toast({
           title: "Tournaments Created",
           description: `Successfully created ${successCount} of 5 major tournaments.`
         });
-        
+
         queryClient.invalidateQueries({ queryKey: ['/api/admin/competitions'] });
         queryClient.invalidateQueries({ queryKey: ['/api/competitions'] });
         queryClient.invalidateQueries({ queryKey: ['/api/competitions/all'] });
@@ -330,15 +353,15 @@ export default function AdminCompetitions() {
       setIsCreatingTournaments(false);
     }
   };
-  
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Manage Competitions</CardTitle>
         <div className="flex space-x-2">
-          <Button 
-            variant="outline" 
-            onClick={createMajorTournaments} 
+          <Button
+            variant="outline"
+            onClick={createMajorTournaments}
             disabled={isCreatingTournaments}
           >
             {isCreatingTournaments ? 'Creating...' : 'Create 5 Major Tournaments'}
@@ -364,7 +387,7 @@ export default function AdminCompetitions() {
                 <TableHead>Venue</TableHead>
                 <TableHead>Dates</TableHead>
                 <TableHead>Deadline</TableHead>
-                <TableHead>Leaderboard URL</TableHead> 
+                <TableHead>Leaderboard URL</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -372,7 +395,7 @@ export default function AdminCompetitions() {
             <TableBody>
               {competitions?.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-4 text-gray-500"> 
+                  <TableCell colSpan={7} className="text-center py-4 text-gray-500">
                     No competitions found. Create one to get started.
                   </TableCell>
                 </TableRow>
@@ -385,14 +408,14 @@ export default function AdminCompetitions() {
                       {new Date(competition.startDate).toLocaleDateString()} - {new Date(competition.endDate).toLocaleDateString()}
                     </TableCell>
                     <TableCell>{new Date(competition.selectionDeadline).toLocaleDateString()}</TableCell>
-                    <TableCell className="max-w-[150px] truncate"> 
+                    <TableCell className="max-w-[150px] truncate">
                       {competition.externalLeaderboardUrl ? (
-                        <a 
-                          href={competition.externalLeaderboardUrl} 
-                          target="_blank" 
+                        <a
+                          href={competition.externalLeaderboardUrl}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:underline"
-                          title={competition.externalLeaderboardUrl} 
+                          title={competition.externalLeaderboardUrl}
                         >
                           {competition.externalLeaderboardUrl}
                         </a>
@@ -417,16 +440,16 @@ export default function AdminCompetitions() {
                         <i className="fas fa-trash mr-1"></i> Delete
                       </Button>
                       {/* Capture Ranks Button */}
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        variant="outline"
+                        size="sm"
                         className="ml-2"
                         onClick={() => handleCaptureRanks(competition.id, competition.selectionDeadline)}
-                        disabled={capturingRanksId === competition.id || new Date() < new Date(competition.selectionDeadline)} 
+                        disabled={capturingRanksId === competition.id || new Date() < new Date(competition.selectionDeadline)}
                         title={new Date() < new Date(competition.selectionDeadline) ? "Deadline not passed" : "Capture ranks at deadline"}
                       >
                         {capturingRanksId === competition.id ? (
-                          <Clock className="mr-1 h-4 w-4 animate-spin" /> 
+                          <Clock className="mr-1 h-4 w-4 animate-spin" />
                         ) : (
                           <Clock className="mr-1 h-4 w-4" />
                         )}
@@ -440,192 +463,234 @@ export default function AdminCompetitions() {
           </Table>
         )}
       </CardContent>
-      
+
       {/* Create/Edit Competition Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[550px]">
-          <DialogHeader>
+        {/* Apply scroll directly to DialogContent */}
+        <DialogContent className="sm:max-w-[700px] overflow-y-auto max-h-[85vh] p-6"> {/* Increased max-width */}
+          {/* Standard Header */}
+          <DialogHeader className="pb-4"> {/* Add bottom padding */}
             <DialogTitle>{formAction === 'create' ? 'Create New Competition' : 'Edit Competition'}</DialogTitle>
           </DialogHeader>
-          
+          {/* Form directly inside scrollable content */}
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            {/* Add ID to form */}
+            <form onSubmit={form.handleSubmit(onSubmit)} id="competition-form" className="space-y-4">
+              {/* Form fields go directly inside the form */}
               <FormField
                 control={form.control}
                 name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Competition Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g. The Masters 2023" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="venue"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Venue</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g. Augusta National Golf Club" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control} 
-                  name="startDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Start Date</FormLabel>
+                      <FormLabel>Competition Name</FormLabel>
                       <FormControl>
-                        <Input 
-                          type="datetime-local" 
-                          {...field}
-                          value={formatDateForInput(field.value)} 
-                        />
+                        <Input placeholder="e.g. The Masters 2023" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                
-                <FormField
-                  control={form.control}
-                  name="endDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>End Date</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="datetime-local" 
-                          {...field}
-                          value={formatDateForInput(field.value)} 
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              
-              <FormField
-                control={form.control}
-                name="selectionDeadline"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Selection Deadline</FormLabel>
-                    <FormControl>
-                      <Input 
-                        type="datetime-local" 
-                        {...field}
-                        value={formatDateForInput(field.value)} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea 
-                        placeholder="Enter a description of the tournament..." 
-                        className="resize-none h-20"
-                        {...field}
-                        value={field.value ?? ''} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="imageUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tournament Logo URL</FormLabel>
-                    <FormControl>
-                      <Input placeholder="https://example.com/logo.png" {...field} value={field.value ?? ''} /> 
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
 
-              {/* Add External Leaderboard URL Field */}
-              <FormField
-                control={form.control}
-                name="externalLeaderboardUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>External Leaderboard URL</FormLabel>
-                    <FormControl>
-                      <Input placeholder="https://www.pgatour.com/tournaments/..." {...field} value={field.value ?? ''} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
-                  name="isActive"
+                  name="venue"
                   render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between p-3 border rounded-md">
-                      <FormLabel>Active</FormLabel>
+                    <FormItem>
+                      <FormLabel>Venue</FormLabel>
                       <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
+                        <Input placeholder="e.g. Augusta National Golf Club" {...field} />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
-                
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="startDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Date</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="datetime-local"
+                            {...field}
+                            value={formatDateForInput(field.value)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End Date</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="datetime-local"
+                            {...field}
+                            value={formatDateForInput(field.value)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
                 <FormField
                   control={form.control}
-                  name="isComplete"
+                  name="selectionDeadline"
                   render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between p-3 border rounded-md">
-                      <FormLabel>Completed</FormLabel>
+                    <FormItem>
+                      <FormLabel>Selection Deadline</FormLabel>
                       <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
+                        <Input
+                          type="datetime-local"
+                          {...field}
+                          value={formatDateForInput(field.value)}
                         />
                       </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
-              </div> 
-              
-              <DialogFooter>
-                <Button type="submit">
-                  {formAction === 'create' ? 'Create Competition' : 'Save Changes'}
-                </Button>
-              </DialogFooter>
+
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Enter a description of the tournament..."
+                          className="resize-none h-20"
+                          {...field}
+                          value={field.value ?? ''}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Add External Leaderboard URL Field FIRST */}
+                <FormField
+                  control={form.control}
+                  name="externalLeaderboardUrl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>External Leaderboard URL</FormLabel>
+                      <FormControl>
+                        <Input placeholder="https://www.pgatour.com/tournaments/..." {...field} value={field.value ?? ''} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Image Fetching Section */}
+                {/* Image Fetching and Input Section */}
+                <FormField
+                  control={form.control}
+                  name="imageUrl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Competition Image URL</FormLabel>
+                      <div className="flex items-start space-x-4"> {/* items-start aligns tops */}
+                        <div className="flex-grow"> {/* Input takes available space */}
+                          <FormControl>
+                            <Input placeholder="https://example.com/logo.png" {...field} value={field.value ?? ''} />
+                          </FormControl>
+                          <FormMessage />
+                        </div>
+                        <div className="flex flex-col items-center space-y-2 w-24"> {/* Fixed width container for button and preview */}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handlePreviewImage}
+                            className="w-full" // Button takes full width of its container
+                          >
+                            Preview
+                          </Button>
+                          {/* Preview based on the previewImageUrl state - ONLY render img if URL exists */}
+                          <div className="w-16 h-16 border rounded flex items-center justify-center text-xs text-muted-foreground">
+                            {previewImageUrl ? (
+                                <img
+                                  key={previewImageUrl} // Add key to force re-render on src change
+                                  src={previewImageUrl}
+                                  alt="Preview"
+                                  className="max-h-full max-w-full object-contain" // Ensure image fits
+                                  onError={() => { // Simplified onError
+                                    console.warn("Image preview failed to load:", previewImageUrl);
+                                    toast({ variant: "destructive", title: "Preview Error", description: "Could not load image. Check URL and browser console (F12) for CORS/security errors." });
+                                    setPreviewImageUrl(null); // Clear preview state on error
+                                  }}
+                                />
+                            ) : (
+                               <span title="Enter URL and click Preview">No Preview</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Enter a URL and click 'Preview'.
+                      </p>
+                    </FormItem>
+                  )}
+                />
+
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="isActive"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between p-3 border rounded-md">
+                        <FormLabel>Active</FormLabel>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="isComplete"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between p-3 border rounded-md">
+                        <FormLabel>Completed</FormLabel>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
             </form>
           </Form>
+          {/* Standard Footer - Removed sticky positioning and adjusted padding */}
+          <DialogFooter className="pt-4"> {/* Add top padding */}
+            <Button type="submit" form="competition-form"> {/* Link button to form via ID */}
+              {formAction === 'create' ? 'Create Competition' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-      
+
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
@@ -637,7 +702,7 @@ export default function AdminCompetitions() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleDelete}
               className="bg-red-500 hover:bg-red-600"
             >

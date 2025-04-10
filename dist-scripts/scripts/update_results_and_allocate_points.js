@@ -134,10 +134,21 @@ async function fetchAndProcessPgaData(client, competition) {
             return false; // Prevent applying results to the wrong competition
         }
         console.log(`Tournament name match confirmed: "${jsonTournamentName}"`);
-        // --- Fetch DB Golfers for Matching ---
-        const golfersRes = await client.query('SELECT id, name FROM golfers');
+        // --- Fetch DB Golfers for Matching (Include shortName) ---
+        const golfersRes = await client.query('SELECT id, name, "shortName" FROM golfers');
         const dbGolfers = getRows(golfersRes);
-        const golferNameMap = new Map(dbGolfers.map(g => [g.name.toLowerCase().trim(), g.id])); // Map lowercase name to ID
+        // Create maps for both full name and short name matching
+        const golferFullNameMap = new Map();
+        const golferShortNameMap = new Map();
+        dbGolfers.forEach(g => {
+            if (g.name) {
+                golferFullNameMap.set(g.name.toLowerCase().trim(), g.id);
+            }
+            if (g.shortName) {
+                golferShortNameMap.set(g.shortName.toLowerCase().trim(), g.id);
+            }
+        });
+        console.log(`Created maps for ${golferFullNameMap.size} full names and ${golferShortNameMap.size} short names.`);
         // --- Process JSON Data ---
         const resultsToUpsert = [];
         for (let i = 0; i < numPlayers; i++) {
@@ -171,8 +182,8 @@ async function fetchAndProcessPgaData(client, competition) {
                 console.warn(`Could not parse score '${scoreStrRaw}' for player ${playerName}. Assigning 0.`);
                 score = 0; // Assign 0 if score is not a number (e.g., WD, CUT might have non-numeric scores)
             }
-            // Match Player Name
-            const dbGolferId = golferNameMap.get(playerName);
+            // Match Player Name (Try short name first, then full name)
+            let dbGolferId = golferShortNameMap.get(playerName) ?? golferFullNameMap.get(playerName);
             if (dbGolferId) {
                 resultsToUpsert.push({
                     competitionId: competition.id,

@@ -1,5 +1,7 @@
 import 'dotenv/config'; // Load .env file variables into process.env
 import express, { type Request, Response, NextFunction } from "express";
+import cookieParser from 'cookie-parser'; // Import cookie-parser
+import cors from 'cors'; // Import cors
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import path from "path";
@@ -14,8 +16,40 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+// --- CORS Configuration ---
+// Allow requests from the Vite dev server and the backend itself
+const allowedOrigins = ['http://127.0.0.1:5173', 'http://localhost:5173', 'http://127.0.0.1:5000', 'http://localhost:5000'];
+const corsOptions: cors.CorsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], // Ensure PATCH and PUT are allowed
+  allowedHeaders: ['Content-Type', 'Authorization'], // Allow necessary headers
+  credentials: true // Allow cookies/credentials
+};
+app.use(cors(corsOptions));
+// Handle preflight requests explicitly for all routes
+app.options('*', cors(corsOptions));
+// --- End CORS Configuration ---
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser()); // Use cookie-parser middleware
+
+// Removed early debug logging
+
+// Serve static files from the 'public' directory (including uploads)
+const publicPath = path.join(__dirname, '../public');
+// console.log(`[Static Files] Serving static files from: ${publicPath}`); // Log removed
+app.use(express.static(publicPath));
+
 
 // Add a test endpoint that returns simple HTML
 app.get('/test', (req, res) => {

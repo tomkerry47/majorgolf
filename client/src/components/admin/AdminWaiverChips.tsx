@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query'; // Removed useMutation, useQueryClient
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 
@@ -16,10 +16,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/dialog"; // Removed Dialog components as they are no longer needed
 import {
   Card,
   CardContent,
@@ -43,53 +40,25 @@ interface User {
   avatarUrl?: string;
   isAdmin: boolean;
   hasUsedWaiverChip: boolean;
+  // Add fields for waiver details (populated by the updated API)
+  waiverCompetitionName?: string | null;
+  waiverOriginalGolferName?: string | null;
+  waiverReplacementGolferName?: string | null;
 }
 
 export default function AdminWaiverChips() {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  // Removed queryClient as mutation is gone
+  // Removed confirmDialogOpen and selectedUser states
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Fetch all users
-  const { data: users = [], isLoading, error } = useQuery({
+  // Fetch all users (now includes waiver details)
+  const { data: users = [], isLoading, error } = useQuery<User[]>({ // Updated User type usage
     queryKey: ['/api/admin/users'],
     queryFn: () => apiRequest<User[]>('/api/admin/users'),
   });
 
-  // Mutation to mark waiver chip as used
-  const markWaiverUsedMutation = useMutation({
-    mutationFn: (userId: number) => 
-      apiRequest(`/api/admin/users/${userId}/mark-waiver-used`, 'POST'),
-    onSuccess: () => {
-      toast({
-        title: 'Success',
-        description: `Waiver chip marked as used for ${selectedUser?.username}`,
-      });
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
-      setConfirmDialogOpen(false);
-      setSelectedUser(null);
-    },
-    onError: (error: Error) => {
-      toast({
-        title: 'Error',
-        description: `Failed to mark waiver chip: ${error.message}`,
-        variant: 'destructive',
-      });
-    },
-  });
-
-  const handleMarkWaiverUsed = (user: User) => {
-    setSelectedUser(user);
-    setConfirmDialogOpen(true);
-  };
-
-  const confirmMarkWaiverUsed = () => {
-    if (selectedUser) {
-      markWaiverUsedMutation.mutate(selectedUser.id);
-    }
-  };
+  // Removed mutation and related handlers (markWaiverUsedMutation, handleMarkWaiverUsed, confirmMarkWaiverUsed)
 
   // Filter users based on search term
   const filteredUsers = users.filter(user => 
@@ -135,9 +104,9 @@ export default function AdminWaiverChips() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Waiver Chip Management</CardTitle>
+        <CardTitle>Waiver Chip Status</CardTitle>
         <CardDescription>
-          Mark waiver chips as used when processing player swap requests
+          View the status of each user's waiver chip. Usage is now handled via Admin Selections.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -158,14 +127,14 @@ export default function AdminWaiverChips() {
             <TableRow>
               <TableHead>User</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Waiver Chip Status</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead>Waiver Chip Status / Details</TableHead> 
+              {/* Removed Actions column */}
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center">No users found</TableCell>
+                <TableCell colSpan={3} className="text-center">No users found</TableCell> {/* Adjusted colSpan */}
               </TableRow>
             ) : (
               filteredUsers.map((user) => (
@@ -183,54 +152,28 @@ export default function AdminWaiverChips() {
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     {user.hasUsedWaiverChip ? (
-                      <Badge variant="destructive">Used</Badge>
+                      <div>
+                        <Badge variant="destructive" className="mb-1">Used</Badge>
+                        <div className="text-xs text-muted-foreground">
+                          Comp: {user.waiverCompetitionName || 'N/A'}<br/>
+                          Out: {user.waiverOriginalGolferName || 'N/A'}<br/>
+                          In: {user.waiverReplacementGolferName || 'N/A'}
+                        </div>
+                      </div>
                     ) : (
                       <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                         Available
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleMarkWaiverUsed(user)}
-                      disabled={user.hasUsedWaiverChip}
-                    >
-                      Mark as Used
-                    </Button>
-                  </TableCell>
+                  {/* Removed Actions cell */}
                 </TableRow>
               ))
             )}
           </TableBody>
         </Table>
       </CardContent>
-
-      {/* Confirmation Dialog */}
-      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Waiver Chip Usage</DialogTitle>
-            <DialogDescription>
-              You're about to mark {selectedUser?.username}'s waiver chip as used. 
-              This action cannot be undone. Ensure you have processed their player swap request before confirming.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive" 
-              onClick={confirmMarkWaiverUsed}
-              disabled={markWaiverUsedMutation.isPending}
-            >
-              {markWaiverUsedMutation.isPending ? 'Processing...' : 'Confirm'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Removed Confirmation Dialog */}
     </Card>
   );
 }

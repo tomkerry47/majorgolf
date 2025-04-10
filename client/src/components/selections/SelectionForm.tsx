@@ -388,25 +388,8 @@ function SelectionFormContent({
   }
   */
 
-  if (deadlinePassed && !isEditing) {
-     return (
-       <Card>
-         <CardHeader>
-           <CardTitle>{competitionName}</CardTitle>
-           <CardDescription>Selection Deadline Passed</CardDescription>
-         </CardHeader>
-         <CardContent>
-           <Alert variant="destructive">
-             <AlertTriangle className="h-4 w-4" />
-             <AlertTitle>Deadline Passed</AlertTitle>
-             <AlertDescription>
-               The deadline for submitting selections for this competition ({new Date(selectionDeadline).toLocaleString()}) has passed.
-             </AlertDescription>
-           </Alert>
-         </CardContent>
-       </Card>
-     );
-   }
+  // Removed the block that hid the form entirely after deadline if !isEditing
+  // The form fields will now always render but be disabled if deadlinePassed.
 
   // Calculate selectedGolferIds needed for disabling combobox
   const selectedGolferIds = [watchedGolfer1Id, watchedGolfer2Id, watchedGolfer3Id].filter(id => id && id > 0);
@@ -415,10 +398,12 @@ function SelectionFormContent({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{isEditing ? 'Edit Your Selection' : 'Make Your Selections'}</CardTitle>
+        {/* Show title based on whether a selection exists */}
+        <CardTitle>{existingSelection ? 'Your Selection' : 'Make Your Selections'}</CardTitle>
         <CardDescription>For {competitionName}. Deadline: {new Date(selectionDeadline).toLocaleString()}</CardDescription>
-        {isEditing && deadlinePassed && (
-           <Alert variant="default" className="mt-2 border-yellow-500 text-yellow-800"> {/* Change variant, maybe add custom styling */}
+        {/* Show deadline passed alert if applicable, regardless of editing state */}
+        {deadlinePassed && (
+           <Alert variant="default" className="mt-2 border-yellow-500 text-yellow-800">
              <AlertTriangle className="h-4 w-4" />
              <AlertTitle>Deadline Passed</AlertTitle>
              <AlertDescription>

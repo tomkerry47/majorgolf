@@ -12,7 +12,11 @@ export const users = pgTable("users", {
   avatarUrl: text("avatarUrl"),
   isAdmin: boolean("isAdmin").default(false).notNull(),
   hasUsedWaiverChip: boolean("hasUsedWaiverChip").default(false).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
+  waiverChipUsedCompetitionId: integer("waiverChipUsedCompetitionId").references(() => competitions.id), // Added
+  waiverChipOriginalGolferId: integer("waiverChipOriginalGolferId").references(() => golfers.id),       // Added
+  waiverChipReplacementGolferId: integer("waiverChipReplacementGolferId").references(() => golfers.id), // Added
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  lastLoginAt: timestamp("lastLoginAt") // Added last login timestamp (nullable)
 });
 
 export const competitions = pgTable("competitions", {
@@ -132,7 +136,13 @@ export interface User {
   avatarUrl?: string;
   isAdmin: boolean;
   hasUsedWaiverChip: boolean;
+  waiverChipUsedCompetitionId?: number | null; // Added
+  waiverChipOriginalGolferId?: number | null;  // Added
+  waiverChipReplacementGolferId?: number | null; // Added
   createdAt: string;
+  lastLoginAt?: string | null; // Added last login timestamp type
+  selectionCount?: number; // Added count of selections
+  hasUsedCaptainsChip?: boolean; // Added optional field for calculated status
 }
 
 export interface Competition {

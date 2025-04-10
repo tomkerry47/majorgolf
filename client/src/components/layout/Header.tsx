@@ -9,7 +9,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+// Removed Input import as search bar is gone
+// import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"; // Added Avatar imports
 
 interface HeaderProps {
   sidebarOpen: boolean;
@@ -18,7 +20,21 @@ interface HeaderProps {
 
 export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
   const { user, isAdmin, signOut } = useAuth();
-  const [searchQuery, setSearchQuery] = useState("");
+  // Removed searchQuery state as search bar is gone
+  // const [searchQuery, setSearchQuery] = useState("");
+
+  // Generate avatar fallback from username or email
+  const getAvatarFallback = () => {
+    if (!user) return "";
+    if (user.username) {
+      return user.username.slice(0, 2).toUpperCase();
+    }
+    if (user.email) {
+      return user.email.slice(0, 2).toUpperCase();
+    }
+    return "?";
+  };
+
 
   return (
     <div className="relative z-10 flex-shrink-0 flex h-16 bg-white shadow">
@@ -28,83 +44,63 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
         onClick={() => setSidebarOpen(!sidebarOpen)}
       >
         <span className="sr-only">Open sidebar</span>
-        <i className="fas fa-bars h-6 w-6"></i>
+        <i className="fas fa-bars h-6 w-6"></i> {/* Assuming FontAwesome is used */}
       </button>
-      
-      <div className="flex-1 px-4 flex justify-between">
-        <div className="flex-1 flex">
-          <div className="w-full flex md:ml-0">
-            <div className="relative w-full text-gray-400 focus-within:text-gray-600">
-              <div className="absolute inset-y-0 left-0 flex items-center pointer-events-none">
-                <i className="fas fa-search h-5 w-5 ml-3"></i>
-              </div>
-              <Input
-                id="search-field"
-                className="block w-full h-full pl-10 pr-3 py-2 rounded-md text-gray-900 placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-0 focus:border-transparent sm:text-sm"
-                placeholder="Search for players, competitions..."
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-        
-        <div className="ml-4 flex items-center md:ml-6">
+
+      {/* Centered Title */}
+      <div className="flex-1 px-4 flex justify-center items-center">
+        <h2 className="text-xl font-semibold text-gray-700">Major Predictor</h2>
+      </div>
+
+      {/* Right-aligned User Menu */}
+      <div className="ml-4 flex items-center md:ml-6">
           {user ? (
             <>
+              {/* Notifications Button (Optional) */}
               <button
                 type="button"
                 className="p-1 rounded-full text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary mr-3"
               >
                 <span className="sr-only">View notifications</span>
-                <i className="fas fa-bell h-6 w-6"></i>
+                <i className="fas fa-bell h-6 w-6"></i> {/* Assuming FontAwesome */}
               </button>
-              
-              {/* Profile dropdown - visible on mobile only */}
-              <div className="ml-3 relative md:hidden">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-8 w-8 rounded-full p-0">
-                      <div className="flex-shrink-0 h-8 w-8 rounded-full bg-gray-300 flex items-center justify-center">
-                        {user.avatarUrl ? (
-                          <img 
-                            src={user.avatarUrl} 
-                            alt={user.username} 
-                            className="h-8 w-8 rounded-full" 
-                          />
-                        ) : (
-                          <span className="text-sm font-medium text-gray-800">
-                            {user.username?.charAt(0) || 'U'}
-                          </span>
-                        )}
-                      </div>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <div className="px-4 py-2 text-sm">
-                      <p className="font-medium">{user.username}</p>
-                      <p className="text-gray-500 truncate">{user.email}</p>
-                    </div>
-                    <DropdownMenuSeparator />
+
+              {/* Profile dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="relative h-8 w-8 rounded-full p-0">
+                    <Avatar className="h-8 w-8">
+                      {user.avatarUrl ? (
+                        <img src={user.avatarUrl} alt={user.username || 'User'} className="h-full w-full rounded-full object-cover" />
+                      ) : (
+                        <AvatarFallback className="bg-primary text-primary-foreground">
+                          {getAvatarFallback()}
+                        </AvatarFallback>
+                      )}
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <div className="px-4 py-2 text-sm">
+                    <p className="font-medium">{user.username || 'User'}</p>
+                    <p className="text-gray-500 truncate">{user.email}</p>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link href="/profile">Profile</Link>
+                  </DropdownMenuItem>
+                  {/* Add other relevant links */}
+                  {isAdmin && (
                     <DropdownMenuItem asChild>
-                      <Link href="/profile">Profile</Link>
+                      <Link href="/admin">Admin</Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link href="/leaderboard">Leaderboard</Link>
-                    </DropdownMenuItem>
-                    {isAdmin && (
-                      <DropdownMenuItem asChild>
-                        <Link href="/admin">Admin</Link>
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={signOut}>
-                      Sign out
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={signOut}>
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           ) : (
             <div className="flex space-x-2">
@@ -117,7 +113,6 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </div> // This closing div matches the main outer div
   );
 }

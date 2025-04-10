@@ -226,10 +226,22 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
     }
     console.log(`Tournament name match confirmed: "${jsonTournamentName}"`);
 
-    // --- Fetch DB Golfers for Matching ---
-    const golfersRes: QueryResult<Golfer> = await client.query('SELECT id, name FROM golfers');
-    const dbGolfers: Golfer[] = getRows(golfersRes);
-    const golferNameMap = new Map(dbGolfers.map(g => [g.name.toLowerCase().trim(), g.id])); // Map lowercase name to ID
+    // --- Fetch DB Golfers for Matching (Include shortName) ---
+    const golfersRes: QueryResult<{ id: number; name: string; shortName: string | null }> = await client.query('SELECT id, name, "shortName" FROM golfers');
+    const dbGolfers: { id: number; name: string; shortName: string | null }[] = getRows(golfersRes);
+    
+    // Create maps for both full name and short name matching
+    const golferFullNameMap = new Map<string, number>();
+    const golferShortNameMap = new Map<string, number>();
+    dbGolfers.forEach(g => {
+        if (g.name) {
+            golferFullNameMap.set(g.name.toLowerCase().trim(), g.id);
+        }
+        if (g.shortName) {
+            golferShortNameMap.set(g.shortName.toLowerCase().trim(), g.id);
+        }
+    });
+    console.log(`Created maps for ${golferFullNameMap.size} full names and ${golferShortNameMap.size} short names.`);
 
     // --- Process JSON Data ---
     const resultsToUpsert: Omit<Result, 'id' | 'points' | 'created_at' | 'updated_at'>[] = [];
@@ -264,8 +276,8 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
              score = 0; // Assign 0 if score is not a number (e.g., WD, CUT might have non-numeric scores)
         }
 
-        // Match Player Name
-        const dbGolferId = golferNameMap.get(playerName);
+        // Match Player Name (Try short name first, then full name)
+        let dbGolferId = golferShortNameMap.get(playerName) ?? golferFullNameMap.get(playerName);
 
         if (dbGolferId) {
             resultsToUpsert.push({

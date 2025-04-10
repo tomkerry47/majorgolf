@@ -16,8 +16,8 @@ import {
   TableRow,
   TableCaption 
 } from "@/components/ui/table";
-import { apiRequest } from "@/lib/queryClient"; 
-import type { Competition as CompetitionType, Selection, Result, Golfer } from "@shared/schema"; 
+import { apiRequest } from "@/lib/queryClient";
+import type { Competition as CompetitionType, Selection, Result, Golfer } from "@shared/schema";
 
 // Define the expected shape of the enhanced competition data from the backend
 interface EnhancedCompetition extends CompetitionType {
@@ -37,10 +37,10 @@ interface EnhancedCompetition extends CompetitionType {
     golfer3Name?: string;
     golfer1Rank?: number | null; // Add rank field
     golfer2Rank?: number | null; // Add rank field
-    golfer3Rank?: number | null; // Add rank field
-    useCaptainsChip: boolean;
-    captainGolferId?: number | null;
-  }[] | null;
+  golfer3Rank?: number | null;
+  useCaptainsChip: boolean;
+  captainGolferId?: number | null;
+}[] | null;
 }
 
 // Define the shape of the results data expected from the API
@@ -89,9 +89,9 @@ export default function Competition() {
     queryFn: () => apiRequest<Selection | null>(`/api/selections/${competitionId}`, 'GET'), 
     enabled: !!user && !!competitionId,
   });
-  
-  if (user === undefined || !match) return null; 
-  
+
+  if (user === undefined || !match) return null;
+
   if (isLoadingCompetition) {
     return (
       <div className="py-6">
@@ -140,6 +140,17 @@ export default function Competition() {
     }
     return fallbackName || 'Unknown Golfer';
   };
+
+  // Calculate golfer selection counts if allSelections data is available
+  const golferSelectionCounts = new Map<number, number>();
+  if (competition?.allSelections) {
+    competition.allSelections.forEach(sel => {
+      if (sel.golfer1Id) golferSelectionCounts.set(sel.golfer1Id, (golferSelectionCounts.get(sel.golfer1Id) || 0) + 1);
+      if (sel.golfer2Id) golferSelectionCounts.set(sel.golfer2Id, (golferSelectionCounts.get(sel.golfer2Id) || 0) + 1);
+      if (sel.golfer3Id) golferSelectionCounts.set(sel.golfer3Id, (golferSelectionCounts.get(sel.golfer3Id) || 0) + 1);
+    });
+  }
+  const showSelectionCounts = !!competition?.allSelections && deadlinePassed; // Only show counts if data exists and deadline passed
 
   return (
     <div className="py-6">
@@ -194,16 +205,53 @@ export default function Competition() {
             />
           </TabsContent>
           
-          <TabsContent value="leaderboard">
-             <Card>
-              <CardHeader><CardTitle>Leaderboard</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                 <div className="p-8 text-center text-gray-500">Leaderboard data needs to be fetched separately.</div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-          
-          <TabsContent value="results">
+            <TabsContent value="leaderboard">
+              <Card>
+                <CardHeader><CardTitle>Tournament Leaderboard</CardTitle></CardHeader>
+                <CardContent className="p-0">
+                  {/* Use the existing results data and loading state */}
+                  {isLoadingResults ? ( 
+                    <div className="p-6"><Skeleton className="h-64 w-full" /></div>
+                  ) : competitionResults?.length ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-16">Pos</TableHead>
+                          <TableHead>Golfer</TableHead>
+                          {showSelectionCounts && <TableHead className="text-center w-24">Selected By</TableHead>}
+                          <TableHead className="text-right">Score</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {/* Map over competitionResults */}
+                        {competitionResults.map((result) => (
+                          <TableRow key={result.golferId}>
+                            <TableCell className="font-medium">{result.position === 0 ? 'CUT' : result.position || 'N/A'}</TableCell>
+                            <TableCell>{getGolferDisplayName(result.golfer)}</TableCell>
+                            {showSelectionCounts && (
+                              <TableCell className="text-center">
+                                {golferSelectionCounts.get(result.golferId) || 0}
+                              </TableCell>
+                            )}
+                            <TableCell className="text-right">{result.score > 0 ? `+${result.score}` : result.score === 0 ? 'E' : result.score}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="py-10 text-center">
+                      <div className="text-gray-400 mb-3"><i className="fas fa-list-ol text-4xl"></i></div> {/* Changed icon */}
+                      <h3 className="text-lg font-medium text-gray-900">Tournament Leaderboard Not Available</h3> {/* Updated title */}
+                      <p className="text-sm text-gray-500 mt-1">
+                        The official tournament leaderboard will appear here once available. {/* Updated message */}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="results">
             <Card>
                <CardHeader><CardTitle>Results</CardTitle></CardHeader>
               <CardContent className="p-0">
@@ -212,21 +260,26 @@ export default function Competition() {
                 ) : competitionResults?.length ? (
                   <Table>
                     <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-16">Pos</TableHead>
-                        <TableHead>Golfer</TableHead>
-                        <TableHead className="text-right">Score</TableHead>
-                        <TableHead className="text-right">Points</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {competitionResults.map((result) => (
-                        <TableRow key={result.golferId}>
-                          <TableCell className="font-medium">{result.position === 0 ? 'CUT' : result.position || 'N/A'}</TableCell>
-                          {/* Use helper function to display name */}
-                          <TableCell>{getGolferDisplayName(result.golfer)}</TableCell> 
-                          <TableCell className="text-right">{result.score > 0 ? `+${result.score}` : result.score === 0 ? 'E' : result.score}</TableCell>
-                          <TableCell className="text-right font-medium">{result.points ?? '-'}</TableCell> 
+                        <TableRow>
+                          <TableHead className="w-16">Pos</TableHead>
+                          <TableHead>Golfer</TableHead>
+                          {showSelectionCounts && <TableHead className="text-center w-24">Selected By</TableHead>}
+                          <TableHead className="text-right">Score</TableHead>
+                          <TableHead className="text-right">Points</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {competitionResults.map((result) => (
+                          <TableRow key={result.golferId}>
+                            <TableCell className="font-medium">{result.position === 0 ? 'CUT' : result.position || 'N/A'}</TableCell>
+                            <TableCell>{getGolferDisplayName(result.golfer)}</TableCell>
+                            {showSelectionCounts && (
+                              <TableCell className="text-center">
+                                {golferSelectionCounts.get(result.golferId) || 0}
+                              </TableCell>
+                            )}
+                            <TableCell className="text-right">{result.score > 0 ? `+${result.score}` : result.score === 0 ? 'E' : result.score}</TableCell>
+                            <TableCell className="text-right font-medium">{result.points ?? '-'}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

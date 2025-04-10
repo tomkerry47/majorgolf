@@ -11,6 +11,9 @@ export const users = pgTable("users", {
     avatarUrl: text("avatarUrl"),
     isAdmin: boolean("isAdmin").default(false).notNull(),
     hasUsedWaiverChip: boolean("hasUsedWaiverChip").default(false).notNull(),
+    waiverChipUsedCompetitionId: integer("waiverChipUsedCompetitionId").references(() => competitions.id), // Added
+    waiverChipOriginalGolferId: integer("waiverChipOriginalGolferId").references(() => golfers.id), // Added
+    waiverChipReplacementGolferId: integer("waiverChipReplacementGolferId").references(() => golfers.id), // Added
     createdAt: timestamp("createdAt").defaultNow().notNull()
 });
 export const competitions = pgTable("competitions", {

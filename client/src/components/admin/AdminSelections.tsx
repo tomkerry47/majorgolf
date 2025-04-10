@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react"; // Import useEffect
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import {
   Dialog,
@@ -49,7 +50,9 @@ export default function AdminSelections() {
   const [selectedSelection, setSelectedSelection] = useState<SelectionWithDetails | null>(null);
   const [selectedCompetition, setSelectedCompetition] = useState<number | null>(null);
   const [selectedUser, setSelectedUser] = useState<number | null>(null);
-  
+  const [useWaiver, setUseWaiver] = useState(false); // State for waiver checkbox
+  const [currentUserData, setCurrentUserData] = useState<User | null>(null); // State for the user being edited
+
   // Define type for selection with user and golfer data
   interface SelectionWithDetails {
     id: number;
@@ -70,23 +73,23 @@ export default function AdminSelections() {
   const { data: competitions = [], isLoading: isLoadingCompetitions } = useQuery<Competition[]>({
     queryKey: ['/api/competitions'],
   });
-  
-  // Get all users
+
+  // Get all users (now includes waiver details)
   const { data: users = [], isLoading: isLoadingUsers } = useQuery<User[]>({
     queryKey: ['/api/admin/users'],
   });
-  
+
   // Get selections for selected competition
   const { data: selections = [], isLoading: isLoadingSelections } = useQuery<SelectionWithDetails[]>({
     queryKey: [`/api/admin/competitions/${selectedCompetition}/selections`],
     enabled: !!selectedCompetition,
   });
-  
+
   // Get all golfers for the form
   const { data: golfers = [], isLoading: isLoadingGolfers } = useQuery<Golfer[]>({
     queryKey: ['/api/golfers'],
   });
-  
+
   const defaultValues: InsertSelection = {
     competitionId: selectedCompetition || 0,
     userId: selectedUser || 0,
@@ -94,12 +97,12 @@ export default function AdminSelections() {
     golfer2Id: 0,
     golfer3Id: 0,
   };
-  
+
   const form = useForm<InsertSelection>({
     resolver: zodResolver(selectionFormSchema),
     defaultValues
   });
-  
+
   const openEditDialog = (selection: SelectionWithDetails) => {
     form.reset({
       competitionId: selection.competitionId,
@@ -108,15 +111,72 @@ export default function AdminSelections() {
       golfer2Id: selection.golfer2Id,
       golfer3Id: selection.golfer3Id
     });
+    // Find the user data for the selection being edited
+    const userForSelection = users.find(u => u.id === selection.userId);
+    setCurrentUserData(userForSelection || null);
+    setUseWaiver(false); // Reset waiver checkbox on dialog open
     setSelectedSelection(selection);
     setIsDialogOpen(true);
   };
-  
+
   const openDeleteDialog = (selection: SelectionWithDetails) => {
     setSelectedSelection(selection);
     setIsDeleteDialogOpen(true);
   };
-  
+
+  // --- TEST FUNCTION for Direct API Call ---
+  const handleDirectApiCall = async () => {
+    if (!selectedSelection) {
+      toast({ variant: "destructive", title: "Error", description: "No selection selected for test." });
+      return;
+    }
+    // Get current form values directly
+    const currentFormData = form.getValues();
+    console.log("[handleDirectApiCall] Form data:", currentFormData);
+
+    // Construct payload manually (similar to onSubmit)
+    let payload: any = { ...currentFormData };
+     if (useWaiver) {
+        let changes = 0;
+        let updatedGolferSlot: number | null = null;
+        let newGolferId: number | null = null;
+        if (currentFormData.golfer1Id !== selectedSelection.golfer1Id) { changes++; updatedGolferSlot = 1; newGolferId = currentFormData.golfer1Id; }
+        if (currentFormData.golfer2Id !== selectedSelection.golfer2Id) { changes++; updatedGolferSlot = 2; newGolferId = currentFormData.golfer2Id; }
+        if (currentFormData.golfer3Id !== selectedSelection.golfer3Id) { changes++; updatedGolferSlot = 3; newGolferId = currentFormData.golfer3Id; }
+
+        if (changes !== 1) {
+          toast({ variant: "destructive", title: "Waiver Error", description: "Waiver chip can only be used when swapping exactly one golfer." });
+          return;
+        }
+        payload = { ...currentFormData, isWaiverChipTransaction: true, updatedGolferSlot: updatedGolferSlot, newGolferId: newGolferId };
+      } else {
+         payload = { ...currentFormData, isWaiverChipTransaction: false };
+      }
+
+    console.log("[handleDirectApiCall] Payload:", payload);
+
+    try {
+      const apiUrl = `/api/admin/selections/${selectedSelection.id}`;
+      const apiMethod = 'PATCH';
+      console.log(`[handleDirectApiCall] Calling apiRequest: URL='${apiUrl}', Method='${apiMethod}'`);
+      await apiRequest(apiUrl, apiMethod, payload);
+      toast({ title: "Direct API Call Successful", description: "The selection update via direct call succeeded." });
+      // Optionally invalidate queries and close dialog if successful
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/competitions/${selectedCompetition}/selections`] });
+      setIsDialogOpen(false);
+      setUseWaiver(false);
+    } catch (error: any) {
+      console.error("[handleDirectApiCall Error]", error);
+      toast({
+        variant: "destructive",
+        title: "Direct API Call Error",
+        description: error.message || "An error occurred during the direct API call."
+      });
+    }
+  };
+  // --- END TEST FUNCTION ---
+
   const onSubmit = async (data: InsertSelection) => {
     try {
       if (!selectedSelection) {
@@ -128,15 +188,65 @@ export default function AdminSelections() {
         return;
       }
 
-      await apiRequest('PATCH', `/api/admin/selections/${selectedSelection.id}`, data);
+      let payload: any = { ...data };
+      let updatedGolferSlot: number | null = null;
+      let newGolferId: number | null = null;
+
+      // Determine which golfer changed if waiver is used
+      if (useWaiver) {
+        let changes = 0;
+        if (data.golfer1Id !== selectedSelection.golfer1Id) {
+          changes++;
+          updatedGolferSlot = 1;
+          newGolferId = data.golfer1Id;
+        }
+        if (data.golfer2Id !== selectedSelection.golfer2Id) {
+          changes++;
+          updatedGolferSlot = 2;
+          newGolferId = data.golfer2Id;
+        }
+        if (data.golfer3Id !== selectedSelection.golfer3Id) {
+          changes++;
+          updatedGolferSlot = 3;
+          newGolferId = data.golfer3Id;
+        }
+
+        if (changes !== 1) {
+          toast({
+            variant: "destructive",
+            title: "Waiver Error",
+            description: "Waiver chip can only be used when swapping exactly one golfer."
+          });
+          return; // Stop submission
+        }
+
+        // Add waiver details to payload
+        payload = {
+          ...data, // Send the updated golfer IDs
+          isWaiverChipTransaction: true,
+          updatedGolferSlot: updatedGolferSlot,
+          newGolferId: newGolferId,
+        };
+      } else {
+         payload = { ...data, isWaiverChipTransaction: false }; // Ensure flag is false if checkbox unchecked
+      }
+
+      // Reverted back to using dynamic URL and apiRequest helper
+      const apiUrl = `/api/admin/selections/${selectedSelection.id}`;
+      const apiMethod = 'PATCH';
+      await apiRequest(apiUrl, apiMethod, payload);
+
       toast({
         title: "Selection updated",
         description: "The selection has been successfully updated."
       });
-      
+      // Invalidate users query as well in case waiver status changed
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
       queryClient.invalidateQueries({ queryKey: [`/api/admin/competitions/${selectedCompetition}/selections`] });
       setIsDialogOpen(false);
+      setUseWaiver(false); // Reset waiver state
     } catch (error: any) {
+      // Removed console.error log
       toast({
         variant: "destructive",
         title: "Error",
@@ -144,7 +254,7 @@ export default function AdminSelections() {
       });
     }
   };
-  
+
   const handleDelete = async () => {
     try {
       if (!selectedSelection) {
@@ -161,7 +271,7 @@ export default function AdminSelections() {
         title: "Selection deleted",
         description: "The selection has been successfully deleted."
       });
-      
+
       queryClient.invalidateQueries({ queryKey: [`/api/admin/competitions/${selectedCompetition}/selections`] });
       setIsDeleteDialogOpen(false);
     } catch (error: any) {
@@ -172,12 +282,12 @@ export default function AdminSelections() {
       });
     }
   };
-  
+
   // Filtered selections by user if selectedUser is set
-  const filteredSelections = selectedUser 
+  const filteredSelections = selectedUser
     ? selections?.filter(selection => selection.userId === selectedUser)
     : selections;
-  
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -204,7 +314,7 @@ export default function AdminSelections() {
               )}
             </SelectContent>
           </Select>
-          
+
           <Select
             value={selectedUser?.toString() || "0"}
             onValueChange={(value) => setSelectedUser(value === "0" ? null : parseInt(value))}
@@ -257,8 +367,8 @@ export default function AdminSelections() {
               {filteredSelections?.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-4 text-gray-500">
-                    {selectedUser ? 
-                      'This user has not made any selections for this competition.' : 
+                    {selectedUser ?
+                      'This user has not made any selections for this competition.' :
                       'No selections found for this competition.'}
                   </TableCell>
                 </TableRow>
@@ -288,14 +398,14 @@ export default function AdminSelections() {
           </Table>
         )}
       </CardContent>
-      
+
       {/* Edit Selection Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Edit User Selection</DialogTitle>
           </DialogHeader>
-          
+
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
@@ -304,8 +414,8 @@ export default function AdminSelections() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Selection 1</FormLabel>
-                    <Select 
-                      value={field.value.toString()} 
+                    <Select
+                      value={field.value.toString()}
                       onValueChange={(value) => field.onChange(parseInt(value))}
                     >
                       <FormControl>
@@ -329,15 +439,15 @@ export default function AdminSelections() {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="golfer2Id"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Selection 2</FormLabel>
-                    <Select 
-                      value={field.value.toString()} 
+                    <Select
+                      value={field.value.toString()}
                       onValueChange={(value) => field.onChange(parseInt(value))}
                     >
                       <FormControl>
@@ -361,15 +471,15 @@ export default function AdminSelections() {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="golfer3Id"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Selection 3</FormLabel>
-                    <Select 
-                      value={field.value.toString()} 
+                    <Select
+                      value={field.value.toString()}
                       onValueChange={(value) => field.onChange(parseInt(value))}
                     >
                       <FormControl>
@@ -393,17 +503,38 @@ export default function AdminSelections() {
                   </FormItem>
                 )}
               />
-              
+
+              {/* Waiver Chip Checkbox - Simple div structure */}
+              <div className="flex items-center space-x-2 pt-4">
+                 <Checkbox
+                   id="useWaiver"
+                   checked={useWaiver}
+                   onCheckedChange={(checked: boolean | 'indeterminate') => setUseWaiver(Boolean(checked))}
+                   disabled={currentUserData?.hasUsedWaiverChip}
+                 />
+                 <label
+                   htmlFor="useWaiver"
+                   className={`text-sm font-medium leading-none ${currentUserData?.hasUsedWaiverChip ? 'text-gray-400 cursor-not-allowed' : 'peer-disabled:cursor-not-allowed peer-disabled:opacity-70'}`}
+                 >
+                   Use Waiver Chip for this swap? {currentUserData?.hasUsedWaiverChip ? '(Already Used)' : ''}
+                 </label>
+               </div>
+
               <DialogFooter>
-                <Button type="submit">
-                  Save Changes
+                <Button type="submit" className="mr-2"> {/* Original Save Button */}
+                  Save Changes (via handleSubmit)
                 </Button>
+                {/* --- TEST BUTTON --- */}
+                <Button type="button" variant="outline" onClick={handleDirectApiCall}>
+                  Test Direct API Call
+                </Button>
+                 {/* --- END TEST BUTTON --- */}
               </DialogFooter>
             </form>
           </Form>
         </DialogContent>
       </Dialog>
-      
+
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
@@ -415,7 +546,7 @@ export default function AdminSelections() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleDelete}
               className="bg-red-500 hover:bg-red-600"
             >

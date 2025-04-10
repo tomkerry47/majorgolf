@@ -1,6 +1,9 @@
 import { Express, Request, Response, NextFunction } from 'express';
 import { Server } from 'http';
 import { storage, type IStorage } from './storage'; // Import IStorage type
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import {
   loginSchema,
   registerSchema,
@@ -16,13 +19,20 @@ import {
   type SelectionRank, // Import SelectionRank type
   type Result // Import Result type
 } from '@shared/schema';
-import { generateToken, verifyToken, comparePassword } from './db';
+import { generateToken, verifyToken, comparePassword, hashPassword } from './db'; // Import hashPassword
 import { ZodError } from 'zod';
 import { pgClient, pool } from './db';
 import { updateResultsAndAllocatePoints } from '../scripts/update_results_and_allocate_points';
 import { spawn } from 'child_process';
-import path from 'path';
+import crypto from 'crypto'; // Import crypto for password generation
+// path is already imported above
 import { fileURLToPath } from 'url'; // Import fileURLToPath for ES Modules
+import axios from 'axios'; // Import axios
+import * as cheerio from 'cheerio'; // Correct cheerio import for ES Modules
+
+// Define __dirname for ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Extended user interface including JWT properties
 interface ExtendedUser {
@@ -44,6 +54,8 @@ declare global {
 
 // Middleware to validate JWT
 const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
+  // Removed debug logging
+
   const path = req.path.replace(/^\/api/, '');
   const method = req.method;
   const route = `${path} ${method}`;
@@ -139,6 +151,41 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
+// --- Avatar Upload Configuration (Moved outside registerRoutes) ---
+const avatarStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    // Use process.cwd() to get the project root and join from there
+    const uploadPath = path.join(process.cwd(), 'public/uploads/avatars');
+    // Ensure the directory exists
+    fs.mkdirSync(uploadPath, { recursive: true });
+    cb(null, uploadPath);
+  },
+  filename: (req, file, cb) => {
+    // Adjust filename based on context (user vs admin route)
+    // Use req.params.id for admin route, fallback to req.user for self-upload
+    const userId = req.params.id || (req.user as ExtendedUser)?.database_id || 'unknown';
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname);
+    cb(null, `user-${userId}-${uniqueSuffix}${extension}`);
+  }
+});
+
+const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  // Accept only image files
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Invalid file type, only images are allowed!'));
+  }
+};
+
+const upload = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: fileFilter
+});
+// --- End Avatar Upload Configuration ---
+
 
 // Register API routes
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -176,9 +223,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user.password) { return res.status(401).json({ error: 'Password not set' }); }
       const isPasswordValid = await comparePassword(password, user.password);
       if (!isPasswordValid) { return res.status(401).json({ error: 'Invalid credentials' }); }
+
+      // Update lastLoginAt timestamp
+      const now = new Date();
+      await storage.updateUser(user.id, { lastLoginAt: now.toISOString() }); // Convert Date to ISO string
+      console.log(`Updated lastLoginAt for user ${user.username} (ID: ${user.id})`);
+
       const token = generateToken(user.id, user.email, user.isAdmin);
       res.cookie('authToken', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 7 * 24 * 60 * 60 * 1000 });
-      res.json({ user: { id: user.id.toString(), email: user.email, username: user.username, avatarUrl: user.avatarUrl, isAdmin: user.isAdmin }, token });
+      // Include lastLoginAt in the response user object if needed by the frontend immediately after login
+      res.json({ user: { id: user.id.toString(), email: user.email, username: user.username, avatarUrl: user.avatarUrl, isAdmin: user.isAdmin, lastLoginAt: now.toISOString() }, token });
     } catch (error) { if (error instanceof ZodError) { return res.status(400).json({ error: error.errors }); } console.error('Login error:', error); res.status(500).json({ error: 'Login failed' }); }
   });
 
@@ -292,20 +346,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/golfers', async (req: Request, res: Response) => {
-    try { const golfers = await storage.getGolfers(); res.json({ golfers }); } catch (error) { console.error('Get golfers error:', error); res.status(500).json({ error: 'Failed to fetch golfers' }); } // Wrap in { golfers: ... }
+  // Modified /api/golfers to handle user-specific waiver restrictions
+  app.get('/api/golfers', validateJWT, async (req: Request, res: Response) => { // Added validateJWT
+    try {
+      let allGolfers = await storage.getGolfers();
+      const tokenUser = req.user as ExtendedUser | undefined; // Get user from validated token
+
+      // Check if the request is being made in the context of a specific user (e.g., for their selection form)
+      // We rely on the JWT token user context here.
+      if (tokenUser && tokenUser.database_id) {
+        const userId = tokenUser.database_id;
+        const user = await storage.getUser(userId);
+
+        if (user && user.hasUsedWaiverChip && user.waiverChipOriginalGolferId && user.waiverChipReplacementGolferId) {
+          console.log(`User ${userId} has used waiver chip. Filtering golfers: ${user.waiverChipOriginalGolferId}, ${user.waiverChipReplacementGolferId}`);
+          const restrictedGolferIds = new Set([user.waiverChipOriginalGolferId, user.waiverChipReplacementGolferId]);
+          allGolfers = allGolfers.filter(golfer => !restrictedGolferIds.has(golfer.id));
+        }
+      } else {
+        // If no specific user context (e.g., public view or admin view not tied to a user selection), return all golfers.
+        // Or handle based on specific query params if needed in the future.
+        console.log("No specific user context for golfer filtering, returning all golfers.");
+      }
+
+      res.json({ golfers: allGolfers }); // Wrap in { golfers: ... }
+    } catch (error) {
+      console.error('Get golfers error:', error);
+      res.status(500).json({ error: 'Failed to fetch golfers' });
+    }
   });
   app.get('/api/results/:competitionId', async (req: Request, res: Response) => {
-    try { const { competitionId } = req.params; const results = await storage.getResults(parseInt(competitionId)); const resultsWithGolfers = await Promise.all(results.map(async (result) => { const golfer = await storage.getGolferById(result.golferId); return { ...result, golfer: golfer ? { id: golfer.id, name: golfer.name } : undefined }; })); res.json(resultsWithGolfers); } catch (error) { console.error('Get results error:', error); res.status(500).json({ error: 'Failed to fetch results' }); }
+    try { 
+      const { competitionId } = req.params; 
+      const results = await storage.getResults(parseInt(competitionId)); 
+      const resultsWithGolfers = await Promise.all(results.map(async (result) => { 
+        const golfer = await storage.getGolferById(result.golferId); 
+        // Include firstName and lastName in the golfer object
+        return { 
+          ...result, 
+          golfer: golfer ? { 
+            id: golfer.id, 
+            name: golfer.name, 
+            firstName: golfer.firstName, // Add firstName
+            lastName: golfer.lastName   // Add lastName
+          } : undefined 
+        }; 
+      })); 
+      res.json(resultsWithGolfers); 
+    } catch (error) { 
+      console.error('Get results error:', error); 
+      res.status(500).json({ error: 'Failed to fetch results' }); 
+    }
   });
   app.get('/api/leaderboard/:competitionId?', async (req: Request, res: Response) => {
     try {
       const competitionId = req.params.competitionId ? parseInt(req.params.competitionId) : undefined;
-      const leaderboard = await storage.getLeaderboard(competitionId);
+      // Fetch the object containing standings and lastUpdated
+      const leaderboardData = await storage.getLeaderboard(competitionId); 
+      
+      // Process standings if it's a specific competition (add selection details)
       if (typeof competitionId === 'number' && !isNaN(competitionId)) {
          const tokenUser = req.user as ExtendedUser | undefined;
          const userId = tokenUser?.database_id;
-        const enhancedLeaderboard = await Promise.all(leaderboard.map(async (entry) => {
+        // Use leaderboardData.standings here
+        const enhancedStandings = await Promise.all(leaderboardData.standings.map(async (entry: any) => { // Add type 'any' to entry for now
           let selectionRecord: Selection | undefined = undefined;
           // Fetch selections for the specific user in the leaderboard entry
           selectionRecord = await storage.getUserSelections(entry.userId, competitionId);
@@ -320,10 +424,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             { playerId: selectionRecord.golfer2Id, playerName: golfer2?.name || 'Unknown', position: results.find(r => r.golferId === selectionRecord.golfer2Id)?.position },
             { playerId: selectionRecord.golfer3Id, playerName: golfer3?.name || 'Unknown', position: results.find(r => r.golferId === selectionRecord.golfer3Id)?.position }
           ];
-          return { ...entry, selections };
+          // Return the entry with added selections, keeping lastPointsChange
+          return { ...entry, selections }; 
         }));
-        res.json(enhancedLeaderboard);
-      } else { res.json(leaderboard); }
+        // Return the full object with enhanced standings and lastUpdated
+        res.json({ standings: enhancedStandings, lastUpdated: leaderboardData.lastUpdated }); 
+      } else { 
+        // For overall leaderboard, return the object as is
+        res.json(leaderboardData); 
+      }
     } catch (error) { console.error('Leaderboard error:', error); res.status(500).json({ error: 'Failed to fetch leaderboard' }); }
   });
   app.get('/api/competitions/:competitionId/hole-in-ones', async (req: Request, res: Response) => {
@@ -343,7 +452,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) { console.error('Dashboard stats error:', error); res.status(500).json({ error: 'Failed to fetch dashboard stats' }); }
   });
 
+
   // --- PROTECTED ROUTES --- (Apply validateJWT middleware individually)
+
+  // New endpoint for scraping image URL
+  app.post('/api/scrape-image', validateJWT, async (req: Request, res: Response) => {
+    const { leaderboardUrl } = req.body;
+
+    if (!leaderboardUrl || typeof leaderboardUrl !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid leaderboardUrl' });
+    }
+
+    console.log(`[API /api/scrape-image] Attempting to scrape: ${leaderboardUrl}`);
+
+    try {
+      // Fetch HTML content from the URL
+      const { data: htmlContent } = await axios.get(leaderboardUrl, {
+        headers: {
+          // Add headers to mimic a browser request if necessary
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+
+      // Load HTML into cheerio
+      const $ = cheerio.load(htmlContent);
+
+      // Find the image source using the specified selector
+      const imageSrc = $('.css-gmuwbf img').attr('src'); // Target img within the class
+
+      if (imageSrc) {
+        console.log(`[API /api/scrape-image] Found image src: ${imageSrc}`);
+        // Optionally resolve relative URLs
+        const absoluteImageUrl = new URL(imageSrc, leaderboardUrl).toString();
+        console.log(`[API /api/scrape-image] Resolved absolute URL: ${absoluteImageUrl}`);
+        res.json({ imageUrl: absoluteImageUrl });
+      } else {
+        console.warn(`[API /api/scrape-image] Image tag or src not found within .css-gmuwbf for URL: ${leaderboardUrl}`);
+        res.status(404).json({ error: 'Image not found on the page with the specified selector (.css-gmuwbf img)' });
+      }
+    } catch (error: any) {
+      console.error(`[API /api/scrape-image] Error scraping ${leaderboardUrl}:`, error.message);
+      if (axios.isAxiosError(error)) {
+        res.status(error.response?.status || 500).json({ error: `Failed to fetch leaderboard page: ${error.message}` });
+      } else {
+        res.status(500).json({ error: `Error processing leaderboard page: ${error.message}` });
+      }
+    }
+  });
+
 
   // User profile routes
   app.get('/api/users/:id', validateJWT, async (req: Request, res: Response) => {
@@ -358,6 +514,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch('/api/users/:id', validateJWT, async (req: Request, res: Response) => {
     try { const { id } = req.params; const userId = parseInt(id); const tokenUser = req.user as ExtendedUser; if (tokenUser.database_id !== userId && !tokenUser.isAdmin) { return res.status(403).json({ error: 'Not authorized to update this user' }); } const user = await storage.getUser(userId); if (!user) { return res.status(404).json({ error: 'User not found' }); } const updatedUser = await storage.updateUser(userId, req.body); const { password, ...userData } = updatedUser; res.json(userData); } catch (error) { console.error('Update user error:', error); res.status(500).json({ error: 'Failed to update user' }); }
   });
+
+  // User Avatar Upload (Self)
+  app.post('/api/users/avatar', validateJWT, upload.single('avatar'), async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      const userId = tokenUser.database_id!;
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded or invalid file type.' });
+      }
+
+      const avatarUrl = `/uploads/avatars/${req.file.filename}`; // Relative URL path
+
+      // Update user record in the database
+      const updatedUser = await storage.updateUser(userId, { avatarUrl });
+
+      const { password, ...userData } = updatedUser;
+      res.json({ message: 'Avatar uploaded successfully', user: userData });
+
+    } catch (error: any) {
+      console.error('Avatar upload error:', error);
+      // Handle multer errors specifically
+      if (error instanceof multer.MulterError) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ error: 'File too large. Maximum size is 5MB.' });
+        }
+      } else if (error.message === 'Invalid file type, only images are allowed!') {
+         return res.status(400).json({ error: error.message });
+      }
+      res.status(500).json({ error: 'Failed to upload avatar' });
+    }
+  });
+
 
   // Selection routes
   app.get('/api/selections/my-all', validateJWT, async (req: Request, res: Response) => {
@@ -397,59 +586,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(null); // No selection found for this user/competition
       }
 
-      // 2. Fetch details for all selected golfers concurrently
-      const golferIds = [selectionRecord.golfer1Id, selectionRecord.golfer2Id, selectionRecord.golfer3Id];
-      const golferPromises = golferIds.map(id => storage.getGolferById(id));
-      const golfers = await Promise.all(golferPromises);
-
-      // 3. Fetch results for the competition to get points and positions
-      const results = await storage.getResults(competitionId);
-      const resultsMap = new Map<number, Result>();
-      results.forEach(r => resultsMap.set(r.golferId, r));
-
-      // 4. Fetch rank at deadline for each golfer concurrently
-      const rankPromises = golferIds.map(id => storage.getSelectionRank(userId, competitionId, id));
-      const ranks = await Promise.all(rankPromises);
-      const rankMap = new Map<number, number | undefined>();
-      ranks.forEach((rankRecord, index) => {
-        rankMap.set(golferIds[index], rankRecord?.rankAtDeadline);
-      });
-
-      // 5. Construct the response array
-      const enrichedSelections = await Promise.all(golfers.map(async (golfer, index) => { // Make map async
-        if (!golfer) {
-          // Handle case where a golfer might not be found (though unlikely if selection exists)
-          return null;
-        }
-        const golferId = golfer.id;
-        const result = resultsMap.get(golferId);
-        const isCaptain = selectionRecord.useCaptainsChip && selectionRecord.captainGolferId === golferId;
-
-        // Fetch rank at deadline for wildcard check
-        const rankAtDeadline = rankMap.get(golferId);
-        const isWildcard = rankAtDeadline !== undefined && rankAtDeadline >= 51;
-
-        return {
-          id: selectionRecord.id, // Include selection ID if needed, though maybe not necessary per golfer
-          golfer: {
-            id: golfer.id,
-            name: golfer.name,
-            avatar: golfer.avatarUrl,
-            rank: golfer.rank || 'N/A' // Include current rank (from golfer table)
-          },
-          position: result?.position || 'N/A',
-          points: result?.points || 0,
-          isCaptain: isCaptain,
-          isWildcard: isWildcard // Use rank-based wildcard logic
-        };
-      }));
-
-      const validSelections = enrichedSelections.filter(selection => selection !== null); // Filter out any null entries
-
-      res.json(validSelections);
+      // Return the raw selection record directly
+      res.json(selectionRecord);
 
     } catch (error) {
-      console.error('Get selections error:', error);
+      console.error('Get user selection error:', error); // Updated error message context
       res.status(500).json({ error: 'Failed to fetch selections' });
     }
   });
@@ -504,9 +645,211 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to update competition' });
     }
   });
+  // Modified GET /api/admin/users to include waiver chip details
   app.get('/api/admin/users', validateJWT, async (req: Request, res: Response) => {
-    try { const users = await storage.getAllUsers(); const sanitizedUsers = users.map(user => { const { password, ...userData } = user; return userData; }); res.json(sanitizedUsers); } catch (error) { console.error('Admin get users error:', error); res.status(500).json({ error: 'Failed to fetch users' }); }
+    try {
+      const users = await storage.getAllUsers();
+
+      // Enhance user data with waiver chip details if used
+      const enhancedUsers = await Promise.all(users.map(async (user) => {
+        const { password, ...userData } = user; // Remove password
+
+        let waiverDetails: any = {};
+        if (userData.hasUsedWaiverChip && userData.waiverChipUsedCompetitionId && userData.waiverChipOriginalGolferId && userData.waiverChipReplacementGolferId) {
+          const competition = await storage.getCompetitionById(userData.waiverChipUsedCompetitionId);
+          const originalGolfer = await storage.getGolferById(userData.waiverChipOriginalGolferId);
+          const replacementGolfer = await storage.getGolferById(userData.waiverChipReplacementGolferId);
+          waiverDetails = {
+            waiverCompetitionName: competition?.name || 'N/A',
+            waiverOriginalGolferName: originalGolfer?.name || 'N/A',
+            waiverReplacementGolferName: replacementGolfer?.name || 'N/A',
+          };
+        }
+
+        return { ...userData, ...waiverDetails };
+      }));
+
+      res.json(enhancedUsers);
+    } catch (error) {
+      console.error('Admin get users error:', error);
+      res.status(500).json({ error: 'Failed to fetch users' });
+    }
   });
+
+  // Admin update user details (username, email, fullName)
+  app.patch('/api/admin/users/:id', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const userIdToUpdate = parseInt(req.params.id);
+      if (isNaN(userIdToUpdate)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      // Validate incoming data (allow only specific fields)
+      const { username, email, fullName, isAdmin } = req.body; // Extract isAdmin
+      const updateData: Partial<User> = {};
+      if (username !== undefined) updateData.username = username;
+      if (email !== undefined) updateData.email = email; // Add validation if needed
+      if (fullName !== undefined) updateData.fullName = fullName;
+      if (isAdmin !== undefined && typeof isAdmin === 'boolean') { // Check if isAdmin is provided and is a boolean
+        updateData.isAdmin = isAdmin;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: 'No valid fields provided for update' });
+      }
+
+      // Use storage function to update (ensure password isn't changed here)
+      const updatedUser = await storage.updateUser(userIdToUpdate, updateData); // Assuming updateUser prevents password change if not provided
+      const { password, ...userData } = updatedUser; // Exclude password from response
+      res.json(userData);
+
+    } catch (error) {
+      console.error(`Admin update user error for ID ${req.params.id}:`, error);
+      // Handle potential unique constraint errors (e.g., email already exists)
+      if (error instanceof Error && error.message.includes('duplicate key value violates unique constraint')) {
+         return res.status(409).json({ error: 'Email address already in use.' });
+      }
+      res.status(500).json({ error: 'Failed to update user details' });
+    }
+  });
+
+  // Admin reset user password
+  app.post('/api/admin/users/:id/reset-password', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const userIdToReset = parseInt(req.params.id);
+      if (isNaN(userIdToReset)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      // Check if user exists
+      const userExists = await storage.getUser(userIdToReset);
+      if (!userExists) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Generate a new random password (e.g., 10 characters)
+      const newPassword = crypto.randomBytes(10).toString('hex').slice(0, 10);
+      const hashedPassword = await hashPassword(newPassword);
+
+      // Update the password in storage
+      await storage.updateUserPassword(userIdToReset, hashedPassword);
+
+      console.log(`Admin reset password for user ID ${userIdToReset}. New temp password: ${newPassword}`);
+
+      // Return the *new plain-text password* to the admin
+      // IMPORTANT: This is only acceptable because there's no email system assumed.
+      // In a real system, you'd send a reset link via email.
+      res.json({ 
+        success: true, 
+        message: `Password reset successfully for ${userExists.username}.`,
+        temporaryPassword: newPassword // Return the temporary password
+      });
+
+    } catch (error) {
+      console.error(`Admin reset password error for user ID ${req.params.id}:`, error);
+      res.status(500).json({ error: 'Failed to reset password' });
+    }
+  });
+
+  // Admin: Get all selections for a specific user
+  app.get('/api/admin/users/:id/selections', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+      const userId = parseInt(req.params.id);
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      // We need a new storage method for this detailed view
+      const selectionsDetails = await storage.getUserSelectionsDetails(userId); 
+      res.json(selectionsDetails);
+
+    } catch (error) {
+      console.error(`Error fetching selections details for user ID ${req.params.id}:`, error);
+      res.status(500).json({ error: 'Failed to fetch user selections details' });
+    }
+  });
+
+  // Admin upload avatar for a specific user
+  app.post('/api/admin/users/:id/avatar', validateJWT, upload.single('avatar'), async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const userIdToUpdate = parseInt(req.params.id);
+      if (isNaN(userIdToUpdate)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      // Check if user exists before proceeding (optional but good practice)
+      const userExists = await storage.getUser(userIdToUpdate);
+      if (!userExists) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded or invalid file type.' });
+      }
+
+      const avatarUrl = `/uploads/avatars/${req.file.filename}`; // Relative URL path
+
+      // Update user record in the database
+      const updatedUser = await storage.updateUser(userIdToUpdate, { avatarUrl });
+
+      const { password, ...userData } = updatedUser; // Exclude password from response
+      res.json({ message: 'Avatar uploaded successfully by admin', user: userData });
+
+    } catch (error: any) {
+      console.error(`Admin avatar upload error for user ID ${req.params.id}:`, error);
+      // Handle multer errors specifically
+      if (error instanceof multer.MulterError) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ error: 'File too large. Maximum size is 5MB.' });
+        }
+      } else if (error.message === 'Invalid file type, only images are allowed!') {
+         return res.status(400).json({ error: error.message });
+      }
+      res.status(500).json({ error: 'Failed to upload avatar by admin' });
+    }
+  });
+
+
+  // New endpoint for detailed user list for admin management
+  app.get('/api/admin/users/details', validateJWT, async (req: Request, res: Response) => {
+    try {
+      // Ensure user is admin (already checked by validateJWT for /api/admin routes)
+      const users = await storage.getAllUsers();
+
+      // Enhance user data - lastLoginAt and selectionCount are handled by formatUserForResponse
+      const enhancedUsers = users.map(user => {
+        // The formatUserForResponse function now handles adding selectionCount
+        // and formatting lastLoginAt, so we just return the formatted user.
+        // Note: getAllUsers in storage.ts was already updated to provide the count.
+        return user; // User object already contains selectionCount from the storage layer query
+      });
+
+      res.json(enhancedUsers);
+    } catch (error) {
+      console.error('Admin get detailed users error:', error);
+      res.status(500).json({ error: 'Failed to fetch detailed user list' });
+    }
+  });
+
   app.get('/api/admin/point-system', validateJWT, async (req: Request, res: Response) => {
     try { const pointSystem = await storage.getPointSystem(); res.json(pointSystem); } catch (error) { console.error('Admin get point system error:', error); res.status(500).json({ error: 'Failed to fetch point system' }); }
   });
@@ -514,7 +857,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try { const { position } = req.params; const { points } = req.body; if (typeof points !== 'number') { return res.status(400).json({ error: 'Points must be a number' }); } const updatedPointSystem = await storage.updatePointSystem(parseInt(position), points); res.json(updatedPointSystem); } catch (error) { console.error('Admin update point system error:', error); res.status(500).json({ error: 'Failed to update point system' }); }
   });
   app.get('/api/admin/tournament-results/:competitionId', validateJWT, async (req: Request, res: Response) => {
-    try { const { competitionId } = req.params; const results = await storage.getResults(parseInt(competitionId)); const resultsWithGolfers = await Promise.all(results.map(async (result) => { const golfer = await storage.getGolferById(result.golferId); return { ...result, golfer: golfer ? { id: golfer.id, name: golfer.name } : undefined }; })); res.json(resultsWithGolfers); } catch (error) { console.error('Admin get tournament results error:', error); res.status(500).json({ error: 'Failed to fetch tournament results' }); }
+    try { 
+      const { competitionId } = req.params; 
+      const results = await storage.getResults(parseInt(competitionId)); 
+      const resultsWithGolfers = await Promise.all(results.map(async (result) => { 
+        const golfer = await storage.getGolferById(result.golferId); 
+        // Include firstName and lastName in the golfer object for consistency
+        return { 
+          ...result, 
+          golfer: golfer ? { 
+            id: golfer.id, 
+            name: golfer.name, 
+            firstName: golfer.firstName, // Add firstName
+            lastName: golfer.lastName   // Add lastName
+          } : undefined 
+        }; 
+      })); 
+      res.json(resultsWithGolfers); 
+    } catch (error) { 
+      console.error('Admin get tournament results error:', error); 
+      res.status(500).json({ error: 'Failed to fetch tournament results' }); 
+    }
   });
   app.post('/api/admin/tournament-results', validateJWT, async (req: Request, res: Response) => {
     try { const resultData = insertResultSchema.parse(req.body); const existingResults = await storage.getResults(resultData.competitionId); const existingResult = existingResults.find(r => r.golferId === resultData.golferId); if (existingResult) { return res.status(400).json({ error: 'Result already exists for this golfer in this competition' }); } const newResult = await storage.createResult(resultData); const golfer = await storage.getGolferById(resultData.golferId); res.status(201).json({ ...newResult, golfer: golfer ? { id: golfer.id, name: golfer.name } : undefined }); } catch (error) { if (error instanceof ZodError) { return res.status(400).json({ error: error.errors }); } console.error('Admin create tournament result error:', error); res.status(500).json({ error: 'Failed to create tournament result' }); }
@@ -567,8 +930,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to fetch user selection' });
     }
   });
-  app.patch('/api/admin/selections/:id', validateJWT, async (req: Request, res: Response) => {
-    try { const { id } = req.params; const selectionId = parseInt(id); const existingSelection = await storage.getSelectionById(selectionId); if (!existingSelection) { return res.status(404).json({ error: 'Selection not found' }); } if (req.body.useCaptainsChip !== undefined && req.body.useCaptainsChip !== existingSelection.useCaptainsChip) { if (req.body.useCaptainsChip) { const hasUsedCaptainsChip = await storage.hasUsedCaptainsChip(existingSelection.userId); if (hasUsedCaptainsChip) { const selections = await storage.getAllSelections(existingSelection.competitionId); const userSelectionWithChip = selections.find(s => s.userId === existingSelection.userId && s.useCaptainsChip && s.id !== selectionId); if (userSelectionWithChip) { return res.status(400).json({ error: 'This user has already used their captain\'s chip in another competition' }); } } } } const updatedSelection = await storage.updateSelection(selectionId, req.body); const user = await storage.getUser(updatedSelection.userId); const golfer1 = await storage.getGolferById(updatedSelection.golfer1Id); const golfer2 = await storage.getGolferById(updatedSelection.golfer2Id); const golfer3 = await storage.getGolferById(updatedSelection.golfer3Id); res.json({ ...updatedSelection, user: user ? { id: user.id, username: user.username, email: user.email } : undefined, golfer1: golfer1 ? { id: golfer1.id, name: golfer1.name } : undefined, golfer2: golfer2 ? { id: golfer2.id, name: golfer2.name } : undefined, golfer3: golfer3 ? { id: golfer3.id, name: golfer3.name } : undefined }); } catch (error) { console.error('Admin update selection error:', error); res.status(500).json({ error: 'Failed to update selection' }); }
+  // Reverted PUT to PATCH /api/admin/selections/:id
+  app.patch('/api/admin/selections/:id', validateJWT, async (req: Request, res: Response) => { // Changed back to app.patch
+    try {
+      const { id } = req.params;
+      const selectionId = parseInt(id);
+      let { isWaiverChipTransaction, ...selectionUpdateData } = req.body; // Extract waiver flag, changed const to let
+
+      const existingSelection = await storage.getSelectionById(selectionId);
+      if (!existingSelection) {
+        return res.status(404).json({ error: 'Selection not found' });
+      }
+
+      const targetUserId = existingSelection.userId;
+      const targetUser = await storage.getUser(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ error: 'User associated with selection not found' });
+      }
+
+      // --- Waiver Chip Logic ---
+      if (isWaiverChipTransaction === true) {
+        console.log(`Admin attempting waiver chip transaction for user ${targetUserId}, selection ${selectionId}`);
+        if (targetUser.hasUsedWaiverChip) {
+          return res.status(400).json({ error: 'This user has already used their waiver chip.' });
+        }
+
+        // Determine original and replacement golfer IDs from the update data
+        // This assumes the frontend sends the *new* golfer IDs in the update
+        // We need to know which golfer slot is being changed to identify the original.
+        // This requires the frontend to send which slot (1, 2, or 3) and the new golferId.
+        // Let's assume the frontend sends `updatedGolferSlot` (1, 2, or 3) and `newGolferId`.
+        const { updatedGolferSlot, newGolferId, ...restOfUpdateData } = selectionUpdateData;
+
+        if (!updatedGolferSlot || !newGolferId) {
+           return res.status(400).json({ error: 'Missing updatedGolferSlot or newGolferId for waiver transaction.' });
+        }
+
+        let originalGolferId: number | null = null;
+        if (updatedGolferSlot === 1) originalGolferId = existingSelection.golfer1Id;
+        else if (updatedGolferSlot === 2) originalGolferId = existingSelection.golfer2Id;
+        else if (updatedGolferSlot === 3) originalGolferId = existingSelection.golfer3Id;
+
+        if (!originalGolferId) {
+           return res.status(400).json({ error: 'Could not determine original golfer for waiver transaction.' });
+        }
+
+        // Update user's waiver status
+        await storage.updateUser(targetUserId, {
+          hasUsedWaiverChip: true,
+          waiverChipUsedCompetitionId: existingSelection.competitionId,
+          waiverChipOriginalGolferId: originalGolferId,
+          waiverChipReplacementGolferId: newGolferId,
+        });
+        console.log(`User ${targetUserId} waiver chip marked as used. Original: ${originalGolferId}, Replacement: ${newGolferId}`);
+
+        // Prepare selection update data without the extra waiver fields
+        selectionUpdateData = restOfUpdateData;
+      }
+      // --- End Waiver Chip Logic ---
+
+
+      // --- Captain Chip Logic (existing) ---
+      if (selectionUpdateData.useCaptainsChip !== undefined && selectionUpdateData.useCaptainsChip !== existingSelection.useCaptainsChip) {
+        if (selectionUpdateData.useCaptainsChip) {
+          const hasUsedCaptainsChip = await storage.hasUsedCaptainsChip(existingSelection.userId);
+          if (hasUsedCaptainsChip) {
+            // Check if the chip was used in *another* competition for this user
+            const userSelections = await storage.getUserSelectionsForAllCompetitions(existingSelection.userId);
+            const chipUsedElsewhere = userSelections?.some(s => s.useCaptainsChip && s.competitionId !== existingSelection.competitionId);
+            if (chipUsedElsewhere) {
+               return res.status(400).json({ error: 'This user has already used their captain\'s chip in another competition' });
+            }
+          }
+        }
+      }
+      // --- End Captain Chip Logic ---
+
+      // Perform the actual selection update
+      const updatedSelection = await storage.updateSelection(selectionId, selectionUpdateData);
+
+      // Fetch details for response
+      const user = await storage.getUser(updatedSelection.userId);
+      const golfer1 = await storage.getGolferById(updatedSelection.golfer1Id);
+      const golfer2 = await storage.getGolferById(updatedSelection.golfer2Id);
+      const golfer3 = await storage.getGolferById(updatedSelection.golfer3Id);
+
+      res.json({
+        ...updatedSelection,
+        user: user ? { id: user.id, username: user.username, email: user.email } : undefined,
+        golfer1: golfer1 ? { id: golfer1.id, name: golfer1.name } : undefined,
+        golfer2: golfer2 ? { id: golfer2.id, name: golfer2.name } : undefined,
+        golfer3: golfer3 ? { id: golfer3.id, name: golfer3.name } : undefined
+      });
+
+    } catch (error) {
+      console.error('Admin update selection error:', error);
+      res.status(500).json({ error: 'Failed to update selection' });
+    }
   });
   app.delete('/api/admin/selections/:id', validateJWT, async (req: Request, res: Response) => {
     try { const { id } = req.params; const selectionId = parseInt(id); await storage.deleteSelection(selectionId); res.json({ success: true }); } catch (error) { console.error('Admin delete selection error:', error); res.status(500).json({ error: 'Failed to delete selection' }); }

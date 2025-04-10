@@ -1,5 +1,5 @@
 import 'dotenv/config'; // Load .env file variables
-import { pool } from '../server/db'; // Import the pool from db.ts
+import { pool } from '../server/db.js'; // Import the pool from db.ts
 
 async function checkUserPoints() {
   console.log(`Attempting to connect with DATABASE_URL: ${process.env.DATABASE_URL ? 'Set' : 'Not Set'}`); // Add log
