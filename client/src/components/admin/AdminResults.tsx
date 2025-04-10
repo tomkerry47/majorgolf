@@ -60,7 +60,7 @@ export default function AdminResults() {
   const [selectedResult, setSelectedResult] = useState<any>(null);
   const [selectedCompetition, setSelectedCompetition] = useState<number | null>(null);
   const [formAction, setFormAction] = useState<'create' | 'edit'>('create');
-  const [captureTimes, setCaptureTimes] = useState<Record<number, Date | null>>({}); // State for capture timestamps
+  // Removed captureTimes state
 
   // --- Start: Modified Update Results Logic ---
   // Mutation for triggering result updates for a SPECIFIC tournament
@@ -79,10 +79,9 @@ export default function AdminResults() {
          queryClient.refetchQueries({ queryKey: [`/api/leaderboard/${variables.competitionId}`] }); // Refetch specific leaderboard
        }
        // Refetch competitions list (status might change) and overall leaderboard
-      queryClient.refetchQueries({ queryKey: ['/api/competitions'] });
+      queryClient.refetchQueries({ queryKey: ['/api/competitions'] }); // Refetch competitions to get updated timestamp
       queryClient.refetchQueries({ queryKey: ['/api/leaderboard'] }); // Refetch overall leaderboard
-      // Store the capture time for this specific competition
-      setCaptureTimes(prev => ({ ...prev, [variables.competitionId]: new Date() }));
+      // Removed setCaptureTimes
     },
     onError: (error: any) => {
       toast({
@@ -238,8 +237,16 @@ export default function AdminResults() {
   };
   
   // Add explicit types and default empty array, ensure competitions is an array before filtering
-  const activeCompetitions = Array.isArray(competitions) ? competitions.filter((c: Competition) => c.isActive || c.isComplete) : []; 
+  const activeCompetitions = Array.isArray(competitions) ? competitions.filter((c: Competition) => c.isActive || c.isComplete) : [];
   
+  // Find the currently selected competition object to access its lastResultsUpdateAt
+  const currentCompetitionDetails = useMemo(() => {
+    if (!selectedCompetition || !Array.isArray(competitions)) {
+      return null;
+    }
+    return competitions.find(c => c.id === selectedCompetition);
+  }, [selectedCompetition, competitions]);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -274,6 +281,59 @@ export default function AdminResults() {
         </div>
       </CardHeader>
       <CardContent>
+        {/* --- Start: Moved Update Selected Results Section (Conditional) --- */}
+        {selectedCompetition && ( // Show only when a competition is selected
+          <div className="mb-6 pb-6 border-b"> {/* Add separator (changed mt/pt to mb/pb and border-t to border-b) */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Update Selected Tournament</CardTitle> {/* Changed Title */}
+                <CardDescription>
+                  Fetch the latest results for the selected tournament and allocate points. {/* Changed Description */}
+                </CardDescription>
+              </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-500">
+                      Click the button below to automatically update results for the selected tournament. {/* Changed Description */}
+                      This will also allocate points based on player positions. This process might take a moment.
+                    </p>
+
+                    <Button
+                      // Pass selectedCompetition to the mutation
+                      onClick={() => updateSelectedResults({ competitionId: selectedCompetition })}
+                      disabled={
+                         !selectedCompetition || // Still disable if no competition selected
+                         isUpdatingSelected ||   // Still disable during update
+                         isLoadingCompetitions || // Still disable if competitions are loading
+                         isLoadingResults         // Still disable if results are loading
+                         // Removed check for captureTimes
+                       }
+                       className="w-full md:w-auto"
+                     >
+                       {isUpdatingSelected ? (
+                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                       ) : (
+                         <RefreshCw className="mr-2 h-4 w-4" /> // Always show refresh icon when not loading
+                       )}
+                        {/* Change Button Text based on state */}
+                        {isUpdatingSelected
+                          ? 'Updating Results...'
+                          : 'Update Selected Results' // Always show default text when not loading
+                        }
+                      </Button>
+                      {/* Display last update time from competition data */}
+                     {currentCompetitionDetails?.lastResultsUpdateAt && (
+                       <p className="text-sm text-gray-500 mt-2 text-center md:text-left">
+                         Last Updated: {new Date(currentCompetitionDetails.lastResultsUpdateAt).toLocaleString()}
+                       </p>
+                     )}
+                  </div>
+                </CardContent>
+              </Card>
+          </div>
+        )}
+        {/* --- End: Moved Update Selected Results Section --- */}
+
         {!selectedCompetition ? (
           <div className="text-center py-10 text-gray-500">
             Please select a competition to view and manage results.
@@ -345,62 +405,6 @@ export default function AdminResults() {
            </Table>
           </> // Close the fragment here
          )}
-
-         {/* --- Start: Modified Update Selected Results Section (Conditional) --- */}
-         {selectedCompetition && ( // Show only when a competition is selected
-           <div className="mt-6 pt-6 border-t"> {/* Add separator */}
-             <Card>
-               <CardHeader>
-                 <CardTitle>Update Selected Tournament</CardTitle> {/* Changed Title */}
-                 <CardDescription>
-                   Fetch the latest results for the selected tournament and allocate points. {/* Changed Description */}
-                 </CardDescription>
-               </CardHeader>
-                 <CardContent>
-                   <div className="space-y-4">
-                     <p className="text-sm text-gray-500">
-                       Click the button below to automatically update results for the selected tournament. {/* Changed Description */}
-                       This will also allocate points based on player positions. This process might take a moment.
-                     </p>
-
-                     <Button
-                       // Pass selectedCompetition to the mutation
-                       onClick={() => updateSelectedResults({ competitionId: selectedCompetition })}
-                       disabled={
-                         !selectedCompetition ||
-                         isUpdatingSelected ||
-                         isLoadingCompetitions ||
-                         isLoadingResults ||
-                         !!captureTimes[selectedCompetition] // Disable if already captured for this competition
-                       }
-                       className="w-full md:w-auto"
-                     >
-                       {isUpdatingSelected ? (
-                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                       ) : captureTimes[selectedCompetition] ? ( // Check if captured
-                         <i className="fas fa-check mr-2"></i> // Show checkmark if captured
-                       ) : (
-                         <RefreshCw className="mr-2 h-4 w-4" /> // Show refresh icon otherwise
-                       )}
-                       {/* Change Button Text based on state */}
-                       {isUpdatingSelected
-                         ? 'Updating Results...'
-                         : captureTimes[selectedCompetition]
-                         ? 'Ranks Captured' // Text when captured
-                         : 'Update Selected Results'}
-                     </Button>
-                     {/* Display capture time if available */}
-                     {captureTimes[selectedCompetition] && (
-                       <p className="text-sm text-gray-500 mt-2 text-center md:text-left">
-                         Last captured on: {captureTimes[selectedCompetition]?.toLocaleString()}
-                       </p>
-                     )}
-                   </div>
-                 </CardContent>
-               </Card>
-           </div>
-         )}
-         {/* --- End: Modified Update Selected Results Section --- */}
        </CardContent>
 
       {/* Create/Edit Result Dialog */}

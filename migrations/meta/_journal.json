@@ -50,6 +50,13 @@
       "when": 1744317420883,
       "tag": "0006_motionless_inertia",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1744320206245,
+      "tag": "0007_high_scream",
+      "breakpoints": true
     }
   ]
 }

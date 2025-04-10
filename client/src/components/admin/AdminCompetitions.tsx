@@ -51,10 +51,10 @@ export default function AdminCompetitions() {
   const [isCreatingTournaments, setIsCreatingTournaments] = useState(false);
   const [capturingRanksId, setCapturingRanksId] = useState<number | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null); // State for the image preview
-  const [captureTimes, setCaptureTimes] = useState<Record<number, Date | null>>({}); // State for capture timestamps
+  // Removed captureTimes state
 
   const { data: competitions = [], isLoading } = useQuery<Competition[]>({
-    queryKey: ['/api/admin/competitions'],
+    queryKey: ['/api/admin/competitions'], // This query should now fetch ranksCapturedAt
   });
 
   const defaultValues: Partial<InsertCompetition> = {
@@ -220,8 +220,9 @@ export default function AdminCompetitions() {
         title: "Ranks Captured",
          description: `Successfully captured ${data?.count ?? 'N/A'} ranks for competition ${competitionId}. Errors: ${data?.errors ?? 'N/A'}.`,
        });
-       // Store the capture time for this specific competition
-       setCaptureTimes(prev => ({ ...prev, [competitionId]: new Date() }));
+       // Invalidate query to refetch competition data with the new timestamp
+       queryClient.invalidateQueries({ queryKey: ['/api/admin/competitions'] });
+       // Removed setCaptureTimes
      },
      onError: (error: any, competitionId: number) => { // Add type
       toast({
@@ -449,34 +450,34 @@ export default function AdminCompetitions() {
                          className="ml-2"
                          onClick={() => handleCaptureRanks(competition.id, competition.selectionDeadline)}
                          disabled={
-                           capturingRanksId === competition.id ||
-                           new Date() < new Date(competition.selectionDeadline) ||
-                           !!captureTimes[competition.id] // Disable if already captured
-                         }
-                         title={
-                           captureTimes[competition.id]
-                             ? `Ranks captured on ${captureTimes[competition.id]?.toLocaleString()}`
-                             : new Date() < new Date(competition.selectionDeadline)
-                             ? "Deadline not passed"
-                             : "Capture ranks at deadline"
-                         }
-                       >
-                         {capturingRanksId === competition.id ? (
-                           <Clock className="mr-1 h-4 w-4 animate-spin" /> // Still show spinner when capturing
-                         ) : captureTimes[competition.id] ? (
-                           <i className="fas fa-check mr-1"></i> // Show checkmark if captured
-                         ) : (
-                           <Clock className="mr-1 h-4 w-4" /> // Default clock icon
-                         )}
-                         {captureTimes[competition.id] ? 'Ranks Captured' : 'Capture Ranks'}
-                       </Button>
-                       {/* Display capture time if available */}
-                       {captureTimes[competition.id] && (
-                         <span className="text-xs text-gray-500 ml-1 align-middle">
-                           ({captureTimes[competition.id]?.toLocaleTimeString()})
-                         </span>
-                       )}
-                     </TableCell>
+                          capturingRanksId === competition.id || // Disable while capturing this one
+                          new Date() < new Date(competition.selectionDeadline) || // Disable before deadline
+                          !!competition.ranksCapturedAt // Disable if timestamp exists
+                        }
+                        title={
+                          competition.ranksCapturedAt
+                            ? `Ranks captured on ${new Date(competition.ranksCapturedAt).toLocaleString()}`
+                            : new Date() < new Date(competition.selectionDeadline)
+                            ? "Deadline not passed"
+                            : "Capture ranks at deadline"
+                        }
+                      >
+                        {capturingRanksId === competition.id ? (
+                          <Clock className="mr-1 h-4 w-4 animate-spin" /> // Spinner when capturing
+                        ) : competition.ranksCapturedAt ? (
+                          <i className="fas fa-check mr-1"></i> // Checkmark if captured
+                        ) : (
+                          <Clock className="mr-1 h-4 w-4" /> // Default clock icon
+                        )}
+                        {competition.ranksCapturedAt ? 'Ranks Captured' : 'Capture Ranks'}
+                      </Button>
+                      {/* Display capture timestamp if available */}
+                      {competition.ranksCapturedAt && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          {new Date(competition.ranksCapturedAt).toLocaleString()}
+                        </p>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))
               )}

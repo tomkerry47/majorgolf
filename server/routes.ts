@@ -1258,10 +1258,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Use statically imported function
       // Pass the imported pool and the specific competitionId to the function
       await updateResultsAndAllocatePoints(pool, competitionId); // Pass pool and competitionId
-      res.json({ success: true, message: `Update triggered for competition ${competitionId}` });
+
+      // Update the timestamp after successful execution
+      await storage.updateCompetition(competitionId, { lastResultsUpdateAt: new Date().toISOString() });
+      console.log(`Updated lastResultsUpdateAt for competition ${competitionId}`);
+
+      res.json({ success: true, message: `Update triggered and timestamp recorded for competition ${competitionId}` });
     } catch (error) {
       console.error(`Admin update results error for competition ${req.body?.competitionId}:`, error); // Log with ID
-      res.status(500).json({ error: 'Failed to update results' });
+      res.status(500).json({ error: 'Failed to update results or timestamp' });
     }
   });
   app.get('/api/admin/wildcard-golfers/:competitionId', validateJWT, async (req: Request, res: Response) => {
@@ -1310,10 +1315,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`[API] Rank capture result for competition ID ${competitionId}:`, result);
 
       if (result.success) {
-        res.json({ success: true, message: `Successfully captured/updated ${result.count} selection ranks.`, errors: result.errors });
+        // Update the timestamp after successful capture - Convert Date to ISO string (Reverting)
+        await storage.updateCompetition(competitionId, { ranksCapturedAt: new Date().toISOString() });
+        console.log(`Updated ranksCapturedAt for competition ${competitionId}`);
+        res.json({ success: true, message: `Successfully captured/updated ${result.count} selection ranks and recorded timestamp.`, errors: result.errors });
       } else {
         // Even if some errors occurred, report partial success if count > 0
-        res.status(500).json({ success: false, message: `Rank capture process completed with ${result.errors} errors. ${result.count} ranks captured.`, errors: result.errors, count: result.count });
+        // Do not update timestamp if the process wasn't fully successful (or decide based on requirements)
+        res.status(500).json({ success: false, message: `Rank capture process completed with ${result.errors} errors. ${result.count} ranks captured. Timestamp not recorded.`, errors: result.errors, count: result.count });
       }
     } catch (error) {
       console.error(`Error capturing selection ranks for competition ${req.params.id}:`, error);

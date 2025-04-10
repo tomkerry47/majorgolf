@@ -224,10 +224,12 @@ export class DatabaseStorage implements IStorage {
         description: competitions.description,
         imageUrl: competitions.imageUrl,
         externalLeaderboardUrl: competitions.externalLeaderboardUrl,
+        ranksCapturedAt: competitions.ranksCapturedAt, // Added ranksCapturedAt
       })
       .from(competitions)
       .orderBy(competitions.startDate);
-    return competitionsList.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null })) as Competition[];
+    // Include ranksCapturedAt in the mapped result
+    return competitionsList.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, ranksCapturedAt: c.ranksCapturedAt ?? null })) as Competition[];
   }
 
   async getActiveCompetitions(): Promise<Competition[]> {
@@ -244,6 +246,7 @@ export class DatabaseStorage implements IStorage {
         description: competitions.description,
         imageUrl: competitions.imageUrl,
         externalLeaderboardUrl: competitions.externalLeaderboardUrl,
+        ranksCapturedAt: competitions.ranksCapturedAt, // Added ranksCapturedAt
       })
       .from(competitions)
       .where(
@@ -255,7 +258,8 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(competitions.startDate);
-    return activeCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null })) as Competition[];
+    // Include ranksCapturedAt in the mapped result
+    return activeCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, ranksCapturedAt: c.ranksCapturedAt ?? null })) as Competition[];
   }
 
   async getUpcomingCompetitions(): Promise<Competition[]> {
@@ -273,6 +277,7 @@ export class DatabaseStorage implements IStorage {
         description: competitions.description,
         imageUrl: competitions.imageUrl,
         externalLeaderboardUrl: competitions.externalLeaderboardUrl,
+        ranksCapturedAt: competitions.ranksCapturedAt, // Added ranksCapturedAt
       })
       .from(competitions)
       .where(
@@ -282,7 +287,8 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(competitions.startDate);
-    return upcomingCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null })) as Competition[];
+    // Include ranksCapturedAt in the mapped result
+    return upcomingCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, ranksCapturedAt: c.ranksCapturedAt ?? null })) as Competition[];
   }
 
   async getCompletedCompetitions(): Promise<Competition[]> {
@@ -299,11 +305,13 @@ export class DatabaseStorage implements IStorage {
         description: competitions.description,
         imageUrl: competitions.imageUrl,
         externalLeaderboardUrl: competitions.externalLeaderboardUrl,
+        ranksCapturedAt: competitions.ranksCapturedAt, // Added ranksCapturedAt
       })
       .from(competitions)
       .where(eq(competitions.isComplete, true))
       .orderBy(desc(competitions.endDate));
-    return completedCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null })) as Competition[];
+    // Include ranksCapturedAt in the mapped result
+    return completedCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, ranksCapturedAt: c.ranksCapturedAt ?? null })) as Competition[];
   }
 
   async getCompetitionById(id: number): Promise<Competition | undefined> {
@@ -320,12 +328,14 @@ export class DatabaseStorage implements IStorage {
         description: competitions.description,
         imageUrl: competitions.imageUrl,
         externalLeaderboardUrl: competitions.externalLeaderboardUrl,
+        ranksCapturedAt: competitions.ranksCapturedAt, // Added ranksCapturedAt
       })
       .from(competitions)
       .where(eq(competitions.id, id));
     
     if (!competition) return undefined;
-    return { ...competition, externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null } as Competition;
+    // Include ranksCapturedAt in the returned object
+    return { ...competition, externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null, ranksCapturedAt: competition.ranksCapturedAt ?? null } as Competition;
   }
 
   async createCompetition(competition: InsertCompetition): Promise<Competition> {
@@ -347,8 +357,9 @@ export class DatabaseStorage implements IStorage {
     const [newCompetition] = await db
       .insert(competitions)
       .values(competitionToInsert)
-      .returning();
-    return { ...newCompetition, externalLeaderboardUrl: newCompetition.externalLeaderboardUrl ?? null } as Competition;
+      .returning(); // Drizzle returns all columns by default unless specified
+    // Include ranksCapturedAt in the returned object
+    return { ...newCompetition, externalLeaderboardUrl: newCompetition.externalLeaderboardUrl ?? null, ranksCapturedAt: newCompetition.ranksCapturedAt ?? null } as Competition;
   }
 
   async updateCompetition(id: number, competitionData: Partial<Competition>): Promise<Competition> {
@@ -357,13 +368,22 @@ export class DatabaseStorage implements IStorage {
     if (competitionData.hasOwnProperty('externalLeaderboardUrl')) {
         dataToUpdate.externalLeaderboardUrl = competitionData.externalLeaderboardUrl || null;
     }
+    // Ensure timestamp fields are Date objects if provided as strings
+    if (typeof dataToUpdate.lastResultsUpdateAt === 'string') {
+      dataToUpdate.lastResultsUpdateAt = new Date(dataToUpdate.lastResultsUpdateAt);
+    }
+    if (typeof dataToUpdate.ranksCapturedAt === 'string') {
+      dataToUpdate.ranksCapturedAt = new Date(dataToUpdate.ranksCapturedAt);
+    }
+
 
     const [competition] = await db
       .update(competitions)
       .set(dataToUpdate)
       .where(eq(competitions.id, id))
-      .returning();
-    return { ...competition, externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null } as Competition;
+      .returning(); // Drizzle returns all columns by default unless specified
+    // Include ranksCapturedAt in the returned object
+    return { ...competition, externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null, ranksCapturedAt: competition.ranksCapturedAt ?? null } as Competition;
   }
 
   // Golfer methods
