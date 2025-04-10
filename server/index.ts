@@ -19,8 +19,16 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // --- CORS Configuration ---
-// Allow requests from the Vite dev server and the backend itself (now potentially on 5001 locally)
-const allowedOrigins = ['http://127.0.0.1:5173', 'http://localhost:5173', 'http://127.0.0.1:5000', 'http://localhost:5000', 'http://127.0.0.1:5001', 'http://localhost:5001'];
+// Allow requests from the Vite dev server, local backend, and the deployed Azure App Service URL
+const allowedOrigins = [
+  'http://127.0.0.1:5173', 
+  'http://localhost:5173', 
+  'http://127.0.0.1:5000', 
+  'http://localhost:5000', 
+  'http://127.0.0.1:5001', 
+  'http://localhost:5001',
+  'https://majorpredictor-g5g7f2h3e7csercc.uksouth-01.azurewebsites.net' // Add deployed URL
+];
 const corsOptions: cors.CorsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
