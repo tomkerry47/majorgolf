@@ -94,6 +94,9 @@ export interface IStorage {
   createSelectionRank(data: InsertSelectionRank): Promise<SelectionRank>;
   getSelectionRank(userId: number, competitionId: number, golferId: number): Promise<SelectionRank | undefined>;
   captureSelectionRanksForCompetition(competitionId: number): Promise<{ success: boolean; count: number; errors: number }>;
+
+  // User Stats method
+  getUserStats(userId: number): Promise<{ competitionsPlayed: number; totalPoints: number; bestRank: number | string }>;
 }
 
 // Helper function to convert DB user to User interface type, now includes selectionCount and captain chip status
@@ -1510,6 +1513,63 @@ export class DatabaseStorage implements IStorage {
     }
   }
   // --- End Selection Rank Methods ---
+
+  // --- User Stats Method ---
+  async getUserStats(userId: number): Promise<{ competitionsPlayed: number; totalPoints: number; bestRank: number | string }> {
+    try {
+      // 1. Competitions Played (Count distinct competitions with selections)
+      const competitionsPlayedResult = await db
+        .select({ count: count(sql`DISTINCT ${selections.competitionId}`) })
+        .from(selections)
+        .where(eq(selections.userId, userId));
+      const competitionsPlayed = competitionsPlayedResult[0]?.count || 0;
+
+      // 2. Total Points (Sum points from user_points table)
+      const totalPointsResult = await db
+        .select({ totalPoints: sql<number>`SUM(${userPoints.points})`.mapWith(Number) })
+        .from(userPoints)
+        .where(eq(userPoints.userId, userId));
+      const totalPoints = totalPointsResult[0]?.totalPoints || 0;
+
+      // 3. Best Rank (Lowest rank in any completed competition)
+      // We need to calculate rank within the query for completed competitions
+      const bestRankSubquery = db.$with('ranked_points').as(
+        db.select({
+          userId: userPoints.userId,
+          competitionId: userPoints.competitionId,
+          points: userPoints.points,
+          rank: sql<number>`RANK() OVER (PARTITION BY ${userPoints.competitionId} ORDER BY ${userPoints.points} DESC)`.mapWith(Number)
+        })
+        .from(userPoints)
+        .innerJoin(competitions, and(
+          eq(userPoints.competitionId, competitions.id),
+          eq(competitions.isComplete, true) // Only consider completed competitions
+        ))
+      );
+
+      const bestRankResult = await db.with(bestRankSubquery)
+        .select({ bestRank: sql<number>`MIN(rank)`.mapWith(Number) })
+        .from(bestRankSubquery)
+        .where(eq(bestRankSubquery.userId, userId));
+
+      const bestRank = bestRankResult[0]?.bestRank ?? 'N/A'; // Use 'N/A' if no completed competitions
+
+      return {
+        competitionsPlayed,
+        totalPoints,
+        bestRank,
+      };
+    } catch (error) {
+      console.error(`Error fetching stats for user ${userId}:`, error);
+      // Return default stats in case of error
+      return {
+        competitionsPlayed: 0,
+        totalPoints: 0,
+        bestRank: 'N/A',
+      };
+    }
+  }
+  // --- End User Stats Method ---
 }
 
 // Export the storage instance

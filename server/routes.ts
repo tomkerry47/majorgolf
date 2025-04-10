@@ -520,7 +520,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // User profile routes
   app.get('/api/users/:id', validateJWT, async (req: Request, res: Response) => {
-    try { const { id } = req.params; const tokenUser = req.user as ExtendedUser; const requestedUserId = parseInt(id); if (tokenUser.database_id !== requestedUserId && !tokenUser.isAdmin) { return res.status(403).json({ error: 'Unauthorized to access this resource' }); } const user = await storage.getUser(requestedUserId); if (!user) { return res.status(404).json({ error: 'User not found' }); } const { password, ...userData } = user; res.json(userData); } catch (error) { console.error('Get user error:', error); res.status(500).json({ error: 'Failed to fetch user' }); }
+    try {
+      const { id } = req.params;
+      const tokenUser = req.user as ExtendedUser;
+      const requestedUserId = parseInt(id);
+
+      // Authorization check
+      if (tokenUser.database_id !== requestedUserId && !tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Unauthorized to access this resource' });
+      }
+
+      // Fetch basic user data
+      const user = await storage.getUser(requestedUserId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Fetch user statistics (assuming storage.getUserStats exists)
+      const stats = await storage.getUserStats(requestedUserId); // Fetch stats
+
+      // Combine user data and stats, excluding password
+      const { password, ...userDataWithoutPassword } = user;
+      const responseData = {
+        ...userDataWithoutPassword,
+        stats: stats || { competitionsPlayed: 0, totalPoints: 0, bestRank: 'N/A' } // Add stats, provide defaults
+      };
+
+      res.json(responseData); // Send combined data
+
+    } catch (error) {
+      console.error('Get user error:', error);
+      res.status(500).json({ error: 'Failed to fetch user' });
+    }
   });
   app.get('/api/users/:id/has-used-captains-chip', validateJWT, async (req: Request, res: Response) => {
     try { const tokenUser = req.user as ExtendedUser; let userIdToCheck: number; if (req.params.id === 'me') { userIdToCheck = tokenUser.database_id!; } else { userIdToCheck = parseInt(req.params.id); if (isNaN(userIdToCheck)) { return res.status(400).json({ error: 'Invalid user ID' }); } } if (tokenUser.database_id !== userIdToCheck && !tokenUser.isAdmin) { return res.status(403).json({ error: 'Unauthorized to access this resource' }); } const hasUsed = await storage.hasUsedCaptainsChip(userIdToCheck); res.json({ hasUsedCaptainsChip: hasUsed }); } catch (error) { console.error('Error checking captain\'s chip usage:', error); res.status(500).json({ error: 'Failed to check captain\'s chip usage' }); }
