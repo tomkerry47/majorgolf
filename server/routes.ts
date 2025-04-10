@@ -773,8 +773,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: 'Admin access required' });
       }
 
-      // Validate input (consider a specific Zod schema for admin creation if needed)
-      const { email, username, fullName, password, isAdmin } = req.body;
+      // Validate input (isAdmin removed from destructuring)
+      const { email, username, fullName, password } = req.body;
       if (!email || !username || !fullName || !password) {
         return res.status(400).json({ error: 'Email, username, full name, and password are required' });
       }
@@ -794,7 +794,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         username,
         fullName,
         password, // Pass plain text password to storage function
-        isAdmin: isAdmin === true // Default to false if not provided or not true
+        isAdmin: false // Always create as non-admin
       });
 
       const { password: _, ...userData } = newUser; // Exclude password from response

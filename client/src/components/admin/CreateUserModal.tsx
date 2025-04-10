@@ -7,9 +7,9 @@ import { apiRequest } from '@/lib/queryClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox'; // Import Checkbox
+// Checkbox import removed
 import {
-  Dialog,
+  Dialog, // Re-add Dialog import
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -24,10 +24,10 @@ const createUserSchema = z.object({
   username: z.string().min(3, { message: 'Username must be at least 3 characters' }),
   fullName: z.string().min(1, { message: 'Full name is required' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters' }),
-  isAdmin: z.boolean().default(false), // Add isAdmin field
+  // isAdmin field removed from schema
 });
 
-type CreateUserFormData = z.infer<typeof createUserSchema>;
+type CreateUserFormData = Omit<z.infer<typeof createUserSchema>, 'isAdmin'>; // Omit isAdmin from type
 
 interface CreateUserModalProps {
   isOpen: boolean;
@@ -42,11 +42,9 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose }) =>
     handleSubmit,
     reset,
     formState: { errors },
-  } = useForm<CreateUserFormData>({
+  } = useForm<CreateUserFormData>({ // Use updated type
     resolver: zodResolver(createUserSchema),
-    defaultValues: {
-      isAdmin: false, // Default isAdmin to false
-    },
+    // No need for isAdmin in defaultValues
   });
 
   const createUserMutation = useMutation({
@@ -118,13 +116,7 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose }) =>
             {errors.password && <p className="text-red-500 text-sm">{errors.password.message}</p>}
           </div>
 
-          {/* Is Admin Checkbox */}
-          <div className="flex items-center space-x-2 pt-2"> {/* Add some top padding */}
-             <Checkbox id="isAdmin" {...register('isAdmin')} />
-             <Label htmlFor="isAdmin" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-               Make Admin?
-             </Label>
-          </div>
+          {/* Is Admin Checkbox Removed */}
 
           <DialogFooter>
             <DialogClose asChild>

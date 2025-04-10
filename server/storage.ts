@@ -153,7 +153,7 @@ export class DatabaseStorage implements IStorage {
 
     const [user] = await db
       .insert(users)
-      .values(insertUser)
+      .values(insertUser) // insertUser should contain { email, username, fullName, password (hashed), isAdmin }
       .returning();
     return formatUserForResponse(user)!;
   }
