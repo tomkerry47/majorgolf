@@ -174,7 +174,7 @@ app.use((req, res, next) => {
   console.log(`[Server Startup] Attempting to listen on ${port}...`); // Added log
   server.listen({
     port,
-    host: "127.0.0.1", // Changed from localhost to explicit IPv4 loopback
+    host: "0.0.0.0", // Listen on all available interfaces for container environments
     // reusePort: true, // Removed reusePort option
   }, () => {
     log(`serving on port ${port}`); // Keep existing log
