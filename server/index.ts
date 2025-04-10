@@ -43,6 +43,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser()); // Use cookie-parser middleware
 
+// Add a simple health check endpoint
+app.get('/healthz', (req, res) => {
+  res.sendStatus(200); // Send 'OK' status
+});
+
 // Removed early debug logging
 
 // Serve static files from the 'public' directory (including uploads)
