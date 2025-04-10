@@ -7,9 +7,9 @@ variables:
   # Define variables for your Azure resources
   # Recommendation: Store secrets like AZURE_SUBSCRIPTION in a Variable Group linked to the pipeline
   # Create a Service Connection in Project Settings -> Service connections -> New service connection -> Azure Resource Manager
-  azureSubscription: 'YOUR_AZURE_SERVICE_CONNECTION_NAME' # The name of your Azure Service Connection
-  resourceGroupName: 'YOUR_RESOURCE_GROUP_NAME'          # The name of the Azure Resource Group you created
-  webAppName: 'YOUR_AZURE_APP_SERVICE_NAME'             # The name of the Azure App Service instance you created
+  azureSubscription: 'GOLFSCMPRG' # The name of your Azure Service Connection
+  resourceGroupName: 'majorpredictor_group'          # The name of the Azure Resource Group you created
+  webAppName: 'MajorPredictor'             # The name of the Azure App Service instance you created
   nodeVersion: '20.x'                                   # Specify Node.js version (matches package.json and App Service runtime)
   vmImageName: 'ubuntu-latest'                          # Build agent image
 
