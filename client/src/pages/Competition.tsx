@@ -1,12 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react"; // Import useState
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; 
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import SelectionForm from "@/components/selections/SelectionForm";
+import { Button } from "@/components/ui/button"; // Import Button
 import {
   Table,
   TableBody,
@@ -14,21 +15,42 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TableCaption 
+  TableCaption
 } from "@/components/ui/table";
 import { apiRequest } from "@/lib/queryClient";
-import type { Competition as CompetitionType, Selection, Result, Golfer } from "@shared/schema";
+import LeaderboardTable from "@/components/leaderboard-table"; // Import LeaderboardTable
+// Use a more specific type for the selection fetched on this page
+import type { Competition as CompetitionType, Result, Golfer } from "@shared/schema";
+
+// Define the expected shape for a single user selection with nested golfer details
+// Similar to the one defined locally in CurrentCompetition.tsx
+interface UserCompetitionSelection {
+  id: number; // Selection record ID
+  golfer: {
+    id: number;
+    name: string; // Assuming combined name from API for simplicity here
+    firstName?: string; // Keep if available
+    lastName?: string; // Keep if available
+    avatar?: string;
+    rank: number | string;
+  };
+  position?: number | string; // Position in the competition
+  points: number; // Points gained in the competition
+  isCaptain: boolean;
+  isWildcard: boolean; // Assuming API provides this based on rank/wildcard table
+}
+
 
 // Define the expected shape of the enhanced competition data from the backend
 interface EnhancedCompetition extends CompetitionType {
-  allSelections?: { 
+  allSelections?: {
     userId: number;
     username: string;
-    golfer1Id: number; 
-    golfer2Id: number; 
-    golfer3Id: number; 
+    golfer1Id: number;
+    golfer2Id: number;
+    golfer3Id: number;
     // Use Golfer objects directly if backend provides them, otherwise keep names
-    golfer1?: Golfer | null; 
+    golfer1?: Golfer | null;
     golfer2?: Golfer | null;
     golfer3?: Golfer | null;
     // Fallback names if golfer objects aren't joined
@@ -37,61 +59,123 @@ interface EnhancedCompetition extends CompetitionType {
     golfer3Name?: string;
     golfer1Rank?: number | null; // Add rank field
     golfer2Rank?: number | null; // Add rank field
-  golfer3Rank?: number | null;
+    golfer3Rank?: number | null;
   useCaptainsChip: boolean;
   captainGolferId?: number | null;
 }[] | null;
+  currentRound?: number | null; // Added field for current results round
 }
 
 // Define the shape of the results data expected from the API
 // Redefine without extending Result to avoid type conflict
-interface CompetitionResult { 
+interface CompetitionResult {
   id: number;
   competitionId: number;
   golferId: number;
   position: number;
   score: number;
   points?: number;
-  created_at: string; 
+  created_at: string;
   golfer?: Golfer | null; // Expect nested golfer object with firstName/lastName
 }
 
+// Copied from leaderboard.tsx - Shape for the Leaderboard data
+interface LeaderboardData {
+  standings: Array<any>; // Consider defining a more specific type for standings entries later
+  currentUserId?: number;
+  lastUpdated?: string | null;
+  currentRound?: number;
+  roundCompleted?: boolean;
+}
+
+
+// Adapted GolferSelection component for this page
+// Uses UserCompetitionSelection interface defined above
+function GolferSelectionDisplay({ selection }: { selection: UserCompetitionSelection }) {
+  const { golfer, position, points, isCaptain, isWildcard } = selection;
+  return (
+    <div className="relative rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm flex items-center space-x-3 hover:border-primary/30">
+      <div className="flex-shrink-0">
+        <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+          {golfer.avatar ? (
+            <img className="h-10 w-10 rounded-full" src={golfer.avatar} alt={golfer.name} />
+          ) : (
+            <span className="text-sm font-medium text-gray-800">{golfer.name.charAt(0)}</span>
+          )}
+        </div>
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-900">
+          {golfer.name}
+          {isCaptain && <span className="ml-1 text-xs font-bold text-primary">(C)</span>}
+          {isWildcard && <span className="ml-1 text-xs font-bold text-info">(W)</span>}
+        </p>
+        <p className="text-sm text-gray-500 truncate">
+          Rank: {golfer.rank || 'N/A'} • Position: {position || 'N/A'}
+        </p>
+      </div>
+      <div className="flex-shrink-0 text-sm font-semibold text-success">+{points || 0} pts</div>
+    </div>
+  );
+}
+
+
 export default function Competition() {
   const { user } = useAuth();
-  const [, setLocation] = useLocation();
+  const [, setLocation] = useLocation(); // Reverted: Removed location state variable
   const [match, params] = useRoute("/competitions/:id");
   const competitionId = params?.id ? parseInt(params.id) : 0;
-  
+
+  // Reverted: Removed activeTab state and related useEffects
+
   // Redirect to login if no user
   useEffect(() => {
-    if (user === null) { 
+    if (user === null) {
       setLocation("/login");
     }
   }, [user, setLocation]);
-  
+
   // Fetch enhanced competition data (potentially including allSelections)
   const { data: competition, isLoading: isLoadingCompetition } = useQuery<EnhancedCompetition>({
     queryKey: [`/api/competitions/${competitionId}`],
-    queryFn: () => apiRequest<EnhancedCompetition>(`/api/competitions/${competitionId}`, 'GET'), 
+    queryFn: () => apiRequest<EnhancedCompetition>(`/api/competitions/${competitionId}`, 'GET'),
     enabled: !!user && !!competitionId,
   });
-  
+
   // Fetch competition results
   const { data: competitionResults, isLoading: isLoadingResults } = useQuery<CompetitionResult[]>({
-    queryKey: [`/api/results/${competitionId}`], 
-    queryFn: () => apiRequest<CompetitionResult[]>(`/api/results/${competitionId}`, 'GET'), 
-    enabled: !!user && !!competitionId && (competition?.isActive || competition?.isComplete), 
+    queryKey: [`/api/results/${competitionId}`],
+    queryFn: () => apiRequest<CompetitionResult[]>(`/api/results/${competitionId}`, 'GET'),
+    enabled: !!user && !!competitionId && (competition?.isActive || competition?.isComplete),
   });
-  
-  // Fetch logged-in user's selections (still needed for the "Your Selections" tab)
-  const { data: userSelection, isLoading: isLoadingUserSelection } = useQuery<Selection | null>({ 
-    queryKey: [`/api/selections/${competitionId}`],
-    queryFn: () => apiRequest<Selection | null>(`/api/selections/${competitionId}`, 'GET'), 
-    enabled: !!user && !!competitionId,
+
+  // Fetch logged-in user's selections for THIS competition, expecting the enhanced structure
+  // The API likely returns an array, even if it's just one user's selections for the comp
+  const { data: userSelections, isLoading: isLoadingUserSelections } = useQuery<UserCompetitionSelection[] | null>({
+    queryKey: ['/api/selections', competitionId], // Use the same key as dashboard for consistency
+    queryFn: () => {
+      if (!competitionId) return null;
+      // Fetch using the specific endpoint for the competition
+      return apiRequest<UserCompetitionSelection[] | null>(`/api/selections/${competitionId}`, 'GET');
+    },
+    enabled: !!user && !!competitionId, // Enable only if user and competitionId are available
+    retry: false, // Don't retry if selection not found (404)
   });
+
+  // Fetch predictor leaderboard data for THIS competition, expecting LeaderboardData structure
+  const { data: predictorLeaderboardData, isLoading: isLoadingPredictorLeaderboard } = useQuery<LeaderboardData>({
+    queryKey: [`/api/leaderboard/${competitionId}`],
+    // Assuming apiRequest handles the fetch and returns the LeaderboardData structure
+    queryFn: () => apiRequest<LeaderboardData>(`/api/leaderboard/${competitionId}`, 'GET'),
+    enabled: !!user && !!competitionId && (competition?.isActive || competition?.isComplete), // Fetch when active or complete
+    // Default data to prevent errors accessing properties before fetch completes
+    initialData: { standings: [], lastUpdated: null },
+  });
+
 
   if (user === undefined || !match) return null;
 
+  // Show loading skeleton while competition data is loading
   if (isLoadingCompetition) {
     return (
       <div className="py-6">
@@ -109,7 +193,8 @@ export default function Competition() {
       </div>
     );
   }
-  
+
+  // Show not found message if competition data is loaded but doesn't exist
   if (!competition) {
     return (
        <div className="py-6">
@@ -120,7 +205,10 @@ export default function Competition() {
       </div>
     );
   }
-  
+
+  // Now that we know competition exists, we can calculate deadlinePassed
+  const deadlinePassed = new Date() > new Date(competition.selectionDeadline);
+
   const getStatusBadge = () => {
     if (competition.isActive) {
       return <Badge variant="outline" className="bg-amber-500/10 text-amber-700 border-amber-200">Active</Badge>;
@@ -131,12 +219,24 @@ export default function Competition() {
     }
   };
 
-  const deadlinePassed = new Date() > new Date(competition.selectionDeadline);
-  
+  // Helper to get round display name
+  const getRoundDisplayName = (round: number | null | undefined): string | null => {
+    if (round === null || round === undefined) return null;
+    if (round === 1) return "Round 1";
+    if (round === 2) return "Round 2";
+    if (round === 3) return "Round 3";
+    if (round === 4) return "Final Round";
+    return `Round ${round}`; // Fallback for unexpected values
+  };
+
   // Helper to display golfer name
   const getGolferDisplayName = (golfer?: Golfer | null, fallbackName?: string): string => {
     if (golfer && golfer.firstName && golfer.lastName) {
       return `${golfer.firstName} ${golfer.lastName}`;
+    }
+    // Fallback to golfer.name if firstName/lastName are missing but name exists
+    if (golfer && golfer.name) {
+        return golfer.name;
     }
     return fallbackName || 'Unknown Golfer';
   };
@@ -159,7 +259,7 @@ export default function Competition() {
           <h1 className="text-2xl font-semibold text-gray-900">{competition.name}</h1>
           {getStatusBadge()}
         </div>
-        
+
         <Card className="mb-6">
           <CardContent className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -185,32 +285,139 @@ export default function Competition() {
             </div>
           </CardContent>
         </Card>
-        
-        <Tabs defaultValue="selections">
+
+        {/* Reverted: Use defaultValue, remove value/onValueChange/key */}
+        <Tabs defaultValue="leaderboard">
           <TabsList className="mb-6">
+            {/* Reordered and Renamed Tabs */}
+            {/* Reordered and Added Predictor Leaderboard */}
+            <TabsTrigger value="predictor-leaderboard">Predictor Leaderboard</TabsTrigger>
+            <TabsTrigger value="leaderboard">Actual Leaderboard</TabsTrigger>
+            <TabsTrigger value="results">Points Allocated</TabsTrigger>
             <TabsTrigger value="selections">Your Selections</TabsTrigger>
-            <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
-            <TabsTrigger value="results">Results</TabsTrigger>
             {deadlinePassed && (
               <TabsTrigger value="all-selections">All Selections</TabsTrigger>
             )}
           </TabsList>
-          
+
+          {/* Content order adjusted to match triggers */}
           <TabsContent value="selections">
-            {/* Pass competitionName and selectionDeadline to SelectionForm */}
-            <SelectionForm 
-              competitionId={competitionId} 
-              competitionName={competition.name} 
-              selectionDeadline={competition.selectionDeadline} 
-            />
-          </TabsContent>
-          
-            <TabsContent value="leaderboard">
+            {isLoadingUserSelections ? (
+              // Loading state for user selections
               <Card>
-                <CardHeader><CardTitle>Tournament Leaderboard</CardTitle></CardHeader>
+                <CardHeader>
+                  <Skeleton className="h-6 w-1/2" />
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-24 w-full" />
+                </CardContent>
+              </Card>
+            ) : userSelections && userSelections.length > 0 ? (
+              // Display existing selections
+              <Card>
+                <CardHeader>
+                  <CardTitle>Your Selection</CardTitle>
+                  <CardDescription>For {competition.name}. Deadline: {new Date(competition.selectionDeadline).toLocaleString()}</CardDescription>
+                   {deadlinePassed && (
+                     <Badge variant="destructive" className="mt-2">Deadline Passed</Badge>
+                   )}
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    {userSelections.map((selection) => (
+                      <GolferSelectionDisplay key={selection.id} selection={selection} />
+                    ))}
+                  </div>
+                  {/* Optionally, add an Edit button if deadline hasn't passed */}
+                  {!deadlinePassed && (
+                     <Button variant="outline" className="mt-4" onClick={() => alert('Edit functionality not yet implemented.')}>
+                       Edit Selection
+                     </Button>
+                   )}
+                </CardContent>
+              </Card>
+            ) : !deadlinePassed ? (
+              // No selection yet, deadline not passed -> Show form
+              <SelectionForm
+                competitionId={competitionId}
+                competitionName={competition.name}
+                selectionDeadline={competition.selectionDeadline}
+              />
+            ) : (
+              // No selection and deadline passed -> Show message
+              <Card>
+                <CardHeader>
+                  <CardTitle>No Selection Made</CardTitle>
+                </CardHeader> {/* Corrected closing tag */}
+                <CardContent>
+                  <p className="text-sm text-gray-500">You did not make a selection for this competition before the deadline.</p>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Predictor Leaderboard Tab Content */}
+          <TabsContent value="predictor-leaderboard">
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <CardTitle>Predictor Leaderboard</CardTitle>
+                  {/* Status Badge */}
+                  {competition && (
+                    <Badge variant="outline" className={
+                      competition.isComplete
+                        ? "bg-green-500/10 text-green-700 border-green-200"
+                        : "bg-yellow-500/10 text-yellow-700 border-yellow-200"
+                    }>
+                      Status: {competition.isComplete ? 'Result' : 'Pending'}
+                    </Badge>
+                  )}
+                </div>
+                <CardDescription>
+                  User rankings for this competition. Last updated: {predictorLeaderboardData?.lastUpdated ? new Date(predictorLeaderboardData.lastUpdated).toLocaleString() : 'N/A'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                 {/* Use LeaderboardTable component */}
+                 <LeaderboardTable
+                   data={predictorLeaderboardData?.standings || []}
+                   isLoading={isLoadingPredictorLeaderboard}
+                   userId={predictorLeaderboardData?.currentUserId}
+                 />
+                 {/* Display message if no data and not loading */}
+                 {!isLoadingPredictorLeaderboard && (!predictorLeaderboardData || predictorLeaderboardData.standings.length === 0) && (
+                    <div className="py-10 text-center">
+                      <div className="text-gray-400 mb-3"><i className="fas fa-users text-4xl"></i></div>
+                      <h3 className="text-lg font-medium text-gray-900">Predictor Leaderboard Not Available</h3>
+                      <p className="text-sm text-gray-500 mt-1">
+                        User rankings for this competition will appear here once available.
+                      </p>
+                    </div>
+                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+
+          <TabsContent value="leaderboard">
+              <Card>
+                <CardHeader>
+                  <div className="flex justify-between items-center"> {/* Flex container */}
+                    {/* Renamed Card Title */}
+                    <CardTitle>Actual Leaderboard</CardTitle>
+                    {/* Display Round Status */}
+                    {competition?.currentRound && competitionResults?.length ? (
+                      <Badge variant="secondary">
+                        {getRoundDisplayName(competition.currentRound)} Results
+                      </Badge>
+                    ) : null}
+                  </div>
+                </CardHeader>
                 <CardContent className="p-0">
                   {/* Use the existing results data and loading state */}
-                  {isLoadingResults ? ( 
+                  {isLoadingResults ? (
                     <div className="p-6"><Skeleton className="h-64 w-full" /></div>
                   ) : competitionResults?.length ? (
                     <Table>
@@ -255,11 +462,12 @@ export default function Competition() {
             <Card>
                <CardHeader>
                  <div className="flex justify-between items-center"> {/* Added flex container */}
-                   <CardTitle>Results</CardTitle>
+                   {/* Renamed Card Title */}
+                   <CardTitle>Points Allocated</CardTitle>
                    {/* Points Allocation Status */}
                    {competition && ( // Check if competition data exists
                      <Badge variant="outline" className={
-                       competition.isComplete 
+                       competition.isComplete
                          ? "bg-green-500/10 text-green-700 border-green-200" // Finalised style
                          : "bg-yellow-500/10 text-yellow-700 border-yellow-200" // Pending style
                      }>
@@ -318,7 +526,7 @@ export default function Competition() {
                 <CardHeader>
                   <CardTitle>All Player Selections</CardTitle>
                   <CardDescription>Selections are revealed after the deadline.</CardDescription>
-                </CardHeader>
+                </CardHeader> {/* Corrected closing tag */}
                 <CardContent className="p-0">
                   {competition.allSelections && competition.allSelections.length > 0 ? (
                     <Table>

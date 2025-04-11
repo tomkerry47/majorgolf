@@ -225,11 +225,28 @@ export class DatabaseStorage implements IStorage {
         imageUrl: competitions.imageUrl,
         externalLeaderboardUrl: competitions.externalLeaderboardUrl,
         ranksCapturedAt: competitions.ranksCapturedAt, // Added ranksCapturedAt
+        currentRound: competitions.currentRound, // Added currentRound
+        lastResultsUpdateAt: competitions.lastResultsUpdateAt, // Added lastResultsUpdateAt
       })
       .from(competitions)
       .orderBy(competitions.startDate);
-    // Include ranksCapturedAt in the mapped result
-    return competitionsList.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, ranksCapturedAt: c.ranksCapturedAt ?? null })) as Competition[];
+    // Explicitly map fields to ensure type correctness
+    return competitionsList.map(c => ({ 
+      id: c.id,
+      name: c.name,
+      venue: c.venue,
+      startDate: c.startDate,
+      endDate: c.endDate,
+      selectionDeadline: c.selectionDeadline,
+      isActive: c.isActive,
+      isComplete: c.isComplete,
+      description: c.description,
+      imageUrl: c.imageUrl,
+      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, 
+      ranksCapturedAt: c.ranksCapturedAt ?? null,
+      currentRound: c.currentRound ?? null, // Add currentRound
+      lastResultsUpdateAt: c.lastResultsUpdateAt ?? null // Add lastResultsUpdateAt
+    })) as Competition[];
   }
 
   async getActiveCompetitions(): Promise<Competition[]> {
@@ -247,6 +264,8 @@ export class DatabaseStorage implements IStorage {
         imageUrl: competitions.imageUrl,
         externalLeaderboardUrl: competitions.externalLeaderboardUrl,
         ranksCapturedAt: competitions.ranksCapturedAt, // Added ranksCapturedAt
+        currentRound: competitions.currentRound, // Added currentRound
+        lastResultsUpdateAt: competitions.lastResultsUpdateAt, // Added lastResultsUpdateAt
       })
       .from(competitions)
       .where(
@@ -258,8 +277,23 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(competitions.startDate);
-    // Include ranksCapturedAt in the mapped result
-    return activeCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, ranksCapturedAt: c.ranksCapturedAt ?? null })) as Competition[];
+    // Explicitly map fields to ensure type correctness
+    return activeCompetitions.map(c => ({ 
+      id: c.id,
+      name: c.name,
+      venue: c.venue,
+      startDate: c.startDate,
+      endDate: c.endDate,
+      selectionDeadline: c.selectionDeadline,
+      isActive: c.isActive,
+      isComplete: c.isComplete,
+      description: c.description,
+      imageUrl: c.imageUrl,
+      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, 
+      ranksCapturedAt: c.ranksCapturedAt ?? null,
+      currentRound: c.currentRound ?? null, // Add currentRound
+      lastResultsUpdateAt: c.lastResultsUpdateAt ?? null // Add lastResultsUpdateAt
+    })) as Competition[];
   }
 
   async getUpcomingCompetitions(): Promise<Competition[]> {
@@ -278,6 +312,8 @@ export class DatabaseStorage implements IStorage {
         imageUrl: competitions.imageUrl,
         externalLeaderboardUrl: competitions.externalLeaderboardUrl,
         ranksCapturedAt: competitions.ranksCapturedAt, // Added ranksCapturedAt
+        currentRound: competitions.currentRound, // Added currentRound
+        lastResultsUpdateAt: competitions.lastResultsUpdateAt, // Added lastResultsUpdateAt
       })
       .from(competitions)
       .where(
@@ -287,8 +323,23 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(competitions.startDate);
-    // Include ranksCapturedAt in the mapped result
-    return upcomingCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, ranksCapturedAt: c.ranksCapturedAt ?? null })) as Competition[];
+    // Explicitly map fields to ensure type correctness
+    return upcomingCompetitions.map(c => ({ 
+      id: c.id,
+      name: c.name,
+      venue: c.venue,
+      startDate: c.startDate,
+      endDate: c.endDate,
+      selectionDeadline: c.selectionDeadline,
+      isActive: c.isActive,
+      isComplete: c.isComplete,
+      description: c.description,
+      imageUrl: c.imageUrl,
+      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, 
+      ranksCapturedAt: c.ranksCapturedAt ?? null,
+      currentRound: c.currentRound ?? null, // Add currentRound
+      lastResultsUpdateAt: c.lastResultsUpdateAt ?? null // Add lastResultsUpdateAt
+    })) as Competition[];
   }
 
   async getCompletedCompetitions(): Promise<Competition[]> {
@@ -306,12 +357,29 @@ export class DatabaseStorage implements IStorage {
         imageUrl: competitions.imageUrl,
         externalLeaderboardUrl: competitions.externalLeaderboardUrl,
         ranksCapturedAt: competitions.ranksCapturedAt, // Added ranksCapturedAt
+        currentRound: competitions.currentRound, // Added currentRound
+        lastResultsUpdateAt: competitions.lastResultsUpdateAt, // Added lastResultsUpdateAt
       })
       .from(competitions)
       .where(eq(competitions.isComplete, true))
       .orderBy(desc(competitions.endDate));
-    // Include ranksCapturedAt in the mapped result
-    return completedCompetitions.map(c => ({ ...c, externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, ranksCapturedAt: c.ranksCapturedAt ?? null })) as Competition[];
+    // Explicitly map fields to ensure type correctness
+    return completedCompetitions.map(c => ({ 
+      id: c.id,
+      name: c.name,
+      venue: c.venue,
+      startDate: c.startDate,
+      endDate: c.endDate,
+      selectionDeadline: c.selectionDeadline,
+      isActive: c.isActive,
+      isComplete: c.isComplete,
+      description: c.description,
+      imageUrl: c.imageUrl,
+      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, 
+      ranksCapturedAt: c.ranksCapturedAt ?? null,
+      currentRound: c.currentRound ?? null, // Add currentRound
+      lastResultsUpdateAt: c.lastResultsUpdateAt ?? null // Add lastResultsUpdateAt
+    })) as Competition[];
   }
 
   async getCompetitionById(id: number): Promise<Competition | undefined> {
@@ -329,13 +397,31 @@ export class DatabaseStorage implements IStorage {
         imageUrl: competitions.imageUrl,
         externalLeaderboardUrl: competitions.externalLeaderboardUrl,
         ranksCapturedAt: competitions.ranksCapturedAt, // Added ranksCapturedAt
+        currentRound: competitions.currentRound, // Added currentRound
+        lastResultsUpdateAt: competitions.lastResultsUpdateAt, // Added lastResultsUpdateAt
       })
       .from(competitions)
       .where(eq(competitions.id, id));
     
     if (!competition) return undefined;
-    // Include ranksCapturedAt in the returned object
-    return { ...competition, externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null, ranksCapturedAt: competition.ranksCapturedAt ?? null } as Competition;
+    // Include ranksCapturedAt, currentRound, and lastResultsUpdateAt in the returned object
+    // Explicitly map fields to ensure type correctness
+    return { 
+      id: competition.id,
+      name: competition.name,
+      venue: competition.venue,
+      startDate: competition.startDate,
+      endDate: competition.endDate,
+      selectionDeadline: competition.selectionDeadline,
+      isActive: competition.isActive,
+      isComplete: competition.isComplete,
+      description: competition.description,
+      imageUrl: competition.imageUrl,
+      externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null, 
+      ranksCapturedAt: competition.ranksCapturedAt ?? null,
+      currentRound: competition.currentRound ?? null, // Add currentRound
+      lastResultsUpdateAt: competition.lastResultsUpdateAt ?? null // Add lastResultsUpdateAt
+    } as Competition;
   }
 
   async createCompetition(competition: InsertCompetition): Promise<Competition> {

@@ -238,6 +238,7 @@ export default function CurrentCompetition() {
                 <i className="fas fa-golf-ball text-3xl"></i>
               </div>
               <p className="text-sm text-gray-500">You haven't made your selections for this competition yet.</p>
+              {/* Revert to simple Link */}
               <Button asChild className="mt-4">
                 <Link href={`/competitions/${currentCompetition.id}`}>Make Selections</Link>
               </Button>

@@ -3,7 +3,7 @@ import { Server } from 'http';
 import { storage, type IStorage } from './storage'; // Import IStorage type
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
+import fsSync from 'fs'; // Use fsSync for synchronous operations like mkdirSync
 import {
   loginSchema,
   registerSchema,
@@ -15,6 +15,8 @@ import {
   type Selection,
   User,
   Golfer,
+
+  
   type UserPoints,
   type SelectionRank, // Import SelectionRank type
   type Result, // Import Result type
@@ -30,6 +32,7 @@ import crypto from 'crypto'; // Import crypto for password generation
 import { fileURLToPath } from 'url'; // Import fileURLToPath for ES Modules
 import axios from 'axios'; // Import axios
 import * as cheerio from 'cheerio'; // Correct cheerio import for ES Modules
+import fs from 'fs/promises'; // Import fs promises for async file writing
 
 // Define __dirname for ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -157,8 +160,8 @@ const avatarStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     // Use process.cwd() to get the project root and join from there
     const uploadPath = path.join(process.cwd(), 'public/uploads/avatars');
-    // Ensure the directory exists
-    fs.mkdirSync(uploadPath, { recursive: true });
+    // Ensure the directory exists using the synchronous import
+    fsSync.mkdirSync(uploadPath, { recursive: true }); 
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
@@ -1256,8 +1259,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Call the updated script function, passing the forceUpdate flag
-      // The function now returns ProcessStatus | void
-      const result = await updateResultsAndAllocatePoints(pool, competitionId, forceUpdate);
+      // Wrap the call in a try/catch to capture any errors from the script itself
+      let result: ProcessStatus | void;
+      try {
+        result = await updateResultsAndAllocatePoints(pool, competitionId, forceUpdate);
+      } catch (scriptError: any) {
+        console.error(`[API Route] Error executing updateResultsAndAllocatePoints script for competition ${competitionId}:`, scriptError);
+        return res.status(500).json({ error: `Internal server error during script execution: ${scriptError?.message || scriptError}` });
+      }
 
       // Handle the result based on its status
       if (result) { // Check if result is defined (it should be for single competition processing)

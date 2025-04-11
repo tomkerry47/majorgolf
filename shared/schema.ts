@@ -34,6 +34,7 @@ export const competitions = pgTable("competitions", {
   externalLeaderboardUrl: text('externalLeaderboardUrl'), // Add new optional URL field
   lastResultsUpdateAt: timestamp('last_results_update_at'), // Added timestamp for last results update
   ranksCapturedAt: timestamp('ranks_captured_at'), // Added timestamp for rank capture
+  currentRound: integer('current_round'), // Added field for current round number
 });
 
 export const golfers = pgTable("golfers", {
@@ -164,6 +165,7 @@ export interface Competition {
   externalLeaderboardUrl?: string | null; // Add corresponding type field
   lastResultsUpdateAt?: string | null; // Added type for last results update timestamp
   ranksCapturedAt?: string | null; // Added type for rank capture timestamp
+  currentRound?: number | null; // Added type for current round number
 }
 
 export interface Golfer {
@@ -265,6 +267,7 @@ export const insertCompetitionSchema = createInsertSchema(competitions)
     externalLeaderboardUrl: z.string().url().optional().nullable(), // Add to Zod schema
     lastResultsUpdateAt: z.string().or(z.date()).optional().nullable(), // Add to Zod schema
     ranksCapturedAt: z.string().or(z.date()).optional().nullable(), // Add to Zod schema
+    currentRound: z.number().int().min(1).max(4).optional().nullable(), // Add to Zod schema (assuming 1-4 rounds)
   });
 
 export const insertGolferSchema = createInsertSchema(golfers, {

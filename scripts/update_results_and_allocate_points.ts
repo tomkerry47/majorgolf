@@ -2,6 +2,9 @@ import 'dotenv/config';
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import axios from 'axios';
 import * as cheerio from 'cheerio'; // Import cheerio
+import fs from 'fs/promises'; // Import fs promises for async file writing
+import Fuse from 'fuse.js'; // Import Fuse.js
+import { remove as removeDiacritics } from 'diacritics'; // Import diacritics removal function
 
 // --- PGA Tour Scraping ---
 const PGA_LEADERBOARD_URL = 'https://www.pgatour.com/leaderboard.html'; // Or the specific current leaderboard URL if needed
@@ -76,8 +79,8 @@ interface PointDetail {
   captainPoints?: number; // Additional points from captaincy
 }
 
-// Define ProcessStatus type
-type ProcessStatus =
+// Define ProcessStatus type and export it
+export type ProcessStatus =
   | { status: 'success' }
   | { status: 'mismatch'; dbName: string; fetchedName: string; cleanedFetchedName: string }
   | { status: 'error'; message: string };
@@ -85,6 +88,16 @@ type ProcessStatus =
 
 // Helper to safely get rows or empty array with type safety
 const getRows = <T extends QueryResultRow>(result: QueryResult<T> | undefined | null): T[] => result?.rows || []; // Added constraint
+
+// Helper function to normalize names for fuzzy matching
+const normalizeName = (name: string | null | undefined): string => {
+  if (!name) return '';
+  return removeDiacritics(name) // Remove accents (Åberg -> Aberg)
+    .toLowerCase() // Convert to lowercase
+    .replace(/[.'"]/g, '') // Remove periods, apostrophes, quotes (Ca. -> Ca)
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim(); // Trim leading/trailing spaces
+};
 
 // Modified to accept the connection pool directly with type annotation
 // - Add forceUpdate parameter
@@ -239,23 +252,86 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
     const posColumn = jsonData.find((col: any) => col['csvw:name'] === 'POS');
     const playerColumn = jsonData.find((col: any) => col['csvw:name'] === 'PLAYER');
     const scoreColumn = jsonData.find((col: any) => col['csvw:name'] === 'TOT'); // Total score
-    const thruColumn = jsonData.find((col: any) => col['csvw:name'] === 'THRU'); // To check for completion
+    // const thruColumn = jsonData.find((col: any) => col['csvw:name'] === 'THRU'); // Keep for reference if needed later
 
-    if (!posColumn || !playerColumn || !scoreColumn || !thruColumn) {
-      console.error(`Could not find required columns (POS, PLAYER, TOT, THRU) in JSON data.`);
-      return { status: 'error', message: 'Could not find required columns in JSON data.' }; // Return error status
+    if (!posColumn || !playerColumn || !scoreColumn) { // Removed thruColumn check as it's not used for completion logic anymore
+      console.error(`Could not find required columns (POS, PLAYER, TOT) in JSON data.`);
+      return { status: 'error', message: 'Could not find required columns (POS, PLAYER, TOT) in JSON data.' }; // Return error status
     }
 
     // Check lengths
     const numPlayers = playerColumn['csvw:cells']?.length || 0;
-    if (numPlayers === 0 || posColumn['csvw:cells']?.length !== numPlayers || scoreColumn['csvw:cells']?.length !== numPlayers || thruColumn['csvw:cells']?.length !== numPlayers) {
+    if (numPlayers === 0 || posColumn['csvw:cells']?.length !== numPlayers || scoreColumn['csvw:cells']?.length !== numPlayers) { // Removed thruColumn check
       console.error(`Column data length mismatch in JSON.`);
       return { status: 'error', message: 'Column data length mismatch in JSON.' }; // Return error status
     }
 
-    // Determine if tournament is complete (all players have 'F' in THRU column, or '-' for CUT)
-    const isTournamentComplete = thruColumn['csvw:cells'].every((cell: any) => cell['csvw:value'] === 'F' || cell['csvw:value'] === '-');
-    console.log(`Tournament status based on THRU column: ${isTournamentComplete ? 'Final' : 'In Progress'}`);
+    // --- Determine Tournament Completion Status (Refined) ---
+    let isTournamentComplete = false;
+    const columns = leaderboardJson?.mainEntity?.['csvw:tableSchema']?.['csvw:columns'];
+    if (Array.isArray(columns)) {
+        const round4Column = columns.find((col: any) => col['csvw:name'] === 'R4');
+        if (round4Column && Array.isArray(round4Column['csvw:cells'])) {
+            // Considered complete if R4 column exists and has at least one score (not "-")
+            isTournamentComplete = round4Column['csvw:cells'].some((cell: any) => cell['csvw:value'] !== '-');
+        }
+    }
+    console.log(`Tournament status based on R4 scores: ${isTournamentComplete ? 'Final' : 'In Progress'}`);
+
+
+    // --- Extract Current Round by checking round columns in CSVW data ---
+    let extractedRound: number | null = null; 
+    try {
+      // const columns = leaderboardJson?.mainEntity?.['csvw:tableSchema']?.['csvw:columns']; // Already defined above
+      if (Array.isArray(columns)) {
+        let latestRoundWithScore = 0;
+        console.log('[Round Check] Starting round column check...'); // Added log
+        for (let roundNum = 4; roundNum >= 1; roundNum--) {
+          const roundColName = `R${roundNum}`;
+          const roundColumn = columns.find((col: any) => col['csvw:name'] === roundColName);
+          if (roundColumn && Array.isArray(roundColumn['csvw:cells'])) {
+            // Check if any player has a score for this round (value is not "-")
+            const hasScore = roundColumn['csvw:cells'].some((cell: any) => cell['csvw:value'] !== '-');
+            console.log(`[Round Check] Checked ${roundColName}. Found column: ${!!roundColumn}. Has score: ${hasScore}`); // Added log
+            if (hasScore) {
+              latestRoundWithScore = roundNum;
+              console.log(`[Round Check] Found latest round with score: ${latestRoundWithScore}`); // Added log
+              break; // Found the latest round with scores, no need to check earlier rounds
+            }
+          } else {
+             console.log(`[Round Check] Column ${roundColName} not found or cells not an array.`); // Added log
+          }
+        }
+
+        if (latestRoundWithScore > 0) {
+          extractedRound = latestRoundWithScore;
+          console.log(`Determined current round based on latest scores in round columns: ${extractedRound}`);
+        } else {
+          console.log('Could not find any scores in round columns R1-R4.');
+          // If no scores found at all, but tournament isn't marked complete, maybe default to 1? Or leave null?
+          // Let's leave it null for now, the logic below handles the 'complete' case.
+        }
+      } else {
+        console.log('Could not find columns array in JSON structure.');
+      }
+    } catch (e) {
+       console.warn('Error trying to determine round from round columns:', e);
+    }
+
+    // Determine the final round number to store, prioritizing extracted round
+    let roundToStore: number | null = null; 
+    if (extractedRound !== null) {
+        roundToStore = extractedRound; // Use the valid extracted round first
+        console.log(`Prioritizing extracted round: ${roundToStore}`);
+    } else if (isTournamentComplete) {
+        // Only set to 4 if extraction failed AND our refined completion check is true
+        roundToStore = 4; 
+        console.log(`Tournament is complete (based on R4 scores) and round extraction failed, setting round to 4 (Final Round).`);
+    } else {
+        console.log(`Could not determine current round from scores and tournament not complete. Leaving round as null/unchanged in DB.`);
+        // roundToStore remains null
+    }
+
 
     // --- Compare Tournament Names ---
     const dbCompetitionNameLower = competition.name.toLowerCase().trim();
@@ -288,8 +364,9 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
     // --- Fetch DB Golfers for Matching (Include shortName) ---
     const golfersRes: QueryResult<{ id: number; name: string; shortName: string | null }> = await client.query('SELECT id, name, "shortName" FROM golfers');
     const dbGolfers: { id: number; name: string; shortName: string | null }[] = getRows(golfersRes);
-    
-    // Create maps for both full name and short name matching
+
+    // --- Prepare for Matching ---
+    // 1. Exact Match Maps (using original lowercase/trimmed names)
     const golferFullNameMap = new Map<string, number>();
     const golferShortNameMap = new Map<string, number>();
     dbGolfers.forEach(g => {
@@ -300,7 +377,24 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
             golferShortNameMap.set(g.shortName.toLowerCase().trim(), g.id);
         }
     });
-    console.log(`Created maps for ${golferFullNameMap.size} full names and ${golferShortNameMap.size} short names.`);
+    console.log(`Created exact match maps for ${golferFullNameMap.size} full names and ${golferShortNameMap.size} short names.`);
+
+    // 2. Fuzzy Match List (using normalized names)
+    const normalizedDbGolfers = dbGolfers.map(g => ({
+      id: g.id,
+      normalizedName: normalizeName(g.name),
+      normalizedShortName: normalizeName(g.shortName),
+      originalName: g.name, // Keep original for logging
+      originalShortName: g.shortName // Keep original for logging
+    })).filter(g => g.normalizedName || g.normalizedShortName); // Ensure there's something to match against
+
+    const fuseOptions = {
+      includeScore: true,
+      threshold: 0.3, // Stricter threshold (lower is stricter)
+      keys: ['normalizedName', 'normalizedShortName'] // Fields to search in
+    };
+    const fuse = new Fuse(normalizedDbGolfers, fuseOptions);
+    console.log(`Initialized Fuse.js with ${normalizedDbGolfers.length} normalized golfer entries.`);
 
     // --- Process JSON Data ---
     const resultsToUpsert: Omit<Result, 'id' | 'points' | 'created_at' | 'updated_at'>[] = [];
@@ -309,8 +403,10 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
         const playerNameRaw = playerColumn['csvw:cells'][i]['csvw:value'];
         const scoreStrRaw = scoreColumn['csvw:cells'][i]['csvw:value'];
 
-        // Clean Player Name
-        const playerName = playerNameRaw.toLowerCase().trim();
+        // Clean Player Name (for exact match)
+        const playerNameExact = playerNameRaw.toLowerCase().trim();
+        // Normalize Player Name (for fuzzy match)
+        const playerNameNormalized = normalizeName(playerNameRaw);
 
         // Clean and Parse Position
         let position: number;
@@ -320,7 +416,7 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
         } else if (positionStrRaw === 'CUT' || positionStrRaw === 'WD' || positionStrRaw === 'DQ') {
             position = 0; // Assign 0 for CUT/WD/DQ
         } else {
-            console.warn(`Could not parse position '${positionStrRaw}' for player ${playerName}. Skipping row.`);
+            console.warn(`Could not parse position '${positionStrRaw}' for player ${playerNameRaw}. Skipping row.`);
             continue; // Skip this player
         }
 
@@ -331,13 +427,82 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
         } else if (/^[+-]?\d+$/.test(scoreStrRaw)) {
             score = parseInt(scoreStrRaw, 10);
         } else {
-             console.warn(`Could not parse score '${scoreStrRaw}' for player ${playerName}. Assigning 0.`);
+             console.warn(`Could not parse score '${scoreStrRaw}' for player ${playerNameRaw}. Assigning 0.`);
              score = 0; // Assign 0 if score is not a number (e.g., WD, CUT might have non-numeric scores)
         }
 
-        // Match Player Name (Try short name first, then full name)
-        let dbGolferId = golferShortNameMap.get(playerName) ?? golferFullNameMap.get(playerName);
+        // --- Match Player Name ---
+        let dbGolferId: number | undefined = undefined;
+        // Add 'override' to the possible match methods
+        let matchMethod: 'exact-short' | 'exact-full' | 'fuzzy' | 'override' | 'none' = 'none';
 
+        // 1. Try Exact Match (Short Name First)
+        dbGolferId = golferShortNameMap.get(playerNameExact);
+        if (dbGolferId) {
+            matchMethod = 'exact-short';
+        } else {
+            // 2. Try Exact Match (Full Name)
+            dbGolferId = golferFullNameMap.get(playerNameExact);
+            if (dbGolferId) {
+                matchMethod = 'exact-full';
+            }
+        }
+
+        // 3. Try Fuzzy Match if no exact match found
+        if (!dbGolferId && playerNameNormalized) {
+            const fuseResult = fuse.search(playerNameNormalized);
+
+            // Check if we have at least one result within the threshold
+            if (fuseResult.length > 0 && fuseResult[0].score != null && fuseResult[0].score <= fuseOptions.threshold) {
+                const bestMatch = fuseResult[0];
+                const bestScore = bestMatch.score; // Score is guaranteed non-null here by the check above
+
+                // Check for ambiguity: is the second result also good and very close in score?
+                const isAmbiguous = fuseResult.length > 1 &&
+                                    fuseResult[1].score != null &&
+                                    fuseResult[1].score <= fuseOptions.threshold && // Ensure second is also within threshold
+                                    (fuseResult[1].score - bestScore! < 0.01); // Check if scores are very close (Added !)
+
+                if (!isAmbiguous) {
+                    // Accept the best match if it's not ambiguous
+                    dbGolferId = bestMatch.item.id;
+                    matchMethod = 'fuzzy';
+                    console.log(`Fuzzy match accepted for "${playerNameRaw}" -> "${bestMatch.item.originalName || bestMatch.item.originalShortName}" (ID: ${dbGolferId}, Score: ${bestScore!.toFixed(3)})`); // Added !
+                } else {
+                    // It's ambiguous (multiple very good matches)
+                    // Add null check for second score before logging
+                    const secondScoreStr = fuseResult[1]?.score?.toFixed(3) ?? 'N/A';
+                    console.warn(`Ambiguous fuzzy match for "${playerNameRaw}" (Normalized: "${playerNameNormalized}"). Best score: ${bestScore!.toFixed(3)}, Second best: ${secondScoreStr}. Skipping.`); // Added !
+                    console.log('Top fuzzy results:', fuseResult.slice(0, 3).map(r => ({
+                        id: r.item.id,
+                        name: r.item.originalName,
+                        shortName: r.item.originalShortName,
+                        score: r.score?.toFixed(3) ?? 'N/A' // Add null check for score display
+                    })));
+                }
+            } else if (fuseResult.length > 0 && fuseResult[0].score != null) { // Check score is not null before logging
+                 // No match met the threshold
+                 console.warn(`Poor fuzzy match for "${playerNameRaw}" (Normalized: "${playerNameNormalized}"). Best score: ${fuseResult[0].score.toFixed(3)}. Skipping.`);
+            }
+            // If fuseResult is empty or best score is null, no warning needed here, handled by final check
+        }
+
+        // 4. Apply Manual Overrides if still no match (after exact and fuzzy attempts)
+        if (!dbGolferId && playerNameNormalized) {
+            const overrides: { [key: string]: number } = {
+                "cam young": 627, // Force match for Cam Young -> Cameron Young (ID 627)
+                // Add other specific overrides here if needed in the future
+                // e.g., "some other tricky name": 123,
+            };
+            const overrideId = overrides[playerNameNormalized];
+            if (overrideId) {
+                dbGolferId = overrideId;
+                matchMethod = 'override';
+                console.log(`Manual override applied for "${playerNameRaw}" (Normalized: "${playerNameNormalized}") -> ID: ${dbGolferId}`);
+            }
+        }
+
+        // Add to results if a match was found by any method
         if (dbGolferId) {
             resultsToUpsert.push({
                 competitionId: competition.id,
@@ -346,12 +511,12 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
                 score: score,
             });
         } else {
-            console.warn(`Could not find DB match for JSON golfer: ${playerNameRaw}`);
-            // TODO: Consider adding logic to handle unmatched golfers
+            // Log only if no match found after all attempts (exact, fuzzy, override)
+            console.warn(`No DB match found for JSON golfer: "${playerNameRaw}" (Normalized: "${playerNameNormalized}") using exact, fuzzy, or override.`);
         }
-    }
+    } // End of the for loop iterating through players
 
-    console.log(`Extracted ${resultsToUpsert.length} results from JSON data.`);
+    console.log(`Extracted ${resultsToUpsert.length} results from JSON data.`); // This line should be outside the loop
 
     // --- Upsert Results into DB ---
     if (resultsToUpsert.length > 0) {
@@ -371,19 +536,57 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
        console.log(`No results to upsert from scraped data for competition ${competition.id}.`);
     }
 
-    // --- Update Competition Status ---
+    // --- Update Competition Status and Round ---
+    // Prepare base update query parts
+    const updateSetClauses: string[] = [];
+    const updateValues: (number | boolean | null)[] = [];
+    let valueIndex = 1; // Start index for parameters
+    let statusChanged = false; // Flag to track if status needs update
+
+    // Update isComplete and isActive based on the *refined* isTournamentComplete check
     if (isTournamentComplete && !competition.isComplete) {
-      await client.query('UPDATE competitions SET "isComplete" = true, "isActive" = false WHERE id = $1', [competition.id]);
-      console.log(`Marked competition ${competition.id} as complete based on scraped status.`);
+      updateSetClauses.push(`"isComplete" = $${valueIndex++}`, `"isActive" = $${valueIndex++}`);
+      updateValues.push(true, false);
+      statusChanged = true; // Mark status as changed
+      console.log(`Marking competition ${competition.id} as complete.`);
       competition.isComplete = true; // Update local object state
       competition.isActive = false;
     } else if (!isTournamentComplete && competition.isComplete) {
-       // Optional: Handle reactivation
-       await client.query('UPDATE competitions SET "isComplete" = false, "isActive" = true WHERE id = $1', [competition.id]);
-       console.log(`Marked competition ${competition.id} as active again based on scraped status.`);
-       competition.isComplete = false;
-       competition.isActive = true;
+      // Optional: Handle reactivation
+      updateSetClauses.push(`"isComplete" = $${valueIndex++}`, `"isActive" = $${valueIndex++}`);
+      updateValues.push(false, true);
+      statusChanged = true; // Mark status as changed
+      console.log(`Marking competition ${competition.id} as active again.`);
+      competition.isComplete = false;
+      competition.isActive = true;
     }
+
+    // Update currentRound if roundToStore has a valid value (1-4)
+    let roundChanged = false; // Flag to track if round needs update
+    if (roundToStore !== null) {
+        // Ideally, compare with competition.currentRound if available to avoid unnecessary updates
+        // For now, we update if roundToStore is not null.
+        updateSetClauses.push(`"current_round" = $${valueIndex++}`);
+        updateValues.push(roundToStore);
+        console.log(`Setting current round to ${roundToStore} for competition ${competition.id}.`);
+        roundChanged = true;
+    }
+    
+    // Add the competition ID as the final parameter for the WHERE clause
+    updateValues.push(competition.id);
+
+    // Execute the update query only if status or round changed
+    if (statusChanged || roundChanged) { 
+      // updateValues already contains the values for SET clauses. 
+      // The competition.id for the WHERE clause was added just before this block.
+      // DO NOT add competition.id again here.
+      const updateQuery = `UPDATE competitions SET ${updateSetClauses.join(', ')} WHERE id = $${valueIndex}`; // valueIndex is correct for the number of placeholders
+      await client.query(updateQuery, updateValues); // Pass the correctly assembled updateValues array
+      console.log(`Updated competition status/round for ID ${competition.id}.`);
+    } else {
+       console.log(`No status or round changes to update for competition ${competition.id}.`);
+    }
+
 
     return { status: 'success' }; // Indicate success
 

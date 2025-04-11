@@ -57,6 +57,13 @@
       "when": 1744320206245,
       "tag": "0007_high_scream",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1744361738031,
+      "tag": "0008_mighty_mariko_yashida",
+      "breakpoints": true
     }
   ]
 }

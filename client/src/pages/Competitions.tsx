@@ -48,17 +48,19 @@ export default function Competitions() {
   const CompetitionCard = ({ competition, hasSubmitted }: { competition: Competition, hasSubmitted: boolean }) => { 
     const startDate = new Date(competition.startDate);
     const endDate = new Date(competition.endDate);
-    const deadlineDate = new Date(competition.selectionDeadline); 
+    const deadlineDate = new Date(competition.selectionDeadline);
 
-    // Calculate deadline time (06:00 AM on start date)
-    const selectionLockTime = new Date(startDate);
-    selectionLockTime.setHours(6, 0, 0, 0); 
+    // REMOVED incorrect selectionLockTime calculation
 
     const now = new Date();
-    // Disable button if competition is complete OR if user is not admin AND deadline has passed
-    const isSelectionLocked = !user?.isAdmin && now >= selectionLockTime;
-    // Button should be enabled if competition is not complete AND selection is not locked for the user
-    const canMakeSelection = !competition.isComplete && !isSelectionLocked; 
+    // Correctly check if the deadline has passed
+    const deadlineHasPassed = now > deadlineDate; 
+
+    // Disable button if competition is complete OR if the deadline has passed (for ALL users)
+    const isSelectionLocked = deadlineHasPassed; // Removed !user?.isAdmin check
+
+    // Button should be enabled if competition is not complete AND selection is not locked
+    const canMakeSelection = !competition.isComplete && !isSelectionLocked;
 
     let status;
     let statusClass;
@@ -133,17 +135,30 @@ export default function Competitions() {
                     </Button>
                   </Link>
 
-                  {/* Make/Change Selections Button */}
-                  <Link href={`/competitions/${competition.id}`} className="w-full sm:w-auto">
-                    <Button 
-                      size="sm" 
-                      variant={hasSubmitted ? "outline" : "default"} // Use passed prop
-                      className="w-full" // Make button full width on small screens
-                      disabled={!canMakeSelection} 
+                  {/* Make/Change Selections Button - Conditionally Render Link Wrapper */}
+                  {!canMakeSelection ? (
+                    // Render just the disabled button if selection is not possible
+                    <Button
+                      size="sm"
+                      variant={hasSubmitted ? "outline" : "default"}
+                      className="w-full" // No need for extra disabled classes here, disabled attr handles it
+                      disabled={true} // Explicitly disabled
                     >
-                      {hasSubmitted ? "Change Selections" : "Make Selections"} {/* Use passed prop */}
+                      {hasSubmitted ? "Change Selections" : "Make Selections"}
                     </Button>
-                  </Link>
+                  ) : (
+                    // Render the Link wrapping the enabled button if selection is possible
+                    <Link href={`/competitions/${competition.id}`} className="w-full sm:w-auto">
+                      <Button
+                        size="sm"
+                        variant={hasSubmitted ? "outline" : "default"}
+                        className="w-full"
+                        // Button is implicitly enabled here
+                      >
+                        {hasSubmitted ? "Change Selections" : "Make Selections"}
+                      </Button>
+                    </Link>
+                  )}
                 </>
               )}
             </div>
