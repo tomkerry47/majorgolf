@@ -433,22 +433,42 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
 
         // --- Match Player Name ---
         let dbGolferId: number | undefined = undefined;
-        // Add 'override' to the possible match methods
         let matchMethod: 'exact-short' | 'exact-full' | 'fuzzy' | 'override' | 'none' = 'none';
 
-        // 1. Try Exact Match (Short Name First)
-        dbGolferId = golferShortNameMap.get(playerNameExact);
-        if (dbGolferId) {
-            matchMethod = 'exact-short';
-        } else {
-            // 2. Try Exact Match (Full Name)
+        // 1. Apply Manual Overrides FIRST
+        if (playerNameNormalized) {
+            const overrides: { [key: string]: number } = {
+                "cam young": 627, // Force match for Cam Young -> Cameron Young (ID 627)
+                "sw kim": 538, // Force match for S.W. Kim -> Si Woo Kim (ID 538)
+                "m kim": 528, // Force match for M. Kim -> Michael Kim (ID 528)
+                // Add other specific overrides here if needed in the future
+                // e.g., "some other tricky name": 123,
+            };
+            const overrideId = overrides[playerNameNormalized];
+            if (overrideId) {
+                dbGolferId = overrideId;
+                matchMethod = 'override';
+                console.log(`Manual override applied for "${playerNameRaw}" (Normalized: "${playerNameNormalized}") -> ID: ${dbGolferId}`);
+            }
+        }
+
+        // 2. Try Exact Match (Short Name First) if no override applied
+        if (!dbGolferId) {
+            dbGolferId = golferShortNameMap.get(playerNameExact);
+            if (dbGolferId) {
+                matchMethod = 'exact-short';
+            }
+        }
+
+        // 3. Try Exact Match (Full Name) if no override or short name match applied
+        if (!dbGolferId) {
             dbGolferId = golferFullNameMap.get(playerNameExact);
             if (dbGolferId) {
                 matchMethod = 'exact-full';
             }
         }
 
-        // 3. Try Fuzzy Match if no exact match found
+        // 4. Try Fuzzy Match if no match found yet (override, exact-short, exact-full)
         if (!dbGolferId && playerNameNormalized) {
             const fuseResult = fuse.search(playerNameNormalized);
 
@@ -487,22 +507,7 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
             // If fuseResult is empty or best score is null, no warning needed here, handled by final check
         }
 
-        // 4. Apply Manual Overrides if still no match (after exact and fuzzy attempts)
-        if (!dbGolferId && playerNameNormalized) {
-            const overrides: { [key: string]: number } = {
-                "cam young": 627, // Force match for Cam Young -> Cameron Young (ID 627)
-                // Add other specific overrides here if needed in the future
-                // e.g., "some other tricky name": 123,
-            };
-            const overrideId = overrides[playerNameNormalized];
-            if (overrideId) {
-                dbGolferId = overrideId;
-                matchMethod = 'override';
-                console.log(`Manual override applied for "${playerNameRaw}" (Normalized: "${playerNameNormalized}") -> ID: ${dbGolferId}`);
-            }
-        }
-
-        // Add to results if a match was found by any method
+        // Add to results if a match was found by any method (exact, override, or fuzzy)
         if (dbGolferId) {
             resultsToUpsert.push({
                 competitionId: competition.id,
@@ -853,16 +858,12 @@ async function allocatePoints(client: PoolClient, competitionId: number): Promis
       if (useCaptainsChip && pointDetails.length > 0) {
         pointDetails.sort((a, b) => b.finalPoints - a.finalPoints); // Sort by finalPoints desc
         const captainGolferDetail = pointDetails[0];
-        // Only double positive points (after potential rank bonus)
-        if (captainGolferDetail.finalPoints > 0) { 
-            const additionalPoints = captainGolferDetail.finalPoints; // Captain bonus is based on points *after* rank bonus
-            console.log(`Captain's chip used on golfer ${captainGolferDetail.golferId} with ${captainGolferDetail.finalPoints} points (after rank bonus), adding ${additionalPoints} more points`);
-            captainGolferDetail.isCaptain = true;
-            captainGolferDetail.captainPoints = additionalPoints;
-            totalPoints += additionalPoints; // Add captain bonus to total
-        } else {
-             console.log(`Captain's chip not applied as highest scoring golfer (${captainGolferDetail.golferId}) had ${captainGolferDetail.finalPoints} points.`); // Use captainGolferDetail
-        }
+        // Double the points of the highest scoring golfer (positive or negative)
+        const additionalPoints = captainGolferDetail.finalPoints; // Captain bonus is based on points *after* rank bonus
+        console.log(`Captain's chip used on golfer ${captainGolferDetail.golferId} with ${captainGolferDetail.finalPoints} points (after rank bonus), adding ${additionalPoints} more points`);
+        captainGolferDetail.isCaptain = true;
+        captainGolferDetail.captainPoints = additionalPoints;
+        totalPoints += additionalPoints; // Add captain bonus to total
       }
 
       console.log(`User ${selection.userId} earned a total of ${totalPoints} points for competition ${competitionId}`);

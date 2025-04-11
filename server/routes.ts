@@ -2,6 +2,7 @@ import { Express, Request, Response, NextFunction } from 'express';
 import { Server } from 'http';
 import { storage, type IStorage } from './storage'; // Import IStorage type
 import multer from 'multer';
+import Papa from 'papaparse'; // Import papaparse
 import path from 'path';
 import fsSync from 'fs'; // Use fsSync for synchronous operations like mkdirSync
 import {
@@ -25,14 +26,19 @@ import {
 import { generateToken, verifyToken, comparePassword, hashPassword } from './db'; // Import hashPassword
 import { ZodError, z } from 'zod'; // Import z
 import { pgClient, pool } from './db';
-import { updateResultsAndAllocatePoints } from '../scripts/update_results_and_allocate_points';
+import { updateResultsAndAllocatePoints, type ProcessStatus } from '../scripts/update_results_and_allocate_points'; // Import ProcessStatus type
 import { spawn } from 'child_process';
 import crypto from 'crypto'; // Import crypto for password generation
+import Fuse from 'fuse.js'; // Import Fuse.js for fuzzy matching
+import { remove as removeDiacritics } from 'diacritics'; // Import diacritics removal function
 // path is already imported above
 import { fileURLToPath } from 'url'; // Import fileURLToPath for ES Modules
 import axios from 'axios'; // Import axios
 import * as cheerio from 'cheerio'; // Correct cheerio import for ES Modules
 import fs from 'fs/promises'; // Import fs promises for async file writing
+import { db } from './db'; // Assuming db is the exported Drizzle instance
+import { users, selections } from '@shared/schema'; // Import schema tables
+import { eq, ne, and, or, inArray, notInArray } from 'drizzle-orm'; // Import Drizzle operators, added notInArray
 
 // Define __dirname for ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -188,7 +194,31 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: fileFilter
 });
+
+// Multer configuration for CSV upload (using memory storage)
+const csvUpload = multer({
+  storage: multer.memoryStorage(), // Store file in memory
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for CSV
+  fileFilter: (req, file, cb) => {
+    // Accept only CSV files
+    if (file.mimetype === 'text/csv' || file.originalname.toLowerCase().endsWith('.csv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type, only CSV files are allowed!'));
+    }
+  }
+});
 // --- End Avatar Upload Configuration ---
+
+// Helper function to normalize names for fuzzy matching (copied from update_results script)
+const normalizeName = (name: string | null | undefined): string => {
+  if (!name) return '';
+  return removeDiacritics(name) // Remove accents (Åberg -> Aberg)
+    .toLowerCase() // Convert to lowercase
+    .replace(/[.'"]/g, '') // Remove periods, apostrophes, quotes (Ca. -> Ca)
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim(); // Trim leading/trailing spaces
+};
 
 // Base shape from selectionFormSchema in shared/schema.ts (before .refine)
 const baseSelectionFormShape = z.object({
@@ -366,29 +396,303 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Modified /api/golfers to handle user-specific waiver restrictions
-  app.get('/api/golfers', validateJWT, async (req: Request, res: Response) => { // Added validateJWT
+  // New endpoint for CSV User & Selection Import
+  app.post('/api/admin/import-users-selections', validateJWT, csvUpload.single('csvFile'), async (req: Request, res: Response) => {
     try {
-      let allGolfers = await storage.getGolfers();
-      const tokenUser = req.user as ExtendedUser | undefined; // Get user from validated token
-
-      // Check if the request is being made in the context of a specific user (e.g., for their selection form)
-      // We rely on the JWT token user context here.
-      if (tokenUser && tokenUser.database_id) {
-        const userId = tokenUser.database_id;
-        const user = await storage.getUser(userId);
-
-        if (user && user.hasUsedWaiverChip && user.waiverChipOriginalGolferId && user.waiverChipReplacementGolferId) {
-          console.log(`User ${userId} has used waiver chip. Filtering golfers: ${user.waiverChipOriginalGolferId}, ${user.waiverChipReplacementGolferId}`);
-          const restrictedGolferIds = new Set([user.waiverChipOriginalGolferId, user.waiverChipReplacementGolferId]);
-          allGolfers = allGolfers.filter(golfer => !restrictedGolferIds.has(golfer.id));
-        }
-      } else {
-        // If no specific user context (e.g., public view or admin view not tied to a user selection), return all golfers.
-        // Or handle based on specific query params if needed in the future.
-        console.log("No specific user context for golfer filtering, returning all golfers.");
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
       }
 
+      if (!req.file) {
+        return res.status(400).json({ error: 'No CSV file uploaded.' });
+      }
+
+      console.log(`[API /api/admin/import-users-selections] Received file: ${req.file.originalname}, Size: ${req.file.size} bytes`);
+
+      const csvContent = req.file.buffer.toString('utf-8');
+
+      // Use PapaParse to parse the CSV
+      const parseResult = Papa.parse(csvContent, {
+        header: true, // Use the first row as headers
+        skipEmptyLines: true,
+        transformHeader: header => header.trim(), // Trim header whitespace
+        transform: value => value.trim(), // Trim value whitespace
+      });
+
+      if (parseResult.errors.length > 0) {
+        console.error('[API /api/admin/import-users-selections] CSV parsing errors:', parseResult.errors);
+        return res.status(400).json({ error: 'Failed to parse CSV file.', details: parseResult.errors });
+      }
+
+      const rows = parseResult.data as any[]; // Type assertion, handle potential type issues
+      console.log(`[API /api/admin/import-users-selections] Parsed ${rows.length} rows from CSV.`);
+
+      // --- Pre-fetch Competition and Golfer data ---
+      const competitions = await storage.getCompetitions();
+      const playersComp = competitions.find(c => c.name === 'The Players Championship');
+      const mastersComp = competitions.find(c => c.name === 'The Masters');
+
+      if (!playersComp || !mastersComp) {
+        return res.status(500).json({ error: 'Could not find required competitions (The Players Championship, The Masters) in the database.' });
+      }
+      const playersCompId = playersComp.id;
+      const mastersCompId = mastersComp.id;
+      console.log(`[API /api/admin/import-users-selections] Players Comp ID: ${playersCompId}, Masters Comp ID: ${mastersCompId}`);
+
+      const allGolfers = await storage.getGolfers(); // Fetches { id, name, shortName, ... }
+
+      // --- Prepare for Matching (similar to update_results script) ---
+      // 1. Exact Match Maps (using original lowercase/trimmed names)
+      const golferFullNameMap = new Map<string, number>();
+      const golferShortNameMap = new Map<string, number>();
+      allGolfers.forEach(g => {
+          if (g.name) {
+              golferFullNameMap.set(g.name.toLowerCase().trim(), g.id);
+          }
+          if (g.shortName) {
+              golferShortNameMap.set(g.shortName.toLowerCase().trim(), g.id);
+          }
+      });
+      console.log(`[API /api/admin/import-users-selections] Created exact match maps for ${golferFullNameMap.size} full names and ${golferShortNameMap.size} short names.`);
+
+      // 2. Fuzzy Match List (using normalized names)
+      const normalizedDbGolfers = allGolfers.map(g => ({
+        id: g.id,
+        normalizedName: normalizeName(g.name),
+        normalizedShortName: normalizeName(g.shortName),
+        originalName: g.name, // Keep original for logging
+        originalShortName: g.shortName // Keep original for logging
+      })).filter(g => g.normalizedName || g.normalizedShortName); // Ensure there's something to match against
+
+      const fuseOptions = {
+        includeScore: true,
+        threshold: 0.3, // Stricter threshold (lower is stricter)
+        keys: ['normalizedName', 'normalizedShortName'] // Fields to search in
+      };
+      const fuse = new Fuse(normalizedDbGolfers, fuseOptions);
+      console.log(`[API /api/admin/import-users-selections] Initialized Fuse.js with ${normalizedDbGolfers.length} normalized golfer entries.`);
+
+      // 3. Manual Overrides Map (based on normalized input name)
+      const overrides: { [key: string]: number } = {
+          "cam young": 627, // Force match for Cam Young -> Cameron Young (ID 627)
+          "sw kim": 538, // Force match for S.W. Kim -> Si Woo Kim (ID 538)
+          // Add other specific overrides here if needed
+      };
+      // --- End Matching Preparation ---
+
+      // --- Helper Function for Golfer Matching ---
+      const findGolferId = (golferNameRaw: string | null | undefined): { id: number | undefined; error?: string } => {
+        if (!golferNameRaw) {
+          return { id: undefined, error: 'Missing golfer name in CSV row.' };
+        }
+
+        const golferNameExact = golferNameRaw.toLowerCase().trim();
+        const golferNameNormalized = normalizeName(golferNameRaw);
+        let dbGolferId: number | undefined = undefined;
+        let matchMethod: 'exact-short' | 'exact-full' | 'fuzzy' | 'override' | 'none' = 'none';
+
+        // 1. Try Exact Match (Short Name First)
+        dbGolferId = golferShortNameMap.get(golferNameExact);
+        if (dbGolferId) {
+            matchMethod = 'exact-short';
+        } else {
+            // 2. Try Exact Match (Full Name) - Match CSV name against DB full name
+            dbGolferId = golferFullNameMap.get(golferNameExact);
+            if (dbGolferId) {
+                matchMethod = 'exact-full';
+            }
+        }
+
+        // 3. Apply Manual Overrides if no exact match found
+        if (!dbGolferId && golferNameNormalized) {
+            const overrideId = overrides[golferNameNormalized];
+            if (overrideId) {
+                dbGolferId = overrideId;
+                matchMethod = 'override';
+                console.log(`[CSV Import Match] Manual override applied for "${golferNameRaw}" (Normalized: "${golferNameNormalized}") -> ID: ${dbGolferId}`);
+            }
+        }
+
+        // 4. Try Fuzzy Match if no exact match or override found
+        if (!dbGolferId && golferNameNormalized) {
+            const fuseResult = fuse.search(golferNameNormalized);
+            if (fuseResult.length > 0 && fuseResult[0].score != null && fuseResult[0].score <= fuseOptions.threshold) {
+                const bestMatch = fuseResult[0];
+                const bestScore = bestMatch.score;
+                const isAmbiguous = fuseResult.length > 1 && fuseResult[1].score != null && fuseResult[1].score <= fuseOptions.threshold && (fuseResult[1].score - bestScore! < 0.01);
+
+                if (!isAmbiguous) {
+                    dbGolferId = bestMatch.item.id;
+                    matchMethod = 'fuzzy';
+                    console.log(`[CSV Import Match] Fuzzy match accepted for "${golferNameRaw}" -> "${bestMatch.item.originalName || bestMatch.item.originalShortName}" (ID: ${dbGolferId}, Score: ${bestScore!.toFixed(3)})`);
+                } else {
+                    const secondScoreStr = fuseResult[1]?.score?.toFixed(3) ?? 'N/A';
+                    console.warn(`[CSV Import Match] Ambiguous fuzzy match for "${golferNameRaw}" (Normalized: "${golferNameNormalized}"). Best: ${bestScore!.toFixed(3)}, Second: ${secondScoreStr}. Skipping.`);
+                    return { id: undefined, error: `Ambiguous fuzzy match for "${golferNameRaw}". Top matches: ${fuseResult.slice(0,2).map(r => `${r.item.originalName || r.item.originalShortName} (${r.score?.toFixed(3)})`).join(', ')}` };
+                }
+            } else if (fuseResult.length > 0 && fuseResult[0].score != null) {
+                 console.warn(`[CSV Import Match] Poor fuzzy match for "${golferNameRaw}" (Normalized: "${golferNameNormalized}"). Best score: ${fuseResult[0].score.toFixed(3)}. Skipping.`);
+                 // Keep dbGolferId as undefined
+            }
+        }
+
+        if (!dbGolferId) {
+          console.warn(`[CSV Import Match] No DB match found for CSV golfer: "${golferNameRaw}" (Normalized: "${golferNameNormalized}") using exact, override, or fuzzy.`);
+          return { id: undefined, error: `No database match found for golfer "${golferNameRaw}".` };
+        }
+
+        return { id: dbGolferId }; // Return found ID
+      };
+      // --- End Helper Function ---
+
+
+      let usersProcessed = 0;
+      let selectionsCreated = 0;
+      let selectionsUpdated = 0;
+      const errors: string[] = [];
+
+      // Process rows sequentially to avoid race conditions with user creation/selection updates
+      for (const row of rows) {
+        const email = row.email?.toLowerCase();
+        const firstName = row.firstName;
+        const lastName = row.lastName;
+        const username = row.username; // Extract username
+
+        if (!email || !firstName || !lastName || !username) { // Add username check
+          errors.push(`Skipping row: Missing email, firstName, lastName, or username. Row data: ${JSON.stringify(row)}`);
+          continue;
+        }
+
+        // Golfer names from the row (assuming headers match the template)
+        const playersGolferNames = [row.playersChampGolfer1ShortName, row.playersChampGolfer2ShortName, row.playersChampGolfer3ShortName];
+        const mastersGolferNames = [row.mastersGolfer1ShortName, row.mastersGolfer2ShortName, row.mastersGolfer3ShortName];
+
+        // Basic check if names are present
+        if (playersGolferNames.some(name => !name) || mastersGolferNames.some(name => !name)) {
+           errors.push(`Skipping row for ${email}: Missing golfer name(s). Row data: ${JSON.stringify(row)}`);
+           continue;
+        }
+
+        try {
+          // 1. Find or Create User
+          let user = await storage.getUserByEmail(email);
+          if (!user) {
+            // Simple password generation for imported users (admin should reset later)
+            const tempPassword = crypto.randomBytes(8).toString('hex');
+            user = await storage.createUser({
+              email,
+              username: username, // Use username from CSV
+              fullName: `${firstName} ${lastName}`,
+              password: tempPassword, // Storage handles hashing
+              isAdmin: false,
+            });
+            console.log(`[API /api/admin/import-users-selections] Created new user: ${email} (ID: ${user.id})`);
+          } else {
+             console.log(`[API /api/admin/import-users-selections] Found existing user: ${email} (ID: ${user.id})`);
+          }
+          const userId = user.id;
+          usersProcessed++;
+
+          // 2. Process Selections for The Players Championship using the new matching logic
+          const playersResults = playersGolferNames.map(name => findGolferId(name));
+          const playersGolferIds = playersResults.map(r => r.id);
+          const playersErrors = playersResults.map(r => r.error).filter(e => e); // Collect errors
+
+          if (playersErrors.length > 0) {
+            errors.push(`Skipping Players Championship for ${email}: ${playersErrors.join('; ')}`);
+          } else if (playersGolferIds.some(id => id === undefined)) {
+             // This case should theoretically be caught by playersErrors, but as a fallback:
+             errors.push(`Skipping Players Championship for ${email}: Could not resolve one or more golfer IDs from names: ${playersGolferNames.join(', ')}`);
+          } else {
+            // All IDs found, proceed with selection
+            const selectionData = {
+              userId,
+              competitionId: playersCompId,
+              golfer1Id: playersGolferIds[0]!, // Non-null assertion safe due to checks above
+              golfer2Id: playersGolferIds[1]!,
+              golfer3Id: playersGolferIds[2]!,
+              useCaptainsChip: false, // Default for import
+              captainGolferId: null, // Default for import
+            };
+            const existingSelection = await storage.getUserSelections(userId, playersCompId);
+            if (existingSelection) {
+              await storage.updateSelection(existingSelection.id, selectionData);
+              selectionsUpdated++;
+              console.log(`[API /api/admin/import-users-selections] Updated Players selection for user ${userId}`);
+            } else {
+              await storage.createSelection(selectionData);
+              selectionsCreated++;
+              console.log(`[API /api/admin/import-users-selections] Created Players selection for user ${userId}`);
+            }
+          }
+
+          // 3. Process Selections for The Masters using the new matching logic
+          const mastersResults = mastersGolferNames.map(name => findGolferId(name));
+          const mastersGolferIds = mastersResults.map(r => r.id);
+          const mastersErrors = mastersResults.map(r => r.error).filter(e => e); // Collect errors
+
+          if (mastersErrors.length > 0) {
+            errors.push(`Skipping Masters for ${email}: ${mastersErrors.join('; ')}`);
+          } else if (mastersGolferIds.some(id => id === undefined)) {
+             errors.push(`Skipping Masters for ${email}: Could not resolve one or more golfer IDs from names: ${mastersGolferNames.join(', ')}`);
+          } else {
+            // All IDs found, proceed with selection
+            const selectionData = {
+              userId,
+              competitionId: mastersCompId,
+              golfer1Id: mastersGolferIds[0]!, // Non-null assertion safe due to checks above
+              golfer2Id: mastersGolferIds[1]!,
+              golfer3Id: mastersGolferIds[2]!,
+              useCaptainsChip: false, // Default for import
+              captainGolferId: null, // Default for import
+            };
+            const existingSelection = await storage.getUserSelections(userId, mastersCompId);
+            if (existingSelection) {
+              await storage.updateSelection(existingSelection.id, selectionData);
+              selectionsUpdated++;
+               console.log(`[API /api/admin/import-users-selections] Updated Masters selection for user ${userId}`);
+            } else {
+              await storage.createSelection(selectionData);
+              selectionsCreated++;
+               console.log(`[API /api/admin/import-users-selections] Created Masters selection for user ${userId}`);
+            }
+          }
+
+        } catch (rowError: any) {
+          errors.push(`Error processing row for ${email}: ${rowError.message}`);
+          console.error(`[API /api/admin/import-users-selections] Error processing row for ${email}:`, rowError);
+        }
+      } // End row loop
+
+      console.log(`[API /api/admin/import-users-selections] Import finished. Processed: ${usersProcessed}, Created: ${selectionsCreated}, Updated: ${selectionsUpdated}, Errors: ${errors.length}`);
+
+      res.json({
+        success: errors.length === 0,
+        message: `Import finished. Processed ${usersProcessed} users. Selections Created: ${selectionsCreated}, Updated: ${selectionsUpdated}.`,
+        errors: errors,
+      });
+
+    } catch (error: any) {
+      console.error('[API /api/admin/import-users-selections] General error during import:', error);
+      // Handle specific multer errors if needed
+      if (error instanceof multer.MulterError) {
+         return res.status(400).json({ error: `File upload error: ${error.message}` });
+      } else if (error.message.includes('Invalid file type')) {
+         return res.status(400).json({ error: error.message });
+      }
+      res.status(500).json({ error: 'Failed to process CSV import.', details: error.message });
+    }
+  });
+
+
+  // Returns all golfers. Filtering (e.g., for waiver chip) should happen client-side where needed.
+  // This endpoint uses validateJWT to ensure only authenticated users can access it,
+  // but it doesn't apply user-specific filtering anymore.
+  app.get('/api/golfers', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const allGolfers = await storage.getGolfers();
+      console.log("Returning full golfer list.");
       res.json({ golfers: allGolfers }); // Wrap in { golfers: ... }
     } catch (error) {
       console.error('Get golfers error:', error);
@@ -1365,6 +1669,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to capture selection ranks' });
     }
   });
+
+  // New endpoint to clear down the database except for specified users
+  app.post('/api/admin/clear-database', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      console.log(`[API /api/admin/clear-database] Starting clear down process, keeping admin users.`);
+
+      await db.transaction(async (tx) => {
+        // 1. Find the IDs of admin users to keep
+        const adminUsers = await tx.select({ id: users.id })
+          .from(users)
+          .where(eq(users.isAdmin, true));
+
+        const adminUserIds = adminUsers.map(u => u.id);
+        console.log(`[API /api/admin/clear-database] Admin User IDs to keep: ${adminUserIds.join(', ')}`);
+
+        if (adminUserIds.length > 0) {
+          // 2. Delete selections for the admin users being kept
+          // Note: You might want to keep admin selections depending on requirements,
+          // but the original request was to clear them for the specified users.
+          // Let's stick to clearing selections for admins for now.
+          const deletedSelections = await tx.delete(selections)
+            .where(inArray(selections.userId, adminUserIds))
+            .returning({ id: selections.id });
+          console.log(`[API /api/admin/clear-database] Deleted ${deletedSelections.length} selections for admin users.`);
+        } else {
+          console.log(`[API /api/admin/clear-database] No admin users found, skipping selection deletion for admins.`);
+        }
+
+        // 3. Find IDs of non-admin users
+        const nonAdminUsers = await tx.select({ id: users.id })
+          .from(users)
+          .where(eq(users.isAdmin, false));
+        const nonAdminUserIds = nonAdminUsers.map(u => u.id);
+        console.log(`[API /api/admin/clear-database] Non-Admin User IDs to delete selections/users for: ${nonAdminUserIds.join(', ')}`);
+
+        // 4. Delete selections for non-admin users (if any exist)
+        if (nonAdminUserIds.length > 0) {
+          const deletedNonAdminSelections = await tx.delete(selections)
+            .where(inArray(selections.userId, nonAdminUserIds)) // <--- This should delete orphaned selections
+            .returning({ id: selections.id });
+          console.log(`[API /api/admin/clear-database] Deleted ${deletedNonAdminSelections.length} selections for non-admin users.`);
+        } else {
+           console.log(`[API /api/admin/clear-database] No non-admin users found, skipping selection deletion for non-admins.`);
+        }
+        
+        // 5. Delete all users that are NOT admins (if any exist)
+        if (nonAdminUserIds.length > 0) {
+          const deletedUsers = await tx.delete(users)
+            .where(inArray(users.id, nonAdminUserIds)) // Use the fetched IDs
+            .returning({ id: users.id, email: users.email });
+          console.log(`[API /api/admin/clear-database] Deleted ${deletedUsers.length} non-admin users.`);
+        } else {
+           console.log(`[API /api/admin/clear-database] No non-admin users found to delete.`);
+        }
+
+        // 6. Reset waiver chip status for remaining admin users (ADDED THIS STEP)
+        if (adminUserIds.length > 0) {
+          console.log(`[API /api/admin/clear-database] Attempting to reset waiver status for admin IDs: ${adminUserIds.join(', ')}`);
+          const updatedAdmins = await tx.update(users)
+            .set({
+              hasUsedWaiverChip: false,
+              waiverChipUsedCompetitionId: null,
+              waiverChipOriginalGolferId: null,
+              waiverChipReplacementGolferId: null
+            })
+            .where(inArray(users.id, adminUserIds))
+            .returning({ id: users.id });
+          const updatedAdminIds = updatedAdmins.map(u => u.id);
+          console.log(`[API /api/admin/clear-database] Reset waiver chip status for ${updatedAdmins.length} admin users. IDs updated: ${updatedAdminIds.join(', ')}`);
+        } else {
+          console.log(`[API /api/admin/clear-database] No admin users found, skipping waiver chip reset.`);
+        }
+      });
+
+      console.log(`[API /api/admin/clear-database] Database clear down successful.`);
+      // Updated success message to reflect waiver reset
+      res.json({ success: true, message: 'Database cleared successfully, keeping admin users, removing their selections, and resetting their waiver status.' });
+
+    } catch (error) {
+      console.error('[API /api/admin/clear-database] Error during database clear down:', error);
+      res.status(500).json({ error: 'Failed to clear database.' });
+    }
+  });
+
 
   // New endpoint to trigger the golfer update script
   app.post('/api/admin/update-golfers', validateJWT, async (req: Request, res: Response) => {

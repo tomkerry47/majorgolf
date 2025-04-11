@@ -107,6 +107,7 @@ export default function AdminGolfers() {
                   <TableRow>
                     <TableHead>ID</TableHead>
                     <TableHead>Name</TableHead>
+                    <TableHead>Short Name</TableHead> {/* Added Short Name Header */}
                     <TableHead>Rank</TableHead>
                     <TableHead>First Name</TableHead>
                     <TableHead>Last Name</TableHead>
@@ -119,6 +120,7 @@ export default function AdminGolfers() {
                       <TableRow key={golfer.id}>
                         <TableCell>{golfer.id}</TableCell>
                         <TableCell className="font-medium">{golfer.name}</TableCell>
+                        <TableCell>{golfer.shortName ?? 'N/A'}</TableCell> {/* Added Short Name Cell */}
                         <TableCell>{golfer.rank}</TableCell>
                         <TableCell>{golfer.firstName ?? 'N/A'}</TableCell>
                         <TableCell>{golfer.lastName ?? 'N/A'}</TableCell>
@@ -126,7 +128,7 @@ export default function AdminGolfers() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center">
+                      <TableCell colSpan={6} className="text-center"> {/* Adjusted colSpan */}
                         No golfers found in the database.
                       </TableCell>
                     </TableRow>

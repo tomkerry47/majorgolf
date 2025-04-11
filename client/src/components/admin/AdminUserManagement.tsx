@@ -9,7 +9,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox'; // Import Checkbox
 import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast'; // Import useToast
+import { useToast } from '@/hooks/use-toast';
+import { Input } from '@/components/ui/input'; // Import Input for file upload
+import { Label } from '@/components/ui/label'; // Import Label
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Import Alert for feedback
+import { Terminal } from "lucide-react"; // Import icon for Alert
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,8 +24,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"; // Import AlertDialog components
-import type { User } from '@shared/schema'; // Assuming User type is defined here
+} from "@/components/ui/alert-dialog";
+import type { User } from '@shared/schema';
 
 // Define a more detailed user type for the admin view
 interface AdminUser extends User {
@@ -39,7 +43,9 @@ const AdminUserManagement: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null); // User for editing or viewing selections
   // const [showResetConfirm, setShowResetConfirm] = useState(false); // Remove this state, use userToReset directly
   const [userToReset, setUserToReset] = useState<AdminUser | null>(null);
-  // const [newPassword, setNewPassword] = useState<string | null>(null); // Remove state for displaying password in dialog
+  const [isClearDbConfirmOpen, setIsClearDbConfirmOpen] = useState(false); // State for clear DB confirmation
+  const [selectedFile, setSelectedFile] = useState<File | null>(null); // State for CSV file
+  const [importFeedback, setImportFeedback] = useState<{ success: boolean; message: string; errors?: string[] } | null>(null); // State for import feedback
 
   const queryClient = useQueryClient(); // Get query client instance
   const { toast } = useToast(); // Get toast function
@@ -55,6 +61,67 @@ const AdminUserManagement: React.FC = () => {
     queryClient.invalidateQueries({ queryKey: ['/api/admin/users/details'] });
   }, [queryClient]);
 
+  // Mutation for clearing the database
+  const clearDatabaseMutation = useMutation({
+    mutationFn: () => apiRequest('/api/admin/clear-database', 'POST'),
+    onSuccess: () => {
+      toast({
+        title: "Database Cleared",
+        description: "Database cleared successfully, keeping specified users.",
+      });
+      // Refetch user data after clearing
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users/details'] });
+      setIsClearDbConfirmOpen(false); // Close dialog on success
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Database Clear Failed",
+        description: error.response?.data?.error || error.message || "Could not clear the database.",
+        variant: "destructive",
+      });
+      setIsClearDbConfirmOpen(false); // Close dialog on error
+    },
+  });
+
+  // Mutation for CSV import
+  const importUsersMutation = useMutation({
+    mutationFn: (formData: FormData) =>
+      // Remove the 4th argument (headers), Axios handles FormData Content-Type
+      apiRequest('/api/admin/import-users-selections', 'POST', formData),
+    onSuccess: (data: any) => {
+      setImportFeedback({
+        success: data.success,
+        message: data.message,
+        errors: data.errors,
+      });
+      toast({
+        title: data.success ? "Import Successful" : "Import Partially Successful",
+        description: data.message,
+        // Use "default" for partial success, "destructive" is handled in onError
+        variant: data.success ? "default" : "default",
+      });
+      // Refetch users if import was successful or partially successful
+      if (data.success || data.errors?.length < (data.usersProcessed || 0)) { // Heuristic for partial success
+        queryClient.invalidateQueries({ queryKey: ['/api/admin/users/details'] });
+      }
+    },
+    onError: (error: any) => {
+      setImportFeedback({
+        success: false,
+        message: error.response?.data?.error || error.message || "An unknown error occurred during import.",
+        errors: error.response?.data?.details || [],
+      });
+      toast({
+        title: "Import Failed",
+        description: error.response?.data?.error || error.message || "Could not process the CSV import.",
+        variant: "destructive",
+      });
+    },
+    onMutate: () => {
+      // Clear previous feedback when starting a new import
+      setImportFeedback(null);
+    }
+  });
 
   // Mutation for resetting password
   const resetPasswordMutation = useMutation({
@@ -123,6 +190,36 @@ const AdminUserManagement: React.FC = () => {
     setIsCreateModalOpen(false);
   };
 
+  const handleClearDatabaseClick = () => {
+    setIsClearDbConfirmOpen(true);
+  };
+
+  const confirmClearDatabase = () => {
+    clearDatabaseMutation.mutate();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      setSelectedFile(event.target.files[0]);
+      setImportFeedback(null); // Clear feedback when a new file is selected
+    } else {
+      setSelectedFile(null);
+    }
+  };
+
+  const handleImportClick = () => {
+    if (!selectedFile) {
+      // Use "default" or "destructive" for toast variant
+      toast({ title: "No File Selected", description: "Please select a CSV file to import.", variant: "default" });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('csvFile', selectedFile); // 'csvFile' must match the backend Multer field name
+
+    importUsersMutation.mutate(formData);
+  };
+
   const handleViewSelectionsClick = (user: AdminUser) => {
     setSelectedUser(user); // Use the same state for the user context
     setIsViewSelectionsModalOpen(true);
@@ -189,9 +286,36 @@ const AdminUserManagement: React.FC = () => {
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div>
           <CardTitle>User Management</CardTitle>
-          <CardDescription>View, manage, and create registered users.</CardDescription>
+          <CardDescription>View, manage, create users, and perform database operations.</CardDescription> {/* Updated description */}
         </div>
-        <Button onClick={handleOpenCreateModal}>Create User</Button>
+        <div className="flex space-x-2"> {/* Container for buttons */}
+          {/* Clear DB Button and Dialog */}
+          <AlertDialog open={isClearDbConfirmOpen} onOpenChange={setIsClearDbConfirmOpen}>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" onClick={handleClearDatabaseClick}>Clear Down DB</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete all users except JamesKerry@me.com and Thomaskerry@me.com, and remove all selections for those two users.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={confirmClearDatabase}
+                  disabled={clearDatabaseMutation.isPending}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90" // Destructive style for action
+                >
+                  {clearDatabaseMutation.isPending ? 'Clearing...' : 'Yes, Clear Database'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          {/* Existing Create User Button */}
+          <Button onClick={handleOpenCreateModal}>Create User</Button>
+        </div>
       </CardHeader>
       <CardContent>
         <Table>
@@ -301,6 +425,50 @@ const AdminUserManagement: React.FC = () => {
         isOpen={isCreateModalOpen}
         onClose={handleCloseCreateModal}
       />
+
+      {/* CSV Import Section */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Import Users & Selections via CSV</CardTitle>
+          <CardDescription>
+            Upload a CSV file to bulk create users and add/overwrite their selections for The Players Championship and The Masters.
+            <a href="/user_import_template.csv" download className="text-blue-600 hover:underline ml-2">
+              Download Template CSV
+            </a>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid w-full max-w-sm items-center gap-1.5">
+            <Label htmlFor="csv-upload">Select CSV File</Label>
+            <Input id="csv-upload" type="file" accept=".csv" onChange={handleFileChange} />
+          </div>
+          <Button
+            onClick={handleImportClick}
+            disabled={!selectedFile || importUsersMutation.isPending}
+          >
+            {importUsersMutation.isPending ? 'Importing...' : 'Import Users & Selections'}
+          </Button>
+
+          {/* Import Feedback Area */}
+          {importFeedback && (
+            // Use "default" or "destructive" for Alert variant
+            <Alert variant={importFeedback.success ? "default" : "destructive"} className="mt-4">
+              <Terminal className="h-4 w-4" />
+              <AlertTitle>{importFeedback.success ? "Import Result" : "Import Errors"}</AlertTitle>
+              <AlertDescription>
+                <p>{importFeedback.message}</p>
+                {importFeedback.errors && importFeedback.errors.length > 0 && (
+                  <ul className="list-disc pl-5 mt-2 text-sm">
+                    {importFeedback.errors.map((err, index) => (
+                      <li key={index}>{err}</li>
+                    ))}
+                  </ul>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
     </Card>
   );
 };
