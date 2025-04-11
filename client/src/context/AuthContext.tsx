@@ -8,7 +8,7 @@ interface AuthContextType {
   profile: any | null;
   isAdmin: boolean;
   isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<any>;
+  signIn: (identifier: string, password: string) => Promise<any>; // Changed email to identifier
   signOut: () => Promise<void>;
 }
 
@@ -55,9 +55,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth();
   }, [setLocation]);
 
-  const signInUser = async (email: string, password: string) => {
+  const signInUser = async (identifier: string, password: string) => { // Changed email to identifier
     try {
-      const result = await login(email, password);
+      const result = await login(identifier, password); // Pass identifier to login lib function
       setUser(result.user);
       setProfile(result.user);
       return result;

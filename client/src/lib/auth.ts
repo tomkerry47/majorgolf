@@ -43,15 +43,15 @@ export function removeStoredUser(): void {
 }
 
 // Authentication functions
-export async function login(email: string, password: string): Promise<LoginResponse> {
-  console.log('Attempting to login with direct JWT auth:', { email });
+export async function login(identifier: string, password: string): Promise<LoginResponse> { // Changed email to identifier
+  console.log('Attempting to login with direct JWT auth:', { identifier }); // Log identifier
   
   const response = await fetch('/api/auth/login', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ identifier, password }), // Send identifier
     credentials: 'include',
   });
   

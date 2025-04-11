@@ -5,9 +5,10 @@ import { z } from "zod";
 import { useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { loginSchema, type LoginCredentials } from "@shared/schema"; // Import shared schema
 import { 
   Card, 
-  CardContent, 
+  CardContent,
   CardDescription, 
   CardFooter, 
   CardHeader, 
@@ -25,13 +26,10 @@ import {
 } from "@/components/ui/form";
 import { Trophy } from "lucide-react";
 
-// Login form schema
-const loginSchema = z.object({
-  email: z.string().email({ message: "Please enter a valid email address" }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters" }),
-});
+// Removed local loginSchema definition
 
-type LoginValues = z.infer<typeof loginSchema>;
+// Use LoginCredentials type from shared schema
+// type LoginValues = z.infer<typeof loginSchema>; // Removed local type
 
 const Auth = () => {
   console.log("Auth component rendered");
@@ -51,19 +49,20 @@ const Auth = () => {
       });
   }, []);
 
-  // Login form
-  const loginForm = useForm<LoginValues>({
-    resolver: zodResolver(loginSchema),
+  // Login form - Use imported schema and type
+  const loginForm = useForm<LoginCredentials>({
+    resolver: zodResolver(loginSchema), // Use imported schema
     defaultValues: {
-      email: "",
+      identifier: "", // Use identifier
       password: "",
     },
   });
 
-  const onLoginSubmit = async (values: LoginValues) => {
+  const onLoginSubmit = async (values: LoginCredentials) => { // Use imported type
     try {
-      console.log('Attempting login with:', values.email);
-      const result = await signIn(values.email, values.password);
+      const normalizedIdentifier = values.identifier.trim(); // Use identifier
+      console.log('Attempting login with:', normalizedIdentifier);
+      const result = await signIn(normalizedIdentifier, values.password); // Pass identifier
       console.log('Login successful:', result);
       toast({
         title: "Welcome back!",
@@ -89,7 +88,7 @@ const Auth = () => {
               <Trophy className="h-6 w-6" />
             </div>
           </div>
-          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Golf Syndicate Tracker</h2>
+          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Major Predictor</h2>
           <p className="mt-2 text-sm text-gray-600">
             Track your golf tournament selections and compete with friends
           </p>
@@ -104,12 +103,16 @@ const Auth = () => {
               <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
                 <FormField
                   control={loginForm.control}
-                    name="email"
+                    name="identifier" // Change name to identifier
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email</FormLabel>
+                        <FormLabel>Email or Username</FormLabel> {/* Change label */}
                         <FormControl>
-                          <Input placeholder="your.email@example.com" {...field} />
+                          <Input 
+                            type="text" // Change type to text
+                            placeholder="Email or Username" // Change placeholder
+                            {...field} 
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

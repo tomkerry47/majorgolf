@@ -325,8 +325,9 @@ export const holeInOneFormSchema = insertHoleInOneSchema
 
 // Login and Registration schemas
 export const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
+  // Accepts email or username
+  identifier: z.string().min(1, { message: "Email or Username is required" }), 
+  password: z.string().min(6, { message: "Password must be at least 6 characters" }),
 });
 
 export type LoginCredentials = z.infer<typeof loginSchema>;

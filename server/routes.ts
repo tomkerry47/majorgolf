@@ -252,11 +252,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
-      const { email, password } = loginSchema.parse(req.body);
-      const normalizedEmail = email.toLowerCase().trim();
-      const user = await storage.getUserByEmail(normalizedEmail);
-      if (!user) { return res.status(401).json({ error: 'Invalid credentials' }); }
-      if (!user.password) { return res.status(401).json({ error: 'Password not set' }); }
+      const { identifier, password } = loginSchema.parse(req.body);
+      const normalizedIdentifier = identifier.trim(); // Trim whitespace
+
+      // Determine if identifier is email or username
+      const isEmail = normalizedIdentifier.includes('@'); 
+      let user: User | undefined;
+
+      if (isEmail) {
+        console.log(`Attempting login with email: ${normalizedIdentifier}`);
+        user = await storage.getUserByEmail(normalizedIdentifier.toLowerCase()); // Ensure email is lowercase
+      } else {
+        console.log(`Attempting login with username: ${normalizedIdentifier}`);
+        user = await storage.getUserByUsername(normalizedIdentifier); // Username might be case-sensitive depending on DB collation
+      }
+
+      if (!user) { 
+        console.log(`User not found for identifier: ${normalizedIdentifier}`);
+        return res.status(401).json({ error: 'Invalid credentials' }); 
+      }
+      if (!user.password) { 
+        console.log(`Password not set for user: ${user.username}`);
+        return res.status(401).json({ error: 'Password not set' }); 
+      }
       const isPasswordValid = await comparePassword(password, user.password);
       if (!isPasswordValid) { return res.status(401).json({ error: 'Invalid credentials' }); }
 

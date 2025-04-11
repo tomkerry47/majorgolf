@@ -21,7 +21,7 @@ export default function AuthForm() {
   const form = useForm<LoginCredentials>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      identifier: "", // Changed from email
       password: "",
     }
   });
@@ -29,13 +29,14 @@ export default function AuthForm() {
   async function onSubmit(data: LoginCredentials) {
     setIsLoading(true);
     try {
-      // Normalize email to lowercase to avoid case sensitivity issues
-      const { email, password } = data;
-      const normalizedEmail = email.toLowerCase().trim();
-      console.log('Login attempt with:', { email: normalizedEmail });
+      // Identifier can be email or username
+      const { identifier, password } = data; 
+      const normalizedIdentifier = identifier.trim(); // Trim whitespace
+      console.log('Login attempt with:', { identifier: normalizedIdentifier });
         
         console.log('Starting signIn process...');
-        const result = await signIn(normalizedEmail, password);
+        // Pass identifier to signIn function (AuthContext needs update too)
+        const result = await signIn(normalizedIdentifier, password); 
         console.log('SignIn complete, result:', result ? 'Success' : 'Failed');
         
         console.log('Showing success toast...');
@@ -68,10 +69,10 @@ export default function AuthForm() {
         // Check for specific error messages
         if (error.message.includes("credentials") || error.message.includes("password")) {
           errorTitle = "Invalid credentials";
-          errorMessage = "The email or password you entered is incorrect. Please try again.";
+          errorMessage = "The identifier or password you entered is incorrect. Please try again."; // Updated message
         } else if (error.message.includes("not found") || error.message.includes("no user")) {
           errorTitle = "User not found";
-          errorMessage = "No account exists with this email. Please check your email.";
+          errorMessage = "No account exists with this email or username. Please check your details."; // Updated message
         }
       }
 
@@ -98,14 +99,14 @@ export default function AuthForm() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
               control={form.control}
-              name="email"
+              name="identifier" // Changed from email
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel>Email or Username</FormLabel> {/* Changed label */}
                   <FormControl>
                     <Input 
-                      type="email" 
-                      placeholder="you@example.com" 
+                      type="text" // Changed type to text
+                      placeholder="Email or Username" // Changed placeholder
                       {...field} 
                       value={field.value || ''} 
                     />
