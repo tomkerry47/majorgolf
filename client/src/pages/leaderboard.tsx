@@ -14,11 +14,13 @@ import {
   SelectValue
 } from "@/components/ui/select";
 import { Competition } from "@shared/schema";
+import type { LeaderboardEntry } from "@/components/leaderboard-table"; // Import the type from the component
 
+// Use the imported LeaderboardEntry type for standings
 interface LeaderboardData {
-  standings: Array<any>; // Consider defining a more specific type for standings entries later
+  standings: LeaderboardEntry[]; // Use the specific type from the table component
   currentUserId?: number;
-  lastUpdated?: string | null; // Corrected: Use nullable string
+  lastUpdated?: string | null;
   currentRound?: number;
   roundCompleted?: boolean;
 }
@@ -195,12 +197,14 @@ const Leaderboard = () => {
       )}
       
       {/* Leaderboard table */}
-      <LeaderboardTable 
-        data={leaderboardStandings} // Pass the extracted standings
-        isLoading={isLoadingLeaderboard}
-        userId={leaderboardData?.currentUserId} // Use leaderboardData here too
-      />
-    </div>
+       {/* Leaderboard table - Pass displayMode based on selection */}
+       <LeaderboardTable 
+         data={leaderboardStandings} // Pass the extracted standings
+         isLoading={isLoadingLeaderboard}
+         userId={leaderboardData?.currentUserId} // Use leaderboardData here too
+         displayMode={selectedCompetitionId === 'all' ? 'overall' : 'competition'} // Set mode dynamically
+       />
+     </div>
   );
 };
 

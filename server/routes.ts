@@ -361,11 +361,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Get ranks from the pre-fetched map
           const rank1 = ranksMap.get(`${sel.userId}-${sel.golfer1Id}`)?.rankAtDeadline;
           const rank2 = ranksMap.get(`${sel.userId}-${sel.golfer2Id}`)?.rankAtDeadline;
-          const rank3 = ranksMap.get(`${sel.userId}-${sel.golfer3Id}`)?.rankAtDeadline;
+           const rank3 = ranksMap.get(`${sel.userId}-${sel.golfer3Id}`)?.rankAtDeadline;
 
-          return {
-            userId: sel.userId,
-            username: user?.username || 'Unknown User',
+           // Get waiver details for this user
+           const waiverOriginalGolferId = user?.waiverChipOriginalGolferId;
+           const waiverReplacementGolferId = user?.waiverChipReplacementGolferId; // Get replacement ID
+           const waiverUsedInThisComp = user?.hasUsedWaiverChip && user?.waiverChipUsedCompetitionId === competitionId;
+
+           // Fetch original golfer details if waiver was used here
+           let originalGolferDetails: { name: string; rank: number | null } | null = null;
+           if (waiverUsedInThisComp && waiverOriginalGolferId) {
+             const originalGolfer = await storage.getGolferById(waiverOriginalGolferId);
+             if (originalGolfer) {
+               // Fetch rank for original golfer at deadline
+               const originalRankData = await storage.getSelectionRank(sel.userId, competitionId, waiverOriginalGolferId);
+               originalGolferDetails = {
+                 name: originalGolfer.name || 'Unknown Original Golfer',
+                 rank: originalRankData?.rankAtDeadline ?? null // Use rank at deadline
+               };
+             }
+           }
+
+           return {
+             userId: sel.userId,
+             username: user?.username || 'Unknown User',
             golfer1Id: sel.golfer1Id,
             golfer2Id: sel.golfer2Id,
             golfer3Id: sel.golfer3Id,
@@ -373,12 +392,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             golfer2Name: golfer2?.name || 'N/A',
             golfer3Name: golfer3?.name || 'N/A',
             golfer1Rank: rank1, // Add rank
-            golfer2Rank: rank2, // Add rank
-            golfer3Rank: rank3, // Add rank
-            useCaptainsChip: sel.useCaptainsChip,
-            captainGolferId: sel.captainGolferId
-          };
-        }));
+             golfer2Rank: rank2, // Add rank
+             golfer3Rank: rank3, // Add rank
+             useCaptainsChip: sel.useCaptainsChip,
+             captainGolferId: sel.captainGolferId,
+             // Include waiver details if used in this competition
+             waiverChipOriginalGolferId: waiverUsedInThisComp ? waiverOriginalGolferId : null,
+             waiverChipReplacementGolferId: waiverUsedInThisComp ? waiverReplacementGolferId : null, // Add replacement ID
+             waiverChipOriginalGolferDetails: originalGolferDetails // Add original golfer details object
+           };
+         }));
         console.log(`Fetched ${allSelectionsData.length} selections with details and ranks.`);
       } else {
          console.log(`Deadline not passed for competition ${competitionId}. Not fetching all selections.`);
@@ -731,31 +754,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Process standings if it's a specific competition (add selection details)
       if (typeof competitionId === 'number' && !isNaN(competitionId)) {
          const tokenUser = req.user as ExtendedUser | undefined;
-         const userId = tokenUser?.database_id;
+         const currentUserId = tokenUser?.database_id; // Renamed for clarity
         // Use leaderboardData.standings here
         const enhancedStandings = await Promise.all(leaderboardData.standings.map(async (entry: any) => { // Add type 'any' to entry for now
-          // Fetch chip usage status for the user
-          const hasUsedCaptainsChip = await storage.hasUsedCaptainsChip(entry.userId);
-          const hasUsedWaiverChip = await storage.hasUsedWaiverChip(entry.userId);
+          // Fetch full user record to get waiver details along with chip status
+          const user = await storage.getUser(entry.userId);
+          const hasUsedCaptainsChip = user?.hasUsedCaptainsChip ?? false;
+          const hasUsedWaiverChip = user?.hasUsedWaiverChip ?? false;
+          const waiverReplacementGolferId = user?.waiverChipReplacementGolferId; // Get replacement ID
 
           let selectionRecord: Selection | undefined = undefined;
           // Fetch selections for the specific user in the leaderboard entry
           selectionRecord = await storage.getUserSelections(entry.userId, competitionId);
 
-          // If no selection record, still return the entry with chip status
+          // If no selection record, still return the entry with user-level chip status
           if (!selectionRecord) {
-            return { ...entry, selections: [], hasUsedCaptainsChip, hasUsedWaiverChip };
+            return { ...entry, selections: [], hasUsedCaptainsChip, hasUsedWaiverChip, captainGolferId: null, waiverReplacementGolferId: null };
           }
 
           // Fetch golfer details if selection exists
           const golfer1 = await storage.getGolferById(selectionRecord.golfer1Id);
           const golfer2 = await storage.getGolferById(selectionRecord.golfer2Id);
+          const golfer3 = await storage.getGolferById(selectionRecord.golfer3Id);
+          const results = await storage.getResults(competitionId);
+          // Fetch ranks for all golfers in this selection
+          const golferIdsInSelection = [selectionRecord.golfer1Id, selectionRecord.golfer2Id, selectionRecord.golfer3Id];
+          const ranks = await Promise.all(
+            golferIdsInSelection.map(gid => storage.getSelectionRank(entry.userId, competitionId, gid))
+          );
+          const rankMap = new Map<number, number | null>();
+          ranks.forEach((rankData, index) => {
+            if (rankData) {
+              rankMap.set(golferIdsInSelection[index], rankData.rankAtDeadline);
+            }
+          });
+
+
+          // Create selections array with isCaptain, isWaiver, and rank flags
+          const createSelectionEntry = (golfer: Golfer | undefined, golferId: number) => {
+            const result = results.find(r => r.golferId === golferId);
+            const isCaptain = selectionRecord?.captainGolferId === golferId;
+            // Check if this golfer is the one chosen via waiver chip for this user
+            const isWaiver = hasUsedWaiverChip && waiverReplacementGolferId === golferId && selectionRecord?.competitionId === user?.waiverChipUsedCompetitionId;
+            const rankAtDeadline = rankMap.get(golferId) ?? null; // Get rank from map
+
+            return {
+              playerId: golferId,
+              playerName: golfer?.name || 'Unknown',
+              rank: rankAtDeadline, // Add rank
+              position: result?.position,
+              isCaptain: isCaptain,
+              isWaiver: isWaiver
+            };
+          };
+
+          const selectionsWithFlags = [
+            createSelectionEntry(golfer1, selectionRecord.golfer1Id),
+            createSelectionEntry(golfer2, selectionRecord.golfer2Id),
+            createSelectionEntry(golfer3, selectionRecord.golfer3Id)
+          ];
+
+          // Return the entry with enhanced selections and necessary IDs
+          return {
+            ...entry,
+            selections: selectionsWithFlags,
+            hasUsedCaptainsChip, // Keep user-level status if needed elsewhere
+            hasUsedWaiverChip,   // Keep user-level status if needed elsewhere
+            captainGolferId: selectionRecord.captainGolferId, // Pass down captain ID
+            waiverReplacementGolferId: waiverReplacementGolferId // Pass down waiver replacement ID
+          };
         }));
         // Return the full object with enhanced standings and lastUpdated
-        res.json({ standings: enhancedStandings, lastUpdated: leaderboardData.lastUpdated }); 
-      } else { 
-        // For overall leaderboard, return the object as is
-        res.json(leaderboardData); 
+        res.json({ standings: enhancedStandings, lastUpdated: leaderboardData.lastUpdated, currentUserId: currentUserId }); // Use renamed variable
+      } else {
+        // For overall leaderboard, fetch user-level chip status only
+        const enhancedOverallStandings = await Promise.all(leaderboardData.standings.map(async (entry: any) => {
+          const hasUsedCaptainsChip = await storage.hasUsedCaptainsChip(entry.userId);
+          const hasUsedWaiverChip = await storage.hasUsedWaiverChip(entry.userId);
+          return { ...entry, hasUsedCaptainsChip, hasUsedWaiverChip };
+        }));
+        // Return the object with enhanced overall standings
+        res.json({ ...leaderboardData, standings: enhancedOverallStandings });
       }
     } catch (error) { console.error('Leaderboard error:', error); res.status(500).json({ error: 'Failed to fetch leaderboard' }); }
   });
@@ -941,14 +1020,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(null); // No selection found for this user/competition
       }
 
-      // 2. Fetch details for each golfer, results, and wildcards
+      // Fetch user details separately to get waiver chip info
+      const user = await storage.getUser(userId);
+      const userWaiverCompId = user?.waiverChipUsedCompetitionId;
+      const userWaiverReplacementId = user?.waiverChipReplacementGolferId;
+      const userHasUsedWaiver = user?.hasUsedWaiverChip ?? false;
+
+      // 2. Fetch details for each golfer, results, and general wildcards (still needed for display elsewhere potentially)
       const golferIds = [selectionRecord.golfer1Id, selectionRecord.golfer2Id, selectionRecord.golfer3Id];
       const [golfer1, golfer2, golfer3, results, wildcards] = await Promise.all([
         storage.getGolferById(selectionRecord.golfer1Id),
         storage.getGolferById(selectionRecord.golfer2Id),
         storage.getGolferById(selectionRecord.golfer3Id),
         storage.getResults(competitionId),
-        storage.getWildcardGolfers(competitionId) // Fetch all wildcards for the competition
+        storage.getWildcardGolfers(competitionId), // Fetch all wildcards for the competition
       ]);
 
       const golferMap = new Map<number, Golfer | undefined>();
@@ -957,14 +1042,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (golfer3) golferMap.set(golfer3.id, golfer3);
 
       const resultMap = new Map<number, Result>(results.map((r: Result) => [r.golferId, r]));
-      const wildcardMap = new Map<number, boolean>(wildcards.map((w: WildcardGolfer) => [w.golferId, w.isWildcard])); // Map golferId to isWildcard status
+      // const wildcardMap = new Map<number, boolean>(wildcards.map((w: WildcardGolfer) => [w.golferId, w.isWildcard])); // Map golferId to isWildcard status - No longer needed for this logic
 
       // 3. Construct the enriched selection array
       const enrichedSelections = golferIds.map(golferId => {
         const golfer = golferMap.get(golferId);
         const result = resultMap.get(golferId);
         const isCaptain = golferId === selectionRecord.captainGolferId;
-        const isWildcard = wildcardMap.get(golferId) === true; // Check if the golfer is marked as a wildcard
+        // Correct isWildcard logic: Check if user used waiver chip for this comp and this golfer was the replacement
+        const isWildcard = userHasUsedWaiver && userWaiverCompId === competitionId && userWaiverReplacementId === golferId;
 
         return {
           // Use golferId as the key for the frontend list rendering if needed,
@@ -979,7 +1065,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           position: result?.position ?? 'N/A', // Use ??
           points: result?.points ?? 0, // Use ??, default to 0
           isCaptain: isCaptain,
-          isWildcard: isWildcard, // Add wildcard status
+          isWildcard: isWildcard, // Use corrected wildcard status
         };
       });
 

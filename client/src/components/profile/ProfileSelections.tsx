@@ -34,9 +34,9 @@ interface EnrichedSelection {
     isActive: boolean;
     isComplete: boolean;
   } | null;
-  golfer1: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added flags
-  golfer2: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added flags
-  golfer3: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added flags
+  golfer1: { id: number; name: string; avatar: string | null; rank: number | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added rank
+  golfer2: { id: number; name: string; avatar: string | null; rank: number | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added rank
+  golfer3: { id: number; name: string; avatar: string | null; rank: number | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added rank
   golfer1Result: { position: number; points: number | null } | null;
   golfer2Result: { position: number; points: number | null } | null;
   golfer3Result: { position: number; points: number | null } | null;
@@ -63,14 +63,14 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
       console.log("[ProfileSelections] Fetching data for queryKey:", queryKey); // Added log
       const headers = getAuthHeaders();
       console.log("[ProfileSelections] Using auth headers:", headers); // Added log
-      
+
       const response = await fetch(queryKey[0] as string, {
         headers,
         credentials: 'include'
       });
-      
+
       console.log("[ProfileSelections] Fetch response status:", response.status); // Added log
-      
+
       if (!response.ok) {
          const errorText = await response.text(); // Try to get error text
          console.error("[ProfileSelections] Fetch failed:", response.status, errorText); // Added log
@@ -84,13 +84,13 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
     // enabled check removed as userId is no longer needed
     // onSuccess/onError removed as they are not direct options in TanStack Query v5
   });
-  
+
   // Log loading state and error
   console.log("[ProfileSelections] isLoading:", isLoading);
   if (error) {
     console.error("[ProfileSelections] useQuery error:", error);
   }
-  
+
   if (isLoading) {
     console.log("[ProfileSelections] Showing loading skeleton."); // Added log
     return (
@@ -165,7 +165,7 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
 
    // Log the filtered data
    console.log("[ProfileSelections] Filtered Selections:", { upcomingSelections, activeSelections, completedSelections });
- 
+
    // Helper function to render a selection table
   const renderSelectionTable = (selections: EnrichedSelection[], title: string) => {
     if (selections.length === 0) {
@@ -180,6 +180,45 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
         </Card>
       );
     }
+
+    // Helper function to render golfer cell with badges
+    const renderGolferCell = (golfer: EnrichedSelection['golfer1']) => { // Use type from EnrichedSelection
+      if (!golfer) return 'N/A';
+      const isRankWildcard = typeof golfer.rank === 'number' && golfer.rank > 50;
+      return (
+        <div className="flex items-center">
+          {golfer.avatar ? (
+            <img className="h-6 w-6 rounded-full mr-2" src={golfer.avatar} alt={golfer.name} />
+          ) : (
+            <div className="h-6 w-6 rounded-full bg-gray-200 flex items-center justify-center mr-2">
+              <span className="text-xs font-medium text-gray-800">{golfer.name?.charAt(0)}</span>
+            </div>
+          )}
+          <div>
+            <div>
+              {golfer.name || 'N/A'}
+              {golfer.isCaptain && <span className="ml-1 text-xs font-bold text-primary">(C)</span>}
+              {golfer.isWildcard && <span className="ml-1 text-xs font-bold text-blue-600">(W)</span>} {/* Waiver Badge */}
+              {isRankWildcard && <span className="ml-1 text-xs font-bold text-orange-600">(*)</span>} {/* Wildcard Badge */}
+            </div>
+            {/* Result display logic remains the same */}
+          </div>
+        </div>
+      );
+    };
+
+    // Helper function to render result sub-line
+    const renderResultCell = (result: EnrichedSelection['golfer1Result'], competitionStatus: { isActive?: boolean; isComplete?: boolean }) => {
+      if (result && (competitionStatus.isComplete || competitionStatus.isActive)) {
+        return (
+          <div className="text-xs text-gray-500 mt-1"> {/* Added mt-1 for spacing */}
+            Pos: {result.position === 0 ? '(MC)' : result.position || '(MC)'}, Pts: <span className="text-success font-medium">+{result.points ?? 0}</span>
+          </div>
+        );
+      }
+      return null;
+    };
+
 
     return (
       <Card className="mb-6">
@@ -205,111 +244,54 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
                   <TableRow key={selection.id}>
                     <TableCell className="font-medium">
                       <div>
-                      <div>{selection.competition?.name}</div>
-                      <div className="text-xs text-gray-500">{selection.competition?.venue}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      {selection.competition?.startDate ? new Date(selection.competition.startDate).toLocaleDateString() : 'N/A'}
-                      {" - "}
-                      {selection.competition?.endDate ? new Date(selection.competition.endDate).toLocaleDateString() : 'N/A'}
-                    </div>
-                    <div className="mt-1">
-                      {selection.competition?.isComplete ? (
-                        <Badge variant="outline" className="bg-slate-100 text-slate-800">Completed</Badge>
-                      ) : selection.competition?.isActive ? (
-                        <Badge variant="outline" className="bg-amber-100 text-amber-800">Active</Badge>
-                      ) : (
-                        <Badge variant="outline" className="bg-primary/10 text-primary">Upcoming</Badge>
-                      )}
-                    </div>
-                  </TableCell>
-
-                  {/* Display Golfer 1 */}
-                  <TableCell>
-                    <div className="flex items-center">
-                      {selection.golfer1?.avatar ? (
-                        <img className="h-6 w-6 rounded-full mr-2" src={selection.golfer1.avatar} alt={selection.golfer1.name} />
-                      ) : (
-                        <div className="h-6 w-6 rounded-full bg-gray-200 flex items-center justify-center mr-2">
-                          <span className="text-xs font-medium text-gray-800">{selection.golfer1?.name?.charAt(0)}</span>
-                        </div>
-                      )}
-                      <div>
-                        <div>
-                          {selection.golfer1?.name || 'N/A'}
-                          {selection.golfer1?.isCaptain && <span className="ml-1 text-xs font-bold text-primary">(C)</span>}
-                          {selection.golfer1?.isWildcard && <span className="ml-1 text-xs font-bold text-info">(W)</span>}
-                        </div>
-                        {selection.golfer1Result && (selection.competition?.isComplete || selection.competition?.isActive) && (
-                          <div className="text-xs text-gray-500">
-                            Pos: {selection.golfer1Result.position}, Pts: <span className="text-success font-medium">+{selection.golfer1Result.points ?? 0}</span>
-                          </div>
+                        <div>{selection.competition?.name}</div>
+                        <div className="text-xs text-gray-500">{selection.competition?.venue}</div>
+                      </div>
+                      <div className="mt-1">
+                        {selection.competition?.isComplete ? (
+                          <Badge variant="outline" className="bg-slate-100 text-slate-800">Completed</Badge>
+                        ) : selection.competition?.isActive ? (
+                          <Badge variant="outline" className="bg-amber-100 text-amber-800">Active</Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-primary/10 text-primary">Upcoming</Badge>
                         )}
                       </div>
-                    </div>
-                  </TableCell>
-
-                  {/* Display Golfer 2 */}
-                  <TableCell>
-                    <div className="flex items-center">
-                      {selection.golfer2?.avatar ? (
-                        <img className="h-6 w-6 rounded-full mr-2" src={selection.golfer2.avatar} alt={selection.golfer2.name} />
-                      ) : (
-                        <div className="h-6 w-6 rounded-full bg-gray-200 flex items-center justify-center mr-2">
-                          <span className="text-xs font-medium text-gray-800">{selection.golfer2?.name?.charAt(0)}</span>
-                        </div>
-                      )}
+                    </TableCell>
+                    <TableCell>
                       <div>
-                        <div>
-                          {selection.golfer2?.name || 'N/A'}
-                          {selection.golfer2?.isCaptain && <span className="ml-1 text-xs font-bold text-primary">(C)</span>}
-                          {selection.golfer2?.isWildcard && <span className="ml-1 text-xs font-bold text-info">(W)</span>}
-                        </div>
-                        {selection.golfer2Result && (selection.competition?.isComplete || selection.competition?.isActive) && (
-                          <div className="text-xs text-gray-500">
-                            Pos: {selection.golfer2Result.position}, Pts: <span className="text-success font-medium">+{selection.golfer2Result.points ?? 0}</span>
-                          </div>
-                        )}
+                        {selection.competition?.startDate ? new Date(selection.competition.startDate).toLocaleDateString() : 'N/A'}
+                        {" - "}
+                        {selection.competition?.endDate ? new Date(selection.competition.endDate).toLocaleDateString() : 'N/A'}
                       </div>
-                    </div>
-                  </TableCell>
+                    </TableCell>
 
-                  {/* Display Golfer 3 */}
-                  <TableCell>
-                    <div className="flex items-center">
-                      {selection.golfer3?.avatar ? (
-                        <img className="h-6 w-6 rounded-full mr-2" src={selection.golfer3.avatar} alt={selection.golfer3.name} />
+                    {/* Display Golfer 1 */}
+                    <TableCell>
+                      {renderGolferCell(selection.golfer1)}
+                      {renderResultCell(selection.golfer1Result, { isActive: selection.competition?.isActive, isComplete: selection.competition?.isComplete })}
+                    </TableCell>
+
+                    {/* Display Golfer 2 */}
+                    <TableCell>
+                      {renderGolferCell(selection.golfer2)}
+                      {renderResultCell(selection.golfer2Result, { isActive: selection.competition?.isActive, isComplete: selection.competition?.isComplete })}
+                    </TableCell>
+
+                    {/* Display Golfer 3 */}
+                    <TableCell>
+                      {renderGolferCell(selection.golfer3)}
+                      {renderResultCell(selection.golfer3Result, { isActive: selection.competition?.isActive, isComplete: selection.competition?.isComplete })}
+                    </TableCell>
+
+                    {/* Display Total Points */}
+                    <TableCell className="text-right font-medium">
+                      {selection.competition?.isActive || selection.competition?.isComplete ? (
+                        <span className="text-lg">{selection.totalPoints || 0}</span>
                       ) : (
-                        <div className="h-6 w-6 rounded-full bg-gray-200 flex items-center justify-center mr-2">
-                          <span className="text-xs font-medium text-gray-800">{selection.golfer3?.name?.charAt(0)}</span>
-                        </div>
+                        <span className="text-sm text-gray-400">-</span> // Show dash for upcoming
                       )}
-                      <div>
-                        <div>
-                          {selection.golfer3?.name || 'N/A'}
-                          {selection.golfer3?.isCaptain && <span className="ml-1 text-xs font-bold text-primary">(C)</span>}
-                          {selection.golfer3?.isWildcard && <span className="ml-1 text-xs font-bold text-info">(W)</span>}
-                        </div>
-                        {selection.golfer3Result && (selection.competition?.isComplete || selection.competition?.isActive) && (
-                          <div className="text-xs text-gray-500">
-                            Pos: {selection.golfer3Result.position}, Pts: <span className="text-success font-medium">+{selection.golfer3Result.points ?? 0}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </TableCell>
-
-                  {/* Display Total Points */}
-                  <TableCell className="text-right font-medium">
-                    {selection.competition?.isActive || selection.competition?.isComplete ? (
-                      <span className="text-lg">{selection.totalPoints || 0}</span>
-                    ) : (
-                      <span className="text-sm text-gray-400">-</span> // Show dash for upcoming
-                    )}
-                  </TableCell>
-                </TableRow>
+                    </TableCell>
+                  </TableRow>
                 ); // Add semicolon and ensure correct placement
               })}
             </TableBody>

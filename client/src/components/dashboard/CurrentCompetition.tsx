@@ -10,15 +10,18 @@ import { Badge } from "@/components/ui/badge";
 // Updated GolferSelectionProps to include rank, captain, and wildcard
 interface GolferSelectionProps {
   name: string;
-  position: number | string;
+  position?: number | string; // Made position optional
   points: number;
   avatar?: string;
   rank: number | string; // Added rank
   isCaptain: boolean; // Added captain flag
-  isWildcard: boolean; // Added wildcard flag
+  isWildcard: boolean; // Added wildcard flag (represents waiver status here)
 }
 
-function GolferSelection({ name, position, points, avatar, rank, isCaptain, isWildcard }: GolferSelectionProps) {
+function GolferSelection({ name, position, points, avatar, rank, isCaptain, isWildcard: isWaiverReplacement }: GolferSelectionProps) {
+  const numericRank = typeof rank === 'string' ? parseInt(rank, 10) : rank; // Ensure rank is number
+  const isRankWildcard = typeof numericRank === 'number' && numericRank > 50; // Check if rank > 50
+
   return (
     <div className="relative rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm flex items-center space-x-3 hover:border-primary/30">
       <div className="flex-shrink-0">
@@ -34,13 +37,14 @@ function GolferSelection({ name, position, points, avatar, rank, isCaptain, isWi
         <p className="text-sm font-medium text-gray-900">
           {name}
           {isCaptain && <span className="ml-1 text-xs font-bold text-primary">(C)</span>}
-          {isWildcard && <span className="ml-1 text-xs font-bold text-info">(W)</span>}
-        </p>
-        <p className="text-sm text-gray-500 truncate">
-          Rank: {rank} • Position: {position}
-        </p>
-      </div>
-      <div className="flex-shrink-0 text-sm font-semibold text-success">+{points} pts</div>
+          {isWaiverReplacement && <span className="ml-1 text-xs font-bold text-blue-600">(W)</span>} {/* Waiver Badge */}
+          {isRankWildcard && <span className="ml-1 text-xs font-bold text-orange-600">(*)</span>} {/* Wildcard Badge */}
+         </p>
+         <p className="text-sm text-gray-500 truncate">
+           Rank: {rank || 'N/A'} • Position: {position === 0 ? '(MC)' : position || '(MC)'} {/* Changed N/A to (MC) */}
+         </p>
+       </div>
+       <div className="flex-shrink-0 text-sm font-semibold text-success">+{points} pts</div>
     </div>
   );
 }
@@ -69,7 +73,7 @@ export default function CurrentCompetition() {
     position?: number | string; // Position in the competition
     points: number; // Points gained in the competition
     isCaptain: boolean; // Added captain flag
-    isWildcard: boolean; // Added wildcard flag
+    isWildcard: boolean; // Added wildcard flag (represents waiver status here)
   }
 
   // Expect an array of competitions, even if only one is active
@@ -246,15 +250,16 @@ export default function CurrentCompetition() {
           ) : (
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
               {userSelections.map((selection, index) => (
-                <GolferSelection
-                  key={selection.golfer.id} // Use golfer ID for a more stable key
-                  name={selection.golfer.name}
-                  position={selection.position || 'N/A'}
-                  points={selection.points || 0}
-                  avatar={selection.golfer.avatar}
-                  rank={selection.golfer.rank || 'N/A'} // Pass rank
+                 <GolferSelection
+                   key={selection.golfer.id} // Use golfer ID for a more stable key
+                   name={selection.golfer.name}
+                   // Pass position directly, logic is handled inside GolferSelection
+                   position={selection.position} 
+                   points={selection.points || 0}
+                   avatar={selection.golfer.avatar}
+                   rank={selection.golfer.rank || 'N/A'} // Pass rank
                   isCaptain={selection.isCaptain} // Pass isCaptain
-                  isWildcard={selection.isWildcard} // Pass isWildcard
+                  isWildcard={selection.isWildcard} // Pass isWildcard (waiver status)
                 />
               ))}
             </div>

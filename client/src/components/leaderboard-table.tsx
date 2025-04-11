@@ -16,31 +16,43 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge"; // Import Badge
 // Import AvatarImage as well
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
-// Define leaderboard entry type
-interface LeaderboardEntry {
+// Define leaderboard entry type and export it
+export interface LeaderboardEntry { // Added export
   rank: number;
   userId: number;
   username: string;
   email: string;
   avatarUrl?: string;
   points: number;
-  selections?: { // Make selections optional
+  selections?: { // Make selections optional and add chip flags
+    playerId: number; // Keep player ID if needed
     playerName: string;
     position?: number;
+    isCaptain: boolean; // Added
+    isWaiver: boolean; // Added
+    rank?: number | null; // Added rank
   }[];
   lastPointsChange?: number | null; // Allow null as well
+  // User-level chip status might still be useful for other UI elements, keep them for now
+  hasUsedCaptainsChip: boolean;
+  hasUsedWaiverChip: boolean;
+  // Add IDs needed for context if required later (though maybe not directly for display here)
+  captainGolferId?: number | null;
+  waiverReplacementGolferId?: number | null;
 }
 
 interface LeaderboardTableProps {
   data: LeaderboardEntry[];
   isLoading: boolean;
   userId?: number;
+  displayMode: 'overall' | 'competition'; // Added prop to control display logic
 }
 
-const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) => {
+const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardTableProps) => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 30; // Changed from 10 to 30
   
@@ -111,12 +123,15 @@ const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) =>
             <TableHeader>
               <TableRow>
                 <TableHead>Rank</TableHead>
-                <TableHead>Player</TableHead>
-                <TableHead>Points</TableHead>
-                <TableHead>Selections</TableHead>
-                <TableHead>Last Points</TableHead>
-              </TableRow>
-            </TableHeader>
+                  <TableHead>Player</TableHead>
+                  <TableHead>Points</TableHead>
+                  {/* Conditionally render Selections Header */}
+                  {displayMode === 'competition' && <TableHead>Selections</TableHead>}
+                  <TableHead>Points</TableHead> {/* Changed from "Last Points" */}
+                  {/* Conditionally render Chips Header */}
+                  {displayMode === 'overall' && <TableHead className="text-center">Chips Used</TableHead>} {/* Changed from "Chips" */}
+                </TableRow>
+              </TableHeader>
             <TableBody>
               {Array.from({ length: 5 }).map((_, idx) => (
                 <TableRow key={idx}>
@@ -131,10 +146,13 @@ const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) =>
                     </div>
                   </TableCell>
                   <TableCell><Skeleton className="h-5 w-12" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-56" /></TableCell>
-                  <TableCell><Skeleton className="h-6 w-16 rounded-full" /></TableCell>
-                </TableRow>
-              ))}
+                   {/* Conditionally render Selections Skeleton */}
+                   {displayMode === 'competition' && <TableCell><Skeleton className="h-4 w-56" /></TableCell>}
+                   <TableCell><Skeleton className="h-6 w-16 rounded-full" /></TableCell>
+                   {/* Conditionally render Chips Skeleton */}
+                   {displayMode === 'overall' && <TableCell><Skeleton className="h-5 w-10" /></TableCell>}
+                 </TableRow>
+               ))}
             </TableBody>
           </Table>
         </div>
@@ -159,12 +177,15 @@ const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) =>
           <TableHeader>
             <TableRow>
               <TableHead>Rank</TableHead>
-              <TableHead>Player</TableHead>
-              <TableHead>Points</TableHead>
-              <TableHead>Selections</TableHead>
-              <TableHead>Last Points</TableHead>
-            </TableRow>
-          </TableHeader>
+                <TableHead>Player</TableHead>
+                <TableHead>Points</TableHead>
+                {/* Conditionally render Selections Header */}
+                {displayMode === 'competition' && <TableHead>Selections</TableHead>}
+                <TableHead>Points</TableHead> {/* Changed from "Last Points" */}
+                {/* Conditionally render Chips Header */}
+                {displayMode === 'overall' && <TableHead className="text-center">Chips Used</TableHead>} {/* Changed from "Chips" */}
+              </TableRow>
+            </TableHeader>
           <TableBody>
             {currentItems.map((entry) => (
               <TableRow 
@@ -183,37 +204,59 @@ const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) =>
                       <AvatarImage src={entry.avatarUrl} alt={entry.username} className="object-cover" />
                       <AvatarFallback className="bg-primary-600 text-white">
                         {entry.username.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    {/* Add min-w-0 to allow shrinking and truncate for text overflow */}
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">{entry.username}</div>
-                      <div className="text-sm text-gray-500 truncate">@{entry.username.toLowerCase().replace(/\s+/g, '')}</div>
+                     </AvatarFallback>
+                     </Avatar>
+                     {/* Add min-w-0 to allow shrinking and truncate for text overflow */}
+                     <div className="min-w-0">
+                       {/* Removed badges from username display */}
+                       <div className="text-sm font-medium text-gray-900 truncate">{entry.username}</div>
+                       <div className="text-sm text-gray-500 truncate">@{entry.username.toLowerCase().replace(/\s+/g, '')}</div>
+                     </div>
                     </div>
-                  </div>
-                </TableCell>
-                <TableCell className="font-semibold">{entry.points}</TableCell>
-                <TableCell className="text-sm text-gray-500">
-                  {/* Check if selections exist and assign to a new variable */}
+                 </TableCell>
+                 <TableCell className="font-semibold">{entry.points}</TableCell>
+                 {/* Conditionally render Selections Cell */}
+                 {displayMode === 'competition' && (
+                   <TableCell className="text-sm text-gray-500">
+                     {/* Check if selections exist and assign to a new variable */}
                   {(() => {
                     const selections = entry.selections; // Assign to new variable
                     if (selections && selections.length > 0) {
-                      return selections.map((selection, idx) => (
-                        <span key={idx} className={idx === 0 && selection.position === 1 ? 'text-green-700 font-medium' : ''}>
-                          {selection.playerName}
-                          {selection.position && ` (${selection.position}${getOrdinalSuffix(selection.position)})`}
-                          {/* Use the new 'selections' variable which TS knows is an array */}
-                          {idx < selections.length - 1 ? ', ' : ''}
-                        </span>
-                      ));
+                      return selections.map((selection, idx) => {
+                        const isRankWildcard = typeof selection.rank === 'number' && selection.rank > 50; // Check rank
+                        return (
+                          // Use a span for each selection to allow inline badges
+                          <span key={selection.playerId || idx} className="mr-2 inline-flex items-center"> {/* Added key, mr-2, inline-flex, items-center */}
+                            <span className={selection.position === 1 ? 'text-green-700 font-medium' : ''}> {/* Apply styling to name/position span */}
+                              {selection.playerName}
+                              {/* Display (MC) for position 0, otherwise format position */}
+                              {selection.position === 0 ? ' (MC)' : selection.position != null ? ` (${selection.position}${getOrdinalSuffix(selection.position)})` : ''}
+                            </span>
+                            {/* Conditionally Add Badges next to the golfer name based on displayMode */}
+                            {displayMode === 'competition' && selection.isCaptain && (
+                              <Badge variant="outline" className="ml-1 text-xs px-1 py-0.5 bg-green-100 text-green-800 border-green-300">C</Badge>
+                            )}
+                            {displayMode === 'competition' && selection.isWaiver && (
+                              <Badge variant="outline" className="ml-1 text-xs px-1 py-0.5 bg-blue-100 text-blue-800 border-blue-300">W</Badge>
+                            )}
+                            {/* Add Wildcard (*) badge */}
+                            {displayMode === 'competition' && isRankWildcard && (
+                              <Badge variant="outline" className="ml-1 text-xs px-1 py-0.5 bg-orange-100 text-orange-800 border-orange-300">*</Badge>
+                            )}
+                            {/* Add comma separator if not the last item */}
+                            {idx < selections.length - 1 && <span className="ml-1">,</span>}
+                          </span>
+                        );
+                      });
                     } else {
                       return <span>-</span>; // Display dash if no selections
-                    }
-                  })()}
-                </TableCell>
-                <TableCell>
-                  {/* Conditionally render last points change, checking for null/undefined */}
-                  {entry.lastPointsChange !== undefined && entry.lastPointsChange !== null ? (
+                     }
+                   })()}
+                   </TableCell>
+                 )}
+                 <TableCell>
+                   {/* Conditionally render last points change, checking for null/undefined */}
+                   {entry.lastPointsChange !== undefined && entry.lastPointsChange !== null ? (
                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full
                       ${entry.lastPointsChange > 0
                         ? 'bg-green-100 text-green-800'
@@ -226,11 +269,25 @@ const LeaderboardTable = ({ data, isLoading, userId }: LeaderboardTableProps) =>
                   ) : (
                     <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
                       -
-                    </span> // Display dash if null/undefined
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
+                     </span> // Display dash if null/undefined
+                   )}
+                 </TableCell>
+                 {/* Conditionally render Chips Cell for overall mode */}
+                 {displayMode === 'overall' && (
+                   <TableCell className="text-center">
+                     {entry.hasUsedCaptainsChip && (
+                       <Badge variant="outline" className="mr-1 text-xs px-1.5 py-0.5 bg-green-100 text-green-800 border-green-300">C</Badge>
+                     )}
+                     {entry.hasUsedWaiverChip && (
+                       <Badge variant="outline" className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-800 border-blue-300">W</Badge>
+                     )}
+                     {!entry.hasUsedCaptainsChip && !entry.hasUsedWaiverChip && (
+                       <span className="text-gray-400">-</span>
+                     )}
+                   </TableCell>
+                 )}
+               </TableRow>
+             ))}
           </TableBody>
         </Table>
       </div>

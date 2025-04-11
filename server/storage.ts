@@ -634,14 +634,19 @@ export class DatabaseStorage implements IStorage {
     const golfer2 = alias(golfers, "golfer2"); // Use imported alias
     const golfer3 = alias(golfers, "golfer3"); // Use imported alias
 
+    // Fetch ranks alongside other details
+    const selectionRanksAlias = alias(selectionRanks, "sr");
+
     const userSelectionsData = await db
       .select({
         selection: selections,
         competition: competitions,
-        golfer1: { id: golfer1.id, name: golfer1.name, avatarUrl: golfer1.avatarUrl },
-        golfer2: { id: golfer2.id, name: golfer2.name, avatarUrl: golfer2.avatarUrl },
-        golfer3: { id: golfer3.id, name: golfer3.name, avatarUrl: golfer3.avatarUrl },
-        userPoints: userPoints // Include userPoints to get total points and details
+        golfer1: { id: golfer1.id, name: golfer1.name, avatarUrl: golfer1.avatarUrl, rank: golfer1.rank }, // Include rank from golfers table
+        golfer2: { id: golfer2.id, name: golfer2.name, avatarUrl: golfer2.avatarUrl, rank: golfer2.rank }, // Include rank from golfers table
+        golfer3: { id: golfer3.id, name: golfer3.name, avatarUrl: golfer3.avatarUrl, rank: golfer3.rank }, // Include rank from golfers table
+        userPoints: userPoints, // Include userPoints to get total points and details
+        // Fetch rankAtDeadline separately if needed, or rely on golfer.rank if static
+        // Let's assume golfer.rank is sufficient for now unless specified otherwise
       })
       .from(selections)
       .where(eq(selections.userId, userId))
@@ -650,61 +655,49 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(golfer2, eq(selections.golfer2Id, golfer2.id))
       .leftJoin(golfer3, eq(selections.golfer3Id, golfer3.id))
       .leftJoin(userPoints, and(eq(selections.userId, userPoints.userId), eq(selections.competitionId, userPoints.competitionId)))
-      .orderBy(desc(competitions.startDate)); // Order by competition start date
+       .orderBy(desc(competitions.startDate)); // Order by competition start date
 
-    // Fetch results separately for each competition
-    const competitionIds = userSelectionsData
-      .map(s => s.selection.competitionId)
-      .filter((id): id is number => typeof id === 'number' && !isNaN(id)); // Type guard
+     // Fetch the user record once to get waiver chip details
+     const user = await this.getUser(userId);
+     const userWaiverCompId = user?.waiverChipUsedCompetitionId;
+     const userWaiverReplacementId = user?.waiverChipReplacementGolferId;
+     const userHasUsedWaiver = user?.hasUsedWaiverChip ?? false;
 
-    console.log(`[Storage] getUserSelectionsForAllCompetitions - Filtered Competition IDs for results/ranks query:`, competitionIds);
+     // Fetch results separately for each competition
+     const competitionIds = userSelectionsData
+       .map(s => s.selection.competitionId)
+       .filter((id): id is number => typeof id === 'number' && !isNaN(id)); // Type guard
 
-    // Fetch all results for these competitions
-    const allResults = competitionIds.length > 0 ? await db
-      .select()
-      .from(results)
-      .where(inArray(results.competitionId, competitionIds)) : [];
+     console.log(`[Storage] getUserSelectionsForAllCompetitions - Filtered Competition IDs for results query:`, competitionIds);
 
-    // Map results by competitionId and golferId
-    const resultsMap = new Map<string, Result>();
-    allResults.forEach(r => {
-      resultsMap.set(`${r.competitionId}-${r.golferId}`, {
-        ...r,
-        points: r.points || undefined,
-        created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at
-      } as Result);
-    });
+     // Fetch all results for these competitions
+     const allResults = competitionIds.length > 0 ? await db
+       .select()
+       .from(results)
+       .where(inArray(results.competitionId, competitionIds)) : [];
 
-    // Fetch all selection ranks for this user and these competitions
-    const allRanks = competitionIds.length > 0 ? await db
-      .select()
-      .from(selectionRanks)
-      .where(and(
-        eq(selectionRanks.userId, userId),
-        inArray(selectionRanks.competitionId, competitionIds)
-      )) : [];
+     // Map results by competitionId and golferId
+     const resultsMap = new Map<string, Result>();
+     allResults.forEach(r => {
+       resultsMap.set(`${r.competitionId}-${r.golferId}`, {
+         ...r,
+         points: r.points || undefined,
+         created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at
+       } as Result);
+     });
 
-    // Map ranks by competitionId and golferId
-    const ranksMap = new Map<string, number | undefined>();
-    allRanks.forEach(r => {
-      ranksMap.set(`${r.competitionId}-${r.golferId}`, r.rankAtDeadline);
-    });
+     // No need to fetch ranks here if we use the user waiver details
 
-    // Format the data for the frontend
-    return userSelectionsData.map(data => {
-      const selection = data.selection;
-      const competition = data.competition;
-      const golfer1Result = resultsMap.get(`${selection.competitionId}-${selection.golfer1Id}`);
-      const golfer2Result = resultsMap.get(`${selection.competitionId}-${selection.golfer2Id}`);
-      const golfer3Result = resultsMap.get(`${selection.competitionId}-${selection.golfer3Id}`);
+     // Format the data for the frontend
+     return userSelectionsData.map(data => {
+       const selection = data.selection;
+       const competition = data.competition;
+       const golfer1Result = resultsMap.get(`${selection.competitionId}-${selection.golfer1Id}`);
+       const golfer2Result = resultsMap.get(`${selection.competitionId}-${selection.golfer2Id}`);
+       const golfer3Result = resultsMap.get(`${selection.competitionId}-${selection.golfer3Id}`);
 
-      // Get ranks for wildcard check
-      const rank1 = ranksMap.get(`${selection.competitionId}-${selection.golfer1Id}`);
-      const rank2 = ranksMap.get(`${selection.competitionId}-${selection.golfer2Id}`);
-      const rank3 = ranksMap.get(`${selection.competitionId}-${selection.golfer3Id}`);
-
-      // Helper to safely format dates
-      const formatDate = (dateValue: string | Date | null | undefined): string | null => {
+       // Helper to safely format dates
+       const formatDate = (dateValue: string | Date | null | undefined): string | null => {
         return dateValue ? new Date(dateValue).toISOString() : null;
       };
 
@@ -728,30 +721,36 @@ export class DatabaseStorage implements IStorage {
           isActive: competition.isActive,
           isComplete: competition.isComplete,
           // createdAt removed as it's not selected/needed
-        } : null,
-        golfer1: data.golfer1?.id ? { 
-          id: data.golfer1.id, 
-          name: data.golfer1.name, 
-          avatar: data.golfer1.avatarUrl,
-          isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer1.id,
-          isWildcard: rank1 !== undefined && rank1 >= 51
-        } : null,
-        golfer2: data.golfer2?.id ? { 
-          id: data.golfer2.id, 
-          name: data.golfer2.name, 
-          avatar: data.golfer2.avatarUrl,
-          isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer2.id,
-          isWildcard: rank2 !== undefined && rank2 >= 51
-        } : null,
-        golfer3: data.golfer3?.id ? { 
-          id: data.golfer3.id, 
-          name: data.golfer3.name, 
-          avatar: data.golfer3.avatarUrl,
-          isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer3.id,
-          isWildcard: rank3 !== undefined && rank3 >= 51
-        } : null,
-        golfer1Result: golfer1Result ? { position: golfer1Result.position, points: golfer1Result.points } : null,
-        golfer2Result: golfer2Result ? { position: golfer2Result.position, points: golfer2Result.points } : null,
+         } : null,
+         golfer1: data.golfer1?.id ? {
+           id: data.golfer1.id,
+           name: data.golfer1.name,
+           avatar: data.golfer1.avatarUrl,
+           rank: data.golfer1.rank, // Add rank
+           isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer1.id,
+           // Check if this golfer was the waiver replacement in this specific competition
+           isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer1.id
+         } : null,
+         golfer2: data.golfer2?.id ? {
+           id: data.golfer2.id,
+           name: data.golfer2.name,
+           avatar: data.golfer2.avatarUrl,
+           rank: data.golfer2.rank, // Add rank
+           isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer2.id,
+           // Check if this golfer was the waiver replacement in this specific competition
+           isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer2.id
+         } : null,
+         golfer3: data.golfer3?.id ? {
+           id: data.golfer3.id,
+           name: data.golfer3.name,
+           avatar: data.golfer3.avatarUrl,
+           rank: data.golfer3.rank, // Add rank
+           isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer3.id,
+           // Check if this golfer was the waiver replacement in this specific competition
+           isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer3.id
+         } : null,
+         golfer1Result: golfer1Result ? { position: golfer1Result.position, points: golfer1Result.points } : null,
+         golfer2Result: golfer2Result ? { position: golfer2Result.position, points: golfer2Result.points } : null,
         golfer3Result: golfer3Result ? { position: golfer3Result.position, points: golfer3Result.points } : null,
         totalPoints: data.userPoints?.points || 0 // Get total points from userPoints join
       };

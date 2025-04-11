@@ -37,7 +37,7 @@ interface UserCompetitionSelection {
   position?: number | string; // Position in the competition
   points: number; // Points gained in the competition
   isCaptain: boolean;
-  isWildcard: boolean; // Assuming API provides this based on rank/wildcard table
+  isWildcard: boolean; // This represents the WAIVER status from the API for this component
 }
 
 
@@ -59,10 +59,13 @@ interface EnhancedCompetition extends CompetitionType {
     golfer3Name?: string;
     golfer1Rank?: number | null; // Add rank field
     golfer2Rank?: number | null; // Add rank field
-    golfer3Rank?: number | null;
-  useCaptainsChip: boolean;
-  captainGolferId?: number | null;
-}[] | null;
+     golfer3Rank?: number | null;
+   useCaptainsChip: boolean;
+   captainGolferId?: number | null;
+   waiverChipOriginalGolferId?: number | null; // Added field for waiver replacement tracking
+   waiverChipReplacementGolferId?: number | null; // Added field for waiver replacement tracking
+   waiverChipOriginalGolferDetails?: { name: string; rank: number | null } | null; // Added details for original golfer
+ }[] | null;
   currentRound?: number | null; // Added field for current results round
 }
 
@@ -80,8 +83,32 @@ interface CompetitionResult {
 }
 
 // Copied from leaderboard.tsx - Shape for the Leaderboard data
+// Updated to include chip usage in standings
+interface LeaderboardEntryForPage { // Renamed to avoid conflict with LeaderboardTable's type
+  rank: number;
+  userId: number;
+  username: string;
+  email: string;
+  avatarUrl?: string;
+  points: number;
+  selections?: { // Match the structure expected by LeaderboardTable
+    playerId: number;
+    playerName: string;
+    position?: number;
+    isCaptain: boolean;
+    isWaiver: boolean; // Represents WAIVER chip usage in leaderboard context
+    rank?: number | null; // Add rank to selections for leaderboard wildcard check
+  }[];
+  lastPointsChange?: number | null;
+  hasUsedCaptainsChip: boolean;
+  hasUsedWaiverChip: boolean;
+  // Add the optional IDs if they are part of the API response now
+  captainGolferId?: number | null;
+  waiverReplacementGolferId?: number | null;
+}
+
 interface LeaderboardData {
-  standings: Array<any>; // Consider defining a more specific type for standings entries later
+  standings: LeaderboardEntryForPage[]; // Use the more specific type
   currentUserId?: number;
   lastUpdated?: string | null;
   currentRound?: number;
@@ -92,7 +119,11 @@ interface LeaderboardData {
 // Adapted GolferSelection component for this page
 // Uses UserCompetitionSelection interface defined above
 function GolferSelectionDisplay({ selection }: { selection: UserCompetitionSelection }) {
-  const { golfer, position, points, isCaptain, isWildcard } = selection;
+  // Note: isWildcard from the API for this component actually means "isWaiverReplacement"
+  const { golfer, position, points, isCaptain, isWildcard: isWaiverReplacement } = selection;
+  const rank = typeof golfer.rank === 'string' ? parseInt(golfer.rank, 10) : golfer.rank; // Ensure rank is number
+  const isRankWildcard = typeof rank === 'number' && rank > 50; // Check if rank > 50
+
   return (
     <div className="relative rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm flex items-center space-x-3 hover:border-primary/30">
       <div className="flex-shrink-0">
@@ -108,13 +139,14 @@ function GolferSelectionDisplay({ selection }: { selection: UserCompetitionSelec
         <p className="text-sm font-medium text-gray-900">
           {golfer.name}
           {isCaptain && <span className="ml-1 text-xs font-bold text-primary">(C)</span>}
-          {isWildcard && <span className="ml-1 text-xs font-bold text-info">(W)</span>}
-        </p>
-        <p className="text-sm text-gray-500 truncate">
-          Rank: {golfer.rank || 'N/A'} • Position: {position || 'N/A'}
-        </p>
-      </div>
-      <div className="flex-shrink-0 text-sm font-semibold text-success">+{points || 0} pts</div>
+          {isWaiverReplacement && <span className="ml-1 text-xs font-bold text-blue-600">(W)</span>} {/* Waiver Badge */}
+          {isRankWildcard && <span className="ml-1 text-xs font-bold text-orange-600">(*)</span>} {/* Wildcard Badge */}
+         </p>
+         <p className="text-sm text-gray-500 truncate">
+           Rank: {golfer.rank || 'N/A'} • Position: {position === 0 ? '(MC)' : position || '(MC)'} {/* Changed N/A to (MC) */}
+         </p>
+       </div>
+       <div className="flex-shrink-0 text-sm font-semibold text-success">+{points || 0} pts</div>
     </div>
   );
 }
@@ -379,14 +411,15 @@ export default function Competition() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
-                 {/* Use LeaderboardTable component */}
-                 <LeaderboardTable
-                   data={predictorLeaderboardData?.standings || []}
-                   isLoading={isLoadingPredictorLeaderboard}
-                   userId={predictorLeaderboardData?.currentUserId}
-                 />
-                 {/* Display message if no data and not loading */}
-                 {!isLoadingPredictorLeaderboard && (!predictorLeaderboardData || predictorLeaderboardData.standings.length === 0) && (
+                  {/* Use LeaderboardTable component, passing the displayMode */}
+                  <LeaderboardTable
+                    data={predictorLeaderboardData?.standings || []}
+                    isLoading={isLoadingPredictorLeaderboard}
+                    userId={predictorLeaderboardData?.currentUserId}
+                    displayMode="competition" // Pass the mode for competition-specific view
+                  />
+                  {/* Display message if no data and not loading */}
+                  {!isLoadingPredictorLeaderboard && (!predictorLeaderboardData || predictorLeaderboardData.standings.length === 0) && (
                     <div className="py-10 text-center">
                       <div className="text-gray-400 mb-3"><i className="fas fa-users text-4xl"></i></div>
                       <h3 className="text-lg font-medium text-gray-900">Predictor Leaderboard Not Available</h3>
@@ -539,29 +572,52 @@ export default function Competition() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {competition.allSelections.map((sel) => (
-                          <TableRow key={sel.userId}>
-                            <TableCell className="font-medium">{sel.username}</TableCell>
-                            <TableCell>
-                              {getGolferDisplayName(sel.golfer1, sel.golfer1Name)}
-                              {sel.golfer1Rank && <span className="text-xs text-gray-500 ml-1">({sel.golfer1Rank})</span>} {/* Simplified rank display */}
-                              {sel.golfer1Rank && sel.golfer1Rank >= 51 && <span className="text-blue-600 font-bold ml-1">(W)</span>}
-                              {sel.useCaptainsChip && sel.captainGolferId === sel.golfer1Id && <span className="text-green-600 font-bold ml-1">(C)</span>}
-                            </TableCell>
-                            <TableCell>
-                              {getGolferDisplayName(sel.golfer2, sel.golfer2Name)}
-                              {sel.golfer2Rank && <span className="text-xs text-gray-500 ml-1">({sel.golfer2Rank})</span>} {/* Simplified rank display */}
-                              {sel.golfer2Rank && sel.golfer2Rank >= 51 && <span className="text-blue-600 font-bold ml-1">(W)</span>}
-                              {sel.useCaptainsChip && sel.captainGolferId === sel.golfer2Id && <span className="text-green-600 font-bold ml-1">(C)</span>}
-                            </TableCell>
-                            <TableCell>
-                              {getGolferDisplayName(sel.golfer3, sel.golfer3Name)}
-                              {sel.golfer3Rank && <span className="text-xs text-gray-500 ml-1">({sel.golfer3Rank})</span>} {/* Simplified rank display */}
-                              {sel.golfer3Rank && sel.golfer3Rank >= 51 && <span className="text-blue-600 font-bold ml-1">(W)</span>}
-                              {sel.useCaptainsChip && sel.captainGolferId === sel.golfer3Id && <span className="text-green-600 font-bold ml-1">(C)</span>}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {competition.allSelections.map((sel) => {
+                          // Determine if waiver was used and which golfer was replaced
+                          const waiverUsed = !!sel.waiverChipOriginalGolferId;
+                          const replacementId = sel.waiverChipReplacementGolferId;
+                          // const originalDetails = sel.waiverChipOriginalGolferDetails; // No longer needed for display
+
+                          // Helper function to render a single golfer cell
+                          const renderGolferCell = (golferId: number, golferName: string | undefined, golferRank: number | null | undefined, golferObj: Golfer | null | undefined) => {
+                            // Always display the current golfer in the slot
+                            const displayName = getGolferDisplayName(golferObj, golferName);
+                            const displayRank = golferRank; // Use the rank of the current golfer in the slot
+
+                            // Determine if the (W) badge should be shown for this golfer
+                            const showWaiverBadge = waiverUsed && golferId === replacementId;
+                            // Determine if the (*) badge should be shown (rank > 50)
+                            const showWildcardBadge = typeof displayRank === 'number' && displayRank > 50;
+
+                            return (
+                              <>
+                                {displayName}
+                                {displayRank && <span className="text-xs text-gray-500 ml-1">({displayRank})</span>}
+                                {/* Show (W) badge if this golfer is the replacement */}
+                                {showWaiverBadge && <span className="text-blue-600 font-bold ml-1">(W)</span>}
+                                {/* Show (*) badge if rank > 50 */}
+                                {showWildcardBadge && <span className="text-orange-600 font-bold ml-1">(*)</span>}
+                                {/* Show (C) badge if this golfer is the captain */}
+                                {sel.useCaptainsChip && sel.captainGolferId === golferId && <span className="text-green-600 font-bold ml-1">(C)</span>}
+                              </>
+                            );
+                          };
+
+                          return (
+                            <TableRow key={sel.userId}>
+                              <TableCell className="font-medium">{sel.username}</TableCell>
+                              <TableCell>
+                                {renderGolferCell(sel.golfer1Id, sel.golfer1Name, sel.golfer1Rank, sel.golfer1)}
+                              </TableCell>
+                              <TableCell>
+                                {renderGolferCell(sel.golfer2Id, sel.golfer2Name, sel.golfer2Rank, sel.golfer2)}
+                              </TableCell>
+                              <TableCell>
+                                {renderGolferCell(sel.golfer3Id, sel.golfer3Name, sel.golfer3Rank, sel.golfer3)}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   ) : (
