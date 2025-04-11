@@ -734,22 +734,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
          const userId = tokenUser?.database_id;
         // Use leaderboardData.standings here
         const enhancedStandings = await Promise.all(leaderboardData.standings.map(async (entry: any) => { // Add type 'any' to entry for now
+          // Fetch chip usage status for the user
+          const hasUsedCaptainsChip = await storage.hasUsedCaptainsChip(entry.userId);
+          const hasUsedWaiverChip = await storage.hasUsedWaiverChip(entry.userId);
+
           let selectionRecord: Selection | undefined = undefined;
           // Fetch selections for the specific user in the leaderboard entry
           selectionRecord = await storage.getUserSelections(entry.userId, competitionId);
 
-          if (!selectionRecord) { return { ...entry, selections: [] }; }
+          // If no selection record, still return the entry with chip status
+          if (!selectionRecord) {
+            return { ...entry, selections: [], hasUsedCaptainsChip, hasUsedWaiverChip };
+          }
+
+          // Fetch golfer details if selection exists
           const golfer1 = await storage.getGolferById(selectionRecord.golfer1Id);
           const golfer2 = await storage.getGolferById(selectionRecord.golfer2Id);
-          const golfer3 = await storage.getGolferById(selectionRecord.golfer3Id);
-          const results = await storage.getResults(competitionId);
-          const selections = [
-            { playerId: selectionRecord.golfer1Id, playerName: golfer1?.name || 'Unknown', position: results.find(r => r.golferId === selectionRecord.golfer1Id)?.position },
-            { playerId: selectionRecord.golfer2Id, playerName: golfer2?.name || 'Unknown', position: results.find(r => r.golferId === selectionRecord.golfer2Id)?.position },
-            { playerId: selectionRecord.golfer3Id, playerName: golfer3?.name || 'Unknown', position: results.find(r => r.golferId === selectionRecord.golfer3Id)?.position }
-          ];
-          // Return the entry with added selections, keeping lastPointsChange
-          return { ...entry, selections }; 
         }));
         // Return the full object with enhanced standings and lastUpdated
         res.json({ standings: enhancedStandings, lastUpdated: leaderboardData.lastUpdated }); 

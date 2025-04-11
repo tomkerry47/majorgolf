@@ -58,10 +58,16 @@ export async function apiRequest<T = any>(
   // Handle potential empty response body for non-error statuses (e.g., 204 No Content)
   const text = await res.text();
   try {
-    return JSON.parse(text) as T;
-  } catch (e) {
-    // If parsing fails but status was ok, return null or handle as appropriate
-    console.warn(`Failed to parse JSON response from ${url}, but status was ${res.status}. Returning null.`);
+    // First, attempt to parse
+    const jsonData = JSON.parse(text);
+    // If successful, return the parsed data
+    return jsonData as T;
+  } catch (e: any) { // Catch the error object
+    // Log detailed error information if parsing fails
+    console.error(`Failed to parse JSON response from ${url}. Status: ${res.status}. Error:`, e);
+    // Log the raw text that failed to parse (be mindful of large responses in production)
+    console.error("Raw response text:", text); 
+    // Still return null as per previous logic, but now with better diagnostics
     return null as T; 
   }
 }

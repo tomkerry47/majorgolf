@@ -168,8 +168,7 @@ export default function Competition() {
     // Assuming apiRequest handles the fetch and returns the LeaderboardData structure
     queryFn: () => apiRequest<LeaderboardData>(`/api/leaderboard/${competitionId}`, 'GET'),
     enabled: !!user && !!competitionId && (competition?.isActive || competition?.isComplete), // Fetch when active or complete
-    // Default data to prevent errors accessing properties before fetch completes
-    initialData: { standings: [], lastUpdated: null },
+    // Removed initialData to rely purely on fetched state
   });
 
 
@@ -545,19 +544,19 @@ export default function Competition() {
                             <TableCell className="font-medium">{sel.username}</TableCell>
                             <TableCell>
                               {getGolferDisplayName(sel.golfer1, sel.golfer1Name)}
-                              {sel.golfer1Rank && <span className="text-xs text-gray-500 ml-1">(Rank: {sel.golfer1Rank})</span>}
+                              {sel.golfer1Rank && <span className="text-xs text-gray-500 ml-1">({sel.golfer1Rank})</span>} {/* Simplified rank display */}
                               {sel.golfer1Rank && sel.golfer1Rank >= 51 && <span className="text-blue-600 font-bold ml-1">(W)</span>}
                               {sel.useCaptainsChip && sel.captainGolferId === sel.golfer1Id && <span className="text-green-600 font-bold ml-1">(C)</span>}
                             </TableCell>
                             <TableCell>
                               {getGolferDisplayName(sel.golfer2, sel.golfer2Name)}
-                              {sel.golfer2Rank && <span className="text-xs text-gray-500 ml-1">(Rank: {sel.golfer2Rank})</span>}
+                              {sel.golfer2Rank && <span className="text-xs text-gray-500 ml-1">({sel.golfer2Rank})</span>} {/* Simplified rank display */}
                               {sel.golfer2Rank && sel.golfer2Rank >= 51 && <span className="text-blue-600 font-bold ml-1">(W)</span>}
                               {sel.useCaptainsChip && sel.captainGolferId === sel.golfer2Id && <span className="text-green-600 font-bold ml-1">(C)</span>}
                             </TableCell>
                             <TableCell>
                               {getGolferDisplayName(sel.golfer3, sel.golfer3Name)}
-                              {sel.golfer3Rank && <span className="text-xs text-gray-500 ml-1">(Rank: {sel.golfer3Rank})</span>}
+                              {sel.golfer3Rank && <span className="text-xs text-gray-500 ml-1">({sel.golfer3Rank})</span>} {/* Simplified rank display */}
                               {sel.golfer3Rank && sel.golfer3Rank >= 51 && <span className="text-blue-600 font-bold ml-1">(W)</span>}
                               {sel.useCaptainsChip && sel.captainGolferId === sel.golfer3Id && <span className="text-green-600 font-bold ml-1">(C)</span>}
                             </TableCell>

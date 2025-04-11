@@ -8,7 +8,7 @@ import { pgClient, pool } from '../server/db'; // Adjust path as needed
       try {
         // Query 1: Get competition details
         const compResult = await pgClient.query(
-          'SELECT id, name, "isActive", "isComplete", "lastResultsUpdateAt" FROM competitions WHERE id = $1',
+          'SELECT id, name, "isActive", "isComplete" FROM competitions WHERE id = $1', // Removed "lastResultsUpdateAt"
           [6]
         );
         console.log('Competition Details (ID=6):');
