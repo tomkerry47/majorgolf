@@ -1017,8 +1017,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Invalid competition ID' });
       }
 
-      // 1. Fetch the base selection record
-      const selectionRecord = await storage.getUserSelections(userId, competitionId);
+      // 1. Fetch the base selection record, including waiverRank
+      const selectionRecord = await storage.getUserSelections(userId, competitionId); // This function needs to return waiverRank if available
 
       if (!selectionRecord) {
         return res.json(null); // No selection found for this user/competition
@@ -1030,14 +1030,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userWaiverReplacementId = user?.waiverChipReplacementGolferId;
       const userHasUsedWaiver = user?.hasUsedWaiverChip ?? false;
 
-      // 2. Fetch details for each golfer, results, and general wildcards (still needed for display elsewhere potentially)
+      // 2. Fetch details for each golfer, results, and ranks at deadline
       const golferIds = [selectionRecord.golfer1Id, selectionRecord.golfer2Id, selectionRecord.golfer3Id];
-      const [golfer1, golfer2, golfer3, results, wildcards] = await Promise.all([
-        storage.getGolferById(selectionRecord.golfer1Id),
-        storage.getGolferById(selectionRecord.golfer2Id),
-        storage.getGolferById(selectionRecord.golfer3Id),
+      // Destructure Promise.all results with correct variable names
+      const [golfer1, golfer2, golfer3, results, selectionRanksData] = await Promise.all([
+        storage.getGolferById(selectionRecord.golfer1Id), // Fetch golfer 1
+        storage.getGolferById(selectionRecord.golfer2Id), // Fetch golfer 2
+        storage.getGolferById(selectionRecord.golfer3Id), // Fetch golfer 3
         storage.getResults(competitionId),
-        storage.getWildcardGolfers(competitionId), // Fetch all wildcards for the competition
+        // Fetch ranks at deadline for all golfers in this selection
+        Promise.all(golferIds.map(gid => storage.getSelectionRank(userId, competitionId, gid)))
       ]);
 
       const golferMap = new Map<number, Golfer | undefined>();
@@ -1045,13 +1047,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (golfer2) golferMap.set(golfer2.id, golfer2);
       if (golfer3) golferMap.set(golfer3.id, golfer3);
 
-      const resultMap = new Map<number, Result>(results.map((r: Result) => [r.golferId, r]));
-      // const wildcardMap = new Map<number, boolean>(wildcards.map((w: WildcardGolfer) => [w.golferId, w.isWildcard])); // Map golferId to isWildcard status - No longer needed for this logic
+      // Create resultMap, ensuring results is an array
+      const resultMap = new Map<number, Result>();
+      if (Array.isArray(results)) {
+        results.forEach((r: Result) => resultMap.set(r.golferId, r));
+      }
+
+      // Create a map for ranks at deadline using the correct variable
+      const rankMap = new Map<number, number | null>();
+      if (Array.isArray(selectionRanksData)) {
+        selectionRanksData.forEach(rankData => {
+          // Check if rankData is truthy and has the expected properties
+          if (rankData && typeof rankData.golferId === 'number') {
+            rankMap.set(rankData.golferId, rankData.rankAtDeadline ?? null); // Use nullish coalescing for rank
+          }
+        });
+      }
+
 
       // 3. Construct the enriched selection array
       const enrichedSelections = golferIds.map(golferId => {
         const golfer = golferMap.get(golferId);
         const result = resultMap.get(golferId);
+        // Get the rank at deadline from the map
+        const rankAtDeadline = rankMap.get(golferId) ?? null; // Use null if not found
         const isCaptain = golferId === selectionRecord.captainGolferId;
         // Correct isWildcard logic: Check if user used waiver chip for this comp and this golfer was the replacement
         const isWildcard = userHasUsedWaiver && userWaiverCompId === competitionId && userWaiverReplacementId === golferId;
@@ -1064,7 +1083,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             id: golferId,
             name: golfer?.name ?? 'Unknown Golfer', // Use ?? for nullish coalescing
             avatar: golfer?.avatarUrl, // Use correct property name
-            rank: golfer?.rank ?? 'N/A', // Use correct property name 'rank'
+            rank: rankAtDeadline, // Use rankAtDeadline here!
+            waiverRank: selectionRecord.waiverRank, // Pass waiverRank through
           },
           position: result?.position ?? 'N/A', // Use ??
           points: result?.points ?? 0, // Use ??, default to 0

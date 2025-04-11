@@ -631,33 +631,55 @@ export class DatabaseStorage implements IStorage {
   async getUserSelectionsForAllCompetitions(userId: number): Promise<any[]> { // Return type changed to any[] for enriched data
     // Define aliases for golfers table to join multiple times
     const golfer1 = alias(golfers, "golfer1"); // Use imported alias
-    const golfer2 = alias(golfers, "golfer2"); // Use imported alias
-    const golfer3 = alias(golfers, "golfer3"); // Use imported alias
-
-    // Fetch ranks alongside other details
-    const selectionRanksAlias = alias(selectionRanks, "sr");
+    const golfer1Alias = alias(golfers, "golfer1");
+    const golfer2Alias = alias(golfers, "golfer2");
+    const golfer3Alias = alias(golfers, "golfer3");
+    // Aliases for selection_ranks table
+    const rank1Alias = alias(selectionRanks, "rank1");
+    const rank2Alias = alias(selectionRanks, "rank2");
+    const rank3Alias = alias(selectionRanks, "rank3");
 
     const userSelectionsData = await db
       .select({
         selection: selections,
         competition: competitions,
-        golfer1: { id: golfer1.id, name: golfer1.name, avatarUrl: golfer1.avatarUrl, rank: golfer1.rank }, // Include rank from golfers table
-        golfer2: { id: golfer2.id, name: golfer2.name, avatarUrl: golfer2.avatarUrl, rank: golfer2.rank }, // Include rank from golfers table
-        golfer3: { id: golfer3.id, name: golfer3.name, avatarUrl: golfer3.avatarUrl, rank: golfer3.rank }, // Include rank from golfers table
+        // Select golfer details and rankAtDeadline from respective aliases
+        golfer1: { id: golfer1Alias.id, name: golfer1Alias.name, avatarUrl: golfer1Alias.avatarUrl },
+        golfer2: { id: golfer2Alias.id, name: golfer2Alias.name, avatarUrl: golfer2Alias.avatarUrl },
+        golfer3: { id: golfer3Alias.id, name: golfer3Alias.name, avatarUrl: golfer3Alias.avatarUrl },
+        rank1: { rankAtDeadline: rank1Alias.rankAtDeadline },
+        rank2: { rankAtDeadline: rank2Alias.rankAtDeadline },
+        rank3: { rankAtDeadline: rank3Alias.rankAtDeadline },
+        waiverRank: selections.waiverRank, // Select waiverRank from selections table
         userPoints: userPoints, // Include userPoints to get total points and details
-        // Fetch rankAtDeadline separately if needed, or rely on golfer.rank if static
-        // Let's assume golfer.rank is sufficient for now unless specified otherwise
       })
       .from(selections)
       .where(eq(selections.userId, userId))
       .leftJoin(competitions, eq(selections.competitionId, competitions.id))
-      .leftJoin(golfer1, eq(selections.golfer1Id, golfer1.id))
-      .leftJoin(golfer2, eq(selections.golfer2Id, golfer2.id))
-      .leftJoin(golfer3, eq(selections.golfer3Id, golfer3.id))
+      // Join golfers using aliases
+      .leftJoin(golfer1Alias, eq(selections.golfer1Id, golfer1Alias.id))
+      .leftJoin(golfer2Alias, eq(selections.golfer2Id, golfer2Alias.id))
+      .leftJoin(golfer3Alias, eq(selections.golfer3Id, golfer3Alias.id))
+      // Join selection_ranks using aliases and matching conditions
+      .leftJoin(rank1Alias, and(
+        eq(selections.userId, rank1Alias.userId),
+        eq(selections.competitionId, rank1Alias.competitionId),
+        eq(selections.golfer1Id, rank1Alias.golferId)
+      ))
+      .leftJoin(rank2Alias, and(
+        eq(selections.userId, rank2Alias.userId),
+        eq(selections.competitionId, rank2Alias.competitionId),
+        eq(selections.golfer2Id, rank2Alias.golferId)
+      ))
+      .leftJoin(rank3Alias, and(
+        eq(selections.userId, rank3Alias.userId),
+        eq(selections.competitionId, rank3Alias.competitionId),
+        eq(selections.golfer3Id, rank3Alias.golferId)
+      ))
       .leftJoin(userPoints, and(eq(selections.userId, userPoints.userId), eq(selections.competitionId, userPoints.competitionId)))
-       .orderBy(desc(competitions.startDate)); // Order by competition start date
+      .orderBy(desc(competitions.startDate)); // Order by competition start date
 
-     // Fetch the user record once to get waiver chip details
+    // Fetch the user record once to get waiver chip details
      const user = await this.getUser(userId);
      const userWaiverCompId = user?.waiverChipUsedCompetitionId;
      const userWaiverReplacementId = user?.waiverChipReplacementGolferId;
@@ -726,7 +748,8 @@ export class DatabaseStorage implements IStorage {
            id: data.golfer1.id,
            name: data.golfer1.name,
            avatar: data.golfer1.avatarUrl,
-           rank: data.golfer1.rank, // Add rank
+           rank: data.rank1?.rankAtDeadline ?? null, // Use rankAtDeadline as the default rank
+           waiverRank: data.waiverRank, // Include waiverRank
            isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer1.id,
            // Check if this golfer was the waiver replacement in this specific competition
            isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer1.id
@@ -735,7 +758,8 @@ export class DatabaseStorage implements IStorage {
            id: data.golfer2.id,
            name: data.golfer2.name,
            avatar: data.golfer2.avatarUrl,
-           rank: data.golfer2.rank, // Add rank
+           rank: data.rank2?.rankAtDeadline ?? null, // Use rankAtDeadline as the default rank
+           waiverRank: data.waiverRank, // Include waiverRank
            isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer2.id,
            // Check if this golfer was the waiver replacement in this specific competition
            isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer2.id
@@ -744,7 +768,8 @@ export class DatabaseStorage implements IStorage {
            id: data.golfer3.id,
            name: data.golfer3.name,
            avatar: data.golfer3.avatarUrl,
-           rank: data.golfer3.rank, // Add rank
+           rank: data.rank3?.rankAtDeadline ?? null, // Use rankAtDeadline as the default rank
+           waiverRank: data.waiverRank, // Include waiverRank
            isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer3.id,
            // Check if this golfer was the waiver replacement in this specific competition
            isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer3.id

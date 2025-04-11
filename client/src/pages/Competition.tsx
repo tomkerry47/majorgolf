@@ -32,7 +32,8 @@ interface UserCompetitionSelection {
     firstName?: string; // Keep if available
     lastName?: string; // Keep if available
     avatar?: string;
-    rank: number | string;
+    rank: number | string; // This will be rankAtDeadline from selection_ranks
+    waiverRank?: number | null; // Add waiverRank from selections table
   };
   position?: number | string; // Position in the competition
   points: number; // Points gained in the competition
@@ -121,8 +122,14 @@ interface LeaderboardData {
 function GolferSelectionDisplay({ selection }: { selection: UserCompetitionSelection }) {
   // Note: isWildcard from the API for this component actually means "isWaiverReplacement"
   const { golfer, position, points, isCaptain, isWildcard: isWaiverReplacement } = selection;
-  const rank = typeof golfer.rank === 'string' ? parseInt(golfer.rank, 10) : golfer.rank; // Ensure rank is number
-  const isRankWildcard = typeof rank === 'number' && rank > 50; // Check if rank > 50
+  
+  // Determine the rank to use for wildcard check
+  // Use waiverRank if this golfer is a waiver replacement, otherwise use the default rank (rankAtDeadline)
+  const rankToCheck = isWaiverReplacement ? golfer.waiverRank : golfer.rank;
+  
+  // Ensure rankToCheck is a number before comparison
+  const rankNumber = typeof rankToCheck === 'string' ? parseInt(rankToCheck, 10) : rankToCheck;
+  const isRankWildcard = typeof rankNumber === 'number' && !isNaN(rankNumber) && rankNumber > 50; // Check if rank > 50
 
   return (
     <div className="relative rounded-lg border border-gray-200 bg-white px-5 py-4 shadow-sm flex items-center space-x-3 hover:border-primary/30">
@@ -146,7 +153,9 @@ function GolferSelectionDisplay({ selection }: { selection: UserCompetitionSelec
            Rank: {golfer.rank || 'N/A'} • Position: {position === 0 ? '(MC)' : position || '(MC)'} {/* Changed N/A to (MC) */}
          </p>
        </div>
-       <div className="flex-shrink-0 text-sm font-semibold text-success">+{points || 0} pts</div>
+       <div className="flex-shrink-0 text-sm font-semibold text-success">
+         +{ (points || 0) * (isCaptain || isRankWildcard ? 2 : 1) } pts
+       </div>
     </div>
   );
 }

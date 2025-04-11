@@ -137,7 +137,13 @@ const Auth = () => {
                     disabled={loginForm.formState.isSubmitting}
                   >
                     {loginForm.formState.isSubmitting ? "Logging in..." : "Sign In"}
-                </Button>
+                  </Button>
+                  {/* Moved Forgot Password instruction */}
+                  <div className="text-sm text-right pt-2"> {/* Added padding-top */}
+                    <span className="font-medium text-gray-600 hover:text-gray-500">
+                      Forgot password? Contact admin.
+                    </span>
+                  </div>
               </form>
             </Form>
           </CardContent>

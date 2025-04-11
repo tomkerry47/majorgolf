@@ -34,9 +34,10 @@ interface EnrichedSelection {
     isActive: boolean;
     isComplete: boolean;
   } | null;
-  golfer1: { id: number; name: string; avatar: string | null; rank: number | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added rank
-  golfer2: { id: number; name: string; avatar: string | null; rank: number | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added rank
-  golfer3: { id: number; name: string; avatar: string | null; rank: number | null; isCaptain: boolean; isWildcard: boolean; } | null; // Added rank
+  // Update golfer types to include optional waiverRank
+  golfer1: { id: number; name: string; avatar: string | null; rank: number | null; isCaptain: boolean; isWildcard: boolean; waiverRank?: number | null; } | null; 
+  golfer2: { id: number; name: string; avatar: string | null; rank: number | null; isCaptain: boolean; isWildcard: boolean; waiverRank?: number | null; } | null; 
+  golfer3: { id: number; name: string; avatar: string | null; rank: number | null; isCaptain: boolean; isWildcard: boolean; waiverRank?: number | null; } | null; 
   golfer1Result: { position: number; points: number | null } | null;
   golfer2Result: { position: number; points: number | null } | null;
   golfer3Result: { position: number; points: number | null } | null;
@@ -207,12 +208,30 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
       );
     };
 
-    // Helper function to render result sub-line
-    const renderResultCell = (result: EnrichedSelection['golfer1Result'], competitionStatus: { isActive?: boolean; isComplete?: boolean }) => {
+    // Helper function to render result sub-line, now accepting golfer data
+    const renderResultCell = (
+      golfer: EnrichedSelection['golfer1'], // Add golfer parameter
+      result: EnrichedSelection['golfer1Result'],
+      competitionStatus: { isActive?: boolean; isComplete?: boolean }
+    ) => {
       if (result && (competitionStatus.isComplete || competitionStatus.isActive)) {
+        const points = result.points ?? 0;
+        
+        // Determine the rank to use for wildcard check
+        const rankToCheck = golfer?.isWildcard ? golfer.waiverRank : golfer?.rank;
+        
+        // Determine if rank wildcard applies (rank > 50) using the correct rank
+        const isRankWildcard = typeof rankToCheck === 'number' && rankToCheck > 50;
+        
+        // Check if captain chip was used for this golfer
+        const isCaptain = golfer?.isCaptain ?? false;
+        
+        // Calculate displayed points (doubled if captain or rank wildcard)
+        const displayedPoints = points * (isCaptain || isRankWildcard ? 2 : 1);
+
         return (
           <div className="text-xs text-gray-500 mt-1"> {/* Added mt-1 for spacing */}
-            Pos: {result.position === 0 ? '(MC)' : result.position || '(MC)'}, Pts: <span className="text-success font-medium">+{result.points ?? 0}</span>
+            Pos: {result.position === 0 ? '(MC)' : result.position || '(MC)'}, Pts: <span className="text-success font-medium">+{displayedPoints}</span>
           </div>
         );
       }
@@ -268,19 +287,19 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
                     {/* Display Golfer 1 */}
                     <TableCell>
                       {renderGolferCell(selection.golfer1)}
-                      {renderResultCell(selection.golfer1Result, { isActive: selection.competition?.isActive, isComplete: selection.competition?.isComplete })}
+                      {renderResultCell(selection.golfer1, selection.golfer1Result, { isActive: selection.competition?.isActive, isComplete: selection.competition?.isComplete })}
                     </TableCell>
 
                     {/* Display Golfer 2 */}
                     <TableCell>
                       {renderGolferCell(selection.golfer2)}
-                      {renderResultCell(selection.golfer2Result, { isActive: selection.competition?.isActive, isComplete: selection.competition?.isComplete })}
+                      {renderResultCell(selection.golfer2, selection.golfer2Result, { isActive: selection.competition?.isActive, isComplete: selection.competition?.isComplete })}
                     </TableCell>
 
                     {/* Display Golfer 3 */}
                     <TableCell>
                       {renderGolferCell(selection.golfer3)}
-                      {renderResultCell(selection.golfer3Result, { isActive: selection.competition?.isActive, isComplete: selection.competition?.isComplete })}
+                      {renderResultCell(selection.golfer3, selection.golfer3Result, { isActive: selection.competition?.isActive, isComplete: selection.competition?.isComplete })}
                     </TableCell>
 
                     {/* Display Total Points */}
