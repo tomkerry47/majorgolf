@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter"; // Import useLocation
 import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query"; // Import useQueryClient
@@ -81,6 +81,7 @@ export default function CurrentCompetition() {
   // Get the first active competition, if any
   const currentCompetition = activeCompetitions?.[0];
   const queryClientHook = useQueryClient(); // Get queryClient instance
+  const [, setLocation] = useLocation(); // Get setLocation for navigation
 
   // Fetch user's selection for the current competition
   const { data: userSelections, isLoading: isLoadingSelections } = useQuery<Selection[] | null>({ // Allow null
@@ -180,7 +181,20 @@ export default function CurrentCompetition() {
         </Link>
       </div>
       
-      <Card className="mt-4">
+      {/* Make the entire card clickable */}
+      <Card 
+        className="mt-4 cursor-pointer hover:shadow-md transition-shadow" 
+        onClick={(e) => {
+          // Prevent click propagation if the click target is already a link or button
+          if (e.target instanceof HTMLElement) {
+            const closestInteractive = e.target.closest('a, button');
+            if (closestInteractive) {
+              return; // Don't navigate if clicking on an existing link/button
+            }
+          }
+          setLocation(`/competitions/${currentCompetition.id}`);
+        }}
+      >
         <CardHeader className="bg-secondary/5 px-4 py-5 sm:px-6">
           <div className="flex justify-between items-start"> {/* Use items-start to align top */}
             {/* Competition Image (if available) */}
