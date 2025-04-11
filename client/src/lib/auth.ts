@@ -11,14 +11,6 @@ interface LoginResponse {
   token: string;
 }
 
-interface RegisterData {
-  username: string;
-  fullName: string;
-  email: string;
-  password: string;
-  confirmPassword: string;
-}
-
 // Store token in localStorage
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
@@ -71,30 +63,6 @@ export async function login(email: string, password: string): Promise<LoginRespo
   
   const data = await response.json();
   console.log('Login successful:', data);
-  
-  // Store auth data
-  setToken(data.token);
-  setStoredUser(data.user);
-  
-  return data;
-}
-
-export async function register(registerData: RegisterData): Promise<LoginResponse> {
-  const response = await fetch('/api/auth/register', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(registerData),
-    credentials: 'include',
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error || 'Registration failed');
-  }
-  
-  const data = await response.json();
   
   // Store auth data
   setToken(data.token);

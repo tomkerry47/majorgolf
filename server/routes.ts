@@ -7,7 +7,6 @@ import path from 'path';
 import fsSync from 'fs'; // Use fsSync for synchronous operations like mkdirSync
 import {
   loginSchema,
-  registerSchema,
   selectionFormSchema,
   insertResultSchema,
   insertCompetitionSchema,
@@ -74,7 +73,6 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
   // List of explicitly public routes (paths starting after /api/)
   const publicRoutes = [
     '/auth/login POST',
-    '/auth/register POST',
     '/competitions GET',
     '/competitions/all GET',
     '/competitions/active GET',
@@ -250,18 +248,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         { rank: 2, userId: 2, username: "golfer2", email: "golfer2@example.com", points: 30, selections: [{ playerName: "Scottie Scheffler", position: 2 },{ playerName: "Justin Thomas", position: 7 },{ playerName: "Brooks Koepka", position: 15 }] }
       ]);
     } catch (error) { console.error('Error in test leaderboard:', error); res.status(500).json({ error: 'Internal server error' }); }
-  });
-
-  app.post('/api/auth/register', async (req: Request, res: Response) => {
-    try {
-      const data = registerSchema.parse(req.body);
-      const existingUser = await storage.getUserByEmail(data.email);
-      if (existingUser) { return res.status(400).json({ error: 'User already exists' }); }
-      const newUser = await storage.createUser({ email: data.email, username: data.username, fullName: data.fullName || data.username, password: data.password, isAdmin: false });
-      const token = generateToken(newUser.id, newUser.email, newUser.isAdmin);
-      res.cookie('authToken', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 7 * 24 * 60 * 60 * 1000 });
-      res.status(201).json({ user: { id: newUser.id.toString(), email: newUser.email, username: newUser.username, avatarUrl: newUser.avatarUrl, isAdmin: newUser.isAdmin }, token });
-    } catch (error) { if (error instanceof ZodError) { return res.status(400).json({ error: error.errors }); } console.error('Register error:', error); res.status(500).json({ error: 'Registration failed' }); }
   });
 
   app.post('/api/auth/login', async (req: Request, res: Response) => {

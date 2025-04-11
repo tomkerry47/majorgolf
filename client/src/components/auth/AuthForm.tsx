@@ -7,42 +7,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
-import { registerSchema, loginSchema, type LoginCredentials, type RegisterCredentials } from "@shared/schema";
+import { loginSchema, type LoginCredentials } from "@shared/schema";
 
-interface AuthFormProps {
-  type: "login" | "register";
-}
 
-export default function AuthForm({ type }: AuthFormProps) {
+export default function AuthForm() {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const { signIn, signUp } = useAuth();
+  const { signIn } = useAuth();
 
-  const schema = type === "login" ? loginSchema : registerSchema;
-  const form = useForm<LoginCredentials | RegisterCredentials>({
-    resolver: zodResolver(schema),
+  const form = useForm<LoginCredentials>({
+    resolver: zodResolver(loginSchema),
     defaultValues: {
       email: "",
       password: "",
-      ...(type === "register" && {
-        username: "",
-        fullName: "",
-        confirmPassword: ""
-      })
     }
   });
 
-  async function onSubmit(data: LoginCredentials | RegisterCredentials) {
+  async function onSubmit(data: LoginCredentials) {
     setIsLoading(true);
     try {
-      if (type === "login") {
-        // Normalize email to lowercase to avoid case sensitivity issues
-        const { email, password } = data as LoginCredentials;
-        const normalizedEmail = email.toLowerCase().trim();
-        console.log('Login attempt with:', { email: normalizedEmail });
+      // Normalize email to lowercase to avoid case sensitivity issues
+      const { email, password } = data;
+      const normalizedEmail = email.toLowerCase().trim();
+      console.log('Login attempt with:', { email: normalizedEmail });
         
         console.log('Starting signIn process...');
         const result = await signIn(normalizedEmail, password);
@@ -55,28 +45,16 @@ export default function AuthForm({ type }: AuthFormProps) {
         });
         
         console.log('Attempting to navigate to dashboard...');
-        setLocation("/");
-        console.log('Navigation command sent.');
-      } else {
-        const { email, password, confirmPassword, username, fullName } = data as RegisterCredentials;
-        const fullNameValue = fullName || username; // Ensure fullName is not undefined
-        const confirmPasswordValue = confirmPassword || ''; // Ensure confirmPassword is not undefined
-        await signUp(email, password, confirmPasswordValue, username, fullNameValue);
-        toast({
-          title: "Account created!",
-          description: "Your account has been created successfully.",
-        });
-        // Redirect to login after successful registration
-        setLocation("/login");
-      }
+      setLocation("/");
+      console.log('Navigation command sent.');
     } catch (error: any) {
-      console.error("Authentication error in form submit:", error);
+      console.error("Login error in form submit:", error);
 
-      let errorTitle = "Authentication failed";
-      let errorMessage = "An error occurred during authentication.";
+      let errorTitle = "Login failed";
+      let errorMessage = "An error occurred during login.";
 
       // Log detailed error info for debugging
-      console.log("Error details:", {
+      console.log("Login Error details:", {
         error,
         message: error.message,
         name: error.name,
@@ -93,10 +71,7 @@ export default function AuthForm({ type }: AuthFormProps) {
           errorMessage = "The email or password you entered is incorrect. Please try again.";
         } else if (error.message.includes("not found") || error.message.includes("no user")) {
           errorTitle = "User not found";
-          errorMessage = "No account exists with this email. Please check your email or register.";
-        } else if (error.message.includes("exists") || error.message.includes("in use")) {
-          errorTitle = "Account exists";
-          errorMessage = "An account with this email already exists. Please log in instead.";
+          errorMessage = "No account exists with this email. Please check your email.";
         }
       }
 
@@ -113,57 +88,14 @@ export default function AuthForm({ type }: AuthFormProps) {
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
-        <CardTitle>{type === "login" ? "Login" : "Create an account"}</CardTitle>
+        <CardTitle>Login</CardTitle>
         <CardDescription>
-          {type === "login" 
-            ? "Enter your credentials to access your account" 
-            : "Fill in your details to create a new account"}
+          Enter your credentials to access your account
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {type === "register" && (
-              <>
-                <FormField
-                  control={form.control}
-                  name="username"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Username</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="username" 
-                          {...field} 
-                          value={field.value || ''} 
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        This will be your public display name.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="fullName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Full Name</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="John Smith" 
-                          {...field} 
-                          value={field.value || ''} 
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </>
-            )}
             <FormField
               control={form.control}
               name="email"
@@ -200,26 +132,6 @@ export default function AuthForm({ type }: AuthFormProps) {
                 </FormItem>
               )}
             />
-            {type === "register" && (
-              <FormField
-                control={form.control}
-                name="confirmPassword"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Confirm Password</FormLabel>
-                    <FormControl>
-                      <Input 
-                        type="password" 
-                        placeholder="••••••••" 
-                        {...field} 
-                        value={field.value || ''} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (
                 <span className="flex items-center">
@@ -227,34 +139,21 @@ export default function AuthForm({ type }: AuthFormProps) {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  {type === "login" ? "Logging in..." : "Creating account..."}
+                  Logging in...
                 </span>
               ) : (
-                <span>{type === "login" ? "Login" : "Create account"}</span>
+                <span>Login</span>
               )}
             </Button>
           </form>
         </Form>
       </CardContent>
-      <CardFooter className="flex justify-center">
+      {/* Footer can be removed or kept simple */}
+      {/* <CardFooter className="flex justify-center">
         <p className="text-sm text-center text-gray-600">
-          {type === "login" ? (
-            <>
-              Don't have an account?{" "}
-              <Link href="/register" className="font-medium text-primary hover:text-primary/80">
-                Sign up
-              </Link>
-            </>
-          ) : (
-            <>
-              Already have an account?{" "}
-              <Link href="/login" className="font-medium text-primary hover:text-primary/80">
-                Login
-              </Link>
-            </>
-          )}
+          Need help? Contact support.
         </p>
-      </CardFooter>
+      </CardFooter> */}
     </Card>
   );
 }

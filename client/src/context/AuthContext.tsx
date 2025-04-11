@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getStoredUser, fetchUserProfile, logout, login, register, isAuthenticated } from '@/lib/auth';
+import { getStoredUser, fetchUserProfile, logout, login, isAuthenticated } from '@/lib/auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLocation } from 'wouter';
 
@@ -9,7 +9,6 @@ interface AuthContextType {
   isAdmin: boolean;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<any>;
-  signUp: (email: string, password: string, confirmPassword: string, username: string, fullName?: string) => Promise<any>;
   signOut: () => Promise<void>;
 }
 
@@ -68,22 +67,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signUpUser = async (email: string, password: string, confirmPassword: string, username: string, fullName: string = username) => {
-    try {
-      const result = await register({
-        email,
-        password,
-        confirmPassword,
-        username,
-        fullName
-      });
-      return result;
-    } catch (error) {
-      console.error('Error signing up:', error);
-      throw error;
-    }
-  };
-
   const signOutUser = async () => {
     try {
       await logout();
@@ -115,10 +98,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user, 
       profile, 
       isAdmin, 
-      isLoading, 
+      isLoading,
       signIn: signInUser,
-      signUp: signUpUser, 
-      signOut: signOutUser 
+      signOut: signOutUser
     }}>
       {children}
     </AuthContext.Provider>
