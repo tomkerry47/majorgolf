@@ -1,24 +1,58 @@
 import 'dotenv/config'; // Load .env file variables
-import { pool } from '../server/db.js'; // Import the pool from db.ts
+import { db, pool } from '../server/db'; // Import db instance and pool
+import { userPoints } from '../shared/schema'; // Import userPoints table schema
+import { eq, and } from 'drizzle-orm'; // Import Drizzle operators
 
-async function checkUserPoints() {
-  console.log(`Attempting to connect with DATABASE_URL: ${process.env.DATABASE_URL ? 'Set' : 'Not Set'}`); // Add log
-  const client = await pool.connect();
+async function checkSpecificUserPoints(userId: number, competitionId: number) {
+  console.log(`Querying user_points for userId: ${userId}, competitionId: ${competitionId}`);
   try {
-    const result = await client.query('SELECT COUNT(*) FROM user_points');
-    const count = result.rows[0].count;
-    console.log(`Count of rows in user_points table: ${count}`);
-    if (parseInt(count, 10) === 0) {
-      console.log("The user_points table is currently empty.");
+    const result = await db
+      .select({
+        points: userPoints.points,
+        details: userPoints.details,
+      })
+      .from(userPoints)
+      .where(and(eq(userPoints.userId, userId), eq(userPoints.competitionId, competitionId)))
+      .limit(1); // Expecting only one entry per user/competition
+
+    if (result.length === 0) {
+      console.log(`No points entry found for userId: ${userId}, competitionId: ${competitionId}`);
     } else {
-      console.log(`The user_points table contains ${count} rows.`);
+      console.log(`Points entry found:`);
+      console.log(`Total Points: ${result[0].points}`);
+      console.log(`Details JSON:`);
+      // Attempt to parse and pretty-print the JSON details
+      try {
+        const detailsObject = JSON.parse(result[0].details || '{}');
+        console.log(JSON.stringify(detailsObject, null, 2));
+      } catch (parseError) {
+        console.error('Error parsing details JSON:', parseError);
+        console.log('Raw Details:', result[0].details); // Log raw details if parsing fails
+      }
     }
   } catch (error) {
     console.error('Error querying user_points table:', error);
   } finally {
-    client.release();
     await pool.end(); // Close the pool after the query
+    console.log('Database pool closed.');
   }
 }
 
-checkUserPoints();
+// Get userId and competitionId from command line arguments
+const userIdArg = process.argv[2];
+const competitionIdArg = process.argv[3];
+
+if (!userIdArg || !competitionIdArg) {
+  console.error('Usage: tsx scripts/check_user_points.ts <userId> <competitionId>');
+  process.exit(1);
+}
+
+const userId = parseInt(userIdArg, 10);
+const competitionId = parseInt(competitionIdArg, 10);
+
+if (isNaN(userId) || isNaN(competitionId)) {
+  console.error('Invalid userId or competitionId. Both must be numbers.');
+  process.exit(1);
+}
+
+checkSpecificUserPoints(userId, competitionId);

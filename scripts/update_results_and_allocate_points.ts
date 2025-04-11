@@ -854,16 +854,28 @@ async function allocatePoints(client: PoolClient, competitionId: number): Promis
         totalPoints += finalPoints; // Add points after rank bonus
       }
 
+      // Reset captain status before applying
+      pointDetails.forEach(detail => {
+        detail.isCaptain = false;
+        delete detail.captainPoints; // Or set to 0/null if preferred
+      });
+
       // Apply captain's chip bonus (based on finalPoints after rank bonus)
-      if (useCaptainsChip && pointDetails.length > 0) {
-        pointDetails.sort((a, b) => b.finalPoints - a.finalPoints); // Sort by finalPoints desc
-        const captainGolferDetail = pointDetails[0];
-        // Double the points of the highest scoring golfer (positive or negative)
-        const additionalPoints = captainGolferDetail.finalPoints; // Captain bonus is based on points *after* rank bonus
-        console.log(`Captain's chip used on golfer ${captainGolferDetail.golferId} with ${captainGolferDetail.finalPoints} points (after rank bonus), adding ${additionalPoints} more points`);
-        captainGolferDetail.isCaptain = true;
-        captainGolferDetail.captainPoints = additionalPoints;
-        totalPoints += additionalPoints; // Add captain bonus to total
+      if (useCaptainsChip && selection.captainGolferId != null && pointDetails.length > 0) { // Check if captainGolferId is set
+        // Find the detail entry matching the actual selected captain
+        const captainDetail = pointDetails.find(detail => detail.golferId === selection.captainGolferId); 
+
+        if (captainDetail) {
+          // Double the points of the *selected* captain golfer
+          const additionalPoints = captainDetail.finalPoints; // Captain bonus is based on points *after* rank bonus
+          console.log(`Captain's chip used on selected golfer ${captainDetail.golferId} with ${captainDetail.finalPoints} points (after rank bonus), adding ${additionalPoints} more points`);
+          captainDetail.isCaptain = true;
+          captainDetail.captainPoints = additionalPoints;
+          totalPoints += additionalPoints; // Add captain bonus to total
+        } else {
+           // Log a warning if the selected captain wasn't found in the details (shouldn't happen normally)
+           console.warn(`Captain chip used for user ${selection.userId}, but selected captain golfer ID ${selection.captainGolferId} not found in pointDetails.`);
+        }
       }
 
       console.log(`User ${selection.userId} earned a total of ${totalPoints} points for competition ${competitionId}`);

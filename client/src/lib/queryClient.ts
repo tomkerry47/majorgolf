@@ -23,17 +23,26 @@ export async function apiRequest<T = any>(
   // Restored header logic
   const token = getToken();
   const headers: Record<string, string> = {};
-  if (data) {
+  let body: BodyInit | null | undefined = undefined;
+
+  // Check if data is FormData
+  if (data instanceof FormData) {
+    // Don't set Content-Type for FormData, fetch handles it
+    body = data;
+  } else if (data) {
+    // For other data types (like JSON), set Content-Type and stringify
     headers["Content-Type"] = "application/json";
+    body = JSON.stringify(data);
   }
+
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
   const res = await fetch(url, {
     method,
-    headers, // Restored headers
-    body: data ? JSON.stringify(data) : undefined,
+    headers, // Headers might be empty or just contain Authorization
+    body: body, // Use the prepared body
     credentials: "include",
   });
 

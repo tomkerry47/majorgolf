@@ -428,17 +428,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rows = parseResult.data as any[]; // Type assertion, handle potential type issues
       console.log(`[API /api/admin/import-users-selections] Parsed ${rows.length} rows from CSV.`);
 
-      // --- Pre-fetch Competition and Golfer data ---
-      const competitions = await storage.getCompetitions();
-      const playersComp = competitions.find(c => c.name === 'The Players Championship');
-      const mastersComp = competitions.find(c => c.name === 'The Masters');
+      // --- Use known Competition IDs ---
+      const playersCompId = 6; // Use provided ID for The Players Championship
+      const mastersCompId = 1;  // Use provided ID for The Masters
+      console.log(`[API /api/admin/import-users-selections] Using hardcoded Competition IDs - Players: ${playersCompId}, Masters: ${mastersCompId}`);
 
-      if (!playersComp || !mastersComp) {
-        return res.status(500).json({ error: 'Could not find required competitions (The Players Championship, The Masters) in the database.' });
-      }
-      const playersCompId = playersComp.id;
-      const mastersCompId = mastersComp.id;
-      console.log(`[API /api/admin/import-users-selections] Players Comp ID: ${playersCompId}, Masters Comp ID: ${mastersCompId}`);
+      // Optional: Verify these competitions exist (good practice, but skipping for now based on user info)
+      // const playersComp = await storage.getCompetitionById(playersCompId);
+      // const mastersComp = await storage.getCompetitionById(mastersCompId);
+      // if (!playersComp || !mastersComp) {
+      //   return res.status(500).json({ error: `Could not find required competitions with IDs ${playersCompId} or ${mastersCompId} in the database.` });
+      // }
 
       const allGolfers = await storage.getGolfers(); // Fetches { id, name, shortName, ... }
 

@@ -1,38 +1,47 @@
 import 'dotenv/config'; // Load .env file variables
-import { db } from '../server/db'; // Adjust path as needed
-import { selections } from '../shared/schema'; // Adjust path as needed
+import { db, pool } from '../server/db'; // Import db instance and pool
+import { selections } from '../shared/schema'; // Import selections table schema
+import { eq, and } from 'drizzle-orm'; // Import Drizzle operators
 
-async function checkSelectionsTable() {
-  console.log('Querying selections table...');
+async function checkSpecificUserSelection(userId: number, competitionId: number) {
+  console.log(`Querying selections table for userId: ${userId}, competitionId: ${competitionId}`);
   try {
-    const allSelections = await db.select().from(selections);
+    const result = await db
+      .select() // Select all columns for the specific selection
+      .from(selections)
+      .where(and(eq(selections.userId, userId), eq(selections.competitionId, competitionId)))
+      .limit(1); // Expecting only one entry per user/competition
 
-    if (allSelections.length === 0) {
-      console.log('The selections table is currently empty.');
+    if (result.length === 0) {
+      console.log(`No selection entry found for userId: ${userId}, competitionId: ${competitionId}`);
     } else {
-      console.log(`Found ${allSelections.length} selections in table:`);
-      // Select specific columns for better readability in console.table
-      const formattedSelections = allSelections.map(s => ({
-        id: s.id,
-        userId: s.userId,
-        competitionId: s.competitionId,
-        golfer1Id: s.golfer1Id,
-        golfer2Id: s.golfer2Id,
-        golfer3Id: s.golfer3Id,
-        useCaptainsChip: s.useCaptainsChip,
-        captainGolferId: s.captainGolferId,
-        waiverRank: s.waiverRank,
-        createdAt: s.createdAt,
-        updatedAt: s.updatedAt
-      }));
-      console.table(formattedSelections); 
+      console.log(`Selection entry found:`);
+      // Display the single result in a table format
+      console.table(result); 
     }
   } catch (error) {
     console.error('Error querying selections table:', error);
   } finally {
-    // Ensure the script exits
-    process.exit(0); 
+    await pool.end(); // Close the pool after the query
+    console.log('Database pool closed.');
   }
 }
 
-checkSelectionsTable();
+// Get userId and competitionId from command line arguments
+const userIdArg = process.argv[2];
+const competitionIdArg = process.argv[3];
+
+if (!userIdArg || !competitionIdArg) {
+  console.error('Usage: tsx scripts/check_selections.ts <userId> <competitionId>');
+  process.exit(1);
+}
+
+const userId = parseInt(userIdArg, 10);
+const competitionId = parseInt(competitionIdArg, 10);
+
+if (isNaN(userId) || isNaN(competitionId)) {
+  console.error('Invalid userId or competitionId. Both must be numbers.');
+  process.exit(1);
+}
+
+checkSpecificUserSelection(userId, competitionId);
