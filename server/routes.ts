@@ -1247,26 +1247,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   app.post('/api/admin/update-results', validateJWT, async (req: Request, res: Response) => {
     try {
-      // Extract competitionId from request body
-      const { competitionId } = req.body;
+      // Extract competitionId and forceUpdate flag from request body
+      const { competitionId, forceUpdate = false } = req.body; // Default forceUpdate to false
 
-      // Validate competitionId (optional but recommended)
+      // Validate competitionId
       if (typeof competitionId !== 'number') {
         return res.status(400).json({ error: 'Invalid or missing competitionId' });
       }
 
-      // Use statically imported function
-      // Pass the imported pool and the specific competitionId to the function
-      await updateResultsAndAllocatePoints(pool, competitionId); // Pass pool and competitionId
+      // Call the updated script function, passing the forceUpdate flag
+      // The function now returns ProcessStatus | void
+      const result = await updateResultsAndAllocatePoints(pool, competitionId, forceUpdate);
 
-      // Update the timestamp after successful execution
-      await storage.updateCompetition(competitionId, { lastResultsUpdateAt: new Date().toISOString() });
-      console.log(`Updated lastResultsUpdateAt for competition ${competitionId}`);
+      // Handle the result based on its status
+      if (result) { // Check if result is defined (it should be for single competition processing)
+        switch (result.status) {
+          case 'success':
+            // Update the timestamp only on success
+            await storage.updateCompetition(competitionId, { lastResultsUpdateAt: new Date().toISOString() });
+            console.log(`Updated lastResultsUpdateAt for competition ${competitionId}`);
+            return res.json({ success: true, message: `Update successful for competition ${competitionId}` });
 
-      res.json({ success: true, message: `Update triggered and timestamp recorded for competition ${competitionId}` });
-    } catch (error) {
-      console.error(`Admin update results error for competition ${req.body?.competitionId}:`, error); // Log with ID
-      res.status(500).json({ error: 'Failed to update results or timestamp' });
+          case 'mismatch':
+            // Return 409 Conflict with details for the client confirmation dialog
+            console.warn(`Name mismatch detected for competition ${competitionId}. Sending 409 to client.`);
+            return res.status(409).json({
+              status: 'confirmation_required', // Custom status for client handling
+              message: 'Competition name mismatch detected.',
+              dbName: result.dbName,
+              fetchedName: result.fetchedName,
+              cleanedFetchedName: result.cleanedFetchedName,
+            });
+
+          case 'error':
+            // Return 500 Internal Server Error with the specific error message from the script
+            console.error(`Script error during update for competition ${competitionId}: ${result.message}`);
+            return res.status(500).json({ error: `Failed to update results: ${result.message}` });
+        }
+      } else {
+         // This case should ideally not be reached if competitionId is always provided,
+         // but handle it defensively. Assume success for the API call itself.
+         console.warn(`updateResultsAndAllocatePoints returned void unexpectedly for competition ${competitionId}.`);
+         return res.json({ success: true, message: `Update process initiated for competition ${competitionId}, but final status was void.` });
+      }
+
+    } catch (error: any) { // Catch errors in the route handler itself
+      console.error(`API route /api/admin/update-results error for competition ${req.body?.competitionId}:`, error);
+      res.status(500).json({ error: `API Error: ${error?.message || 'Failed to process update request'}` });
     }
   });
   app.get('/api/admin/wildcard-golfers/:competitionId', validateJWT, async (req: Request, res: Response) => {

@@ -253,7 +253,21 @@ export default function Competition() {
 
             <TabsContent value="results">
             <Card>
-               <CardHeader><CardTitle>Results</CardTitle></CardHeader>
+               <CardHeader>
+                 <div className="flex justify-between items-center"> {/* Added flex container */}
+                   <CardTitle>Results</CardTitle>
+                   {/* Points Allocation Status */}
+                   {competition && ( // Check if competition data exists
+                     <Badge variant="outline" className={
+                       competition.isComplete 
+                         ? "bg-green-500/10 text-green-700 border-green-200" // Finalised style
+                         : "bg-yellow-500/10 text-yellow-700 border-yellow-200" // Pending style
+                     }>
+                       Points: {competition.isComplete ? 'Finalised' : 'Pending'}
+                     </Badge>
+                   )}
+                 </div>
+               </CardHeader>
               <CardContent className="p-0">
                 {isLoadingResults ? (
                   <div className="p-6"><Skeleton className="h-64 w-full" /></div>

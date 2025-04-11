@@ -43,7 +43,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 // Import necessary types
-import { insertResultSchema, type InsertResult, type Competition, type Result, type Golfer } from "@shared/schema"; 
+import { insertResultSchema, type InsertResult, type Competition, type Result, type Golfer } from "@shared/schema";
 
 // Helper function to display golfer name
 const getGolferDisplayName = (golfer?: Golfer | null): string => {
@@ -60,35 +60,89 @@ export default function AdminResults() {
   const [selectedResult, setSelectedResult] = useState<any>(null);
   const [selectedCompetition, setSelectedCompetition] = useState<number | null>(null);
   const [formAction, setFormAction] = useState<'create' | 'edit'>('create');
-  // Removed captureTimes state
+  // State for confirmation dialog
+  const [showConfirmationDialog, setShowConfirmationDialog] = useState(false);
+  const [confirmationDetails, setConfirmationDetails] = useState<{
+    competitionId: number | null;
+    dbName: string;
+    fetchedName: string;
+    cleanedFetchedName: string;
+  } | null>(null);
+
 
   // --- Start: Modified Update Results Logic ---
   // Mutation for triggering result updates for a SPECIFIC tournament
   const { mutate: updateSelectedResults, isPending: isUpdatingSelected } = useMutation({
-    // Expect competitionId as an argument
-    mutationFn: ({ competitionId }: { competitionId: number }) => 
-      apiRequest('/api/admin/update-results', 'POST', { competitionId }), // Send ID in body
-    onSuccess: (_, variables) => { // Access variables to know which competition was updated
+    // Update mutation function signature and body to accept forceUpdate
+    mutationFn: ({ competitionId, forceUpdate = false }: { competitionId: number; forceUpdate?: boolean }) =>
+      apiRequest('/api/admin/update-results', 'POST', { competitionId, forceUpdate }), // Pass forceUpdate
+    onSuccess: (data, variables) => { // data might be undefined on 409, variables has competitionId
+      // Close confirmation dialog if it was open
+      setShowConfirmationDialog(false);
+      setConfirmationDetails(null);
       toast({
         title: 'Success',
-          description: `Update triggered for competition ID ${variables.competitionId}. Results & points are being processed.`,
+        description: `Update triggered/completed for competition ID ${variables.competitionId}. Results & points are being processed/updated.`,
       });
-       // Refetch results and leaderboard for the updated competition
-       if (variables.competitionId) {
-         queryClient.refetchQueries({ queryKey: [`/api/admin/tournament-results/${variables.competitionId}`] }); 
-         queryClient.refetchQueries({ queryKey: [`/api/leaderboard/${variables.competitionId}`] }); // Refetch specific leaderboard
-       }
-       // Refetch competitions list (status might change) and overall leaderboard
+      // Refetch results and leaderboard for the updated competition
+      if (variables.competitionId) {
+        queryClient.refetchQueries({ queryKey: [`/api/admin/tournament-results/${variables.competitionId}`] });
+        queryClient.refetchQueries({ queryKey: [`/api/leaderboard/${variables.competitionId}`] }); // Refetch specific leaderboard
+      }
+      // Refetch competitions list (status might change) and overall leaderboard
       queryClient.refetchQueries({ queryKey: ['/api/competitions'] }); // Refetch competitions to get updated timestamp
       queryClient.refetchQueries({ queryKey: ['/api/leaderboard'] }); // Refetch overall leaderboard
-      // Removed setCaptureTimes
     },
-    onError: (error: any) => {
-      toast({
-        title: 'Error Triggering Update',
-        description: error.message || 'Failed to trigger update for all tournament results.',
-        variant: 'destructive',
-      });
+    onError: (error: any, variables) => { // variables has competitionId
+      // Close confirmation dialog if it was open (in case of error during forced update)
+      setShowConfirmationDialog(false);
+      setConfirmationDetails(null);
+
+      // Log the error object for debugging
+      console.error("Mutation onError:", error);
+      console.log("Error Response Status:", error.response?.status);
+      console.log("Error Response Data:", error.response?.data); // This will likely remain undefined
+
+      // Attempt to parse the error message string for status and JSON data
+      let isConfirmationRequired = false;
+      if (error instanceof Error && error.message) {
+        const match = error.message.match(/^(\d+):\s*({.*})$/); // Regex to capture status and JSON string
+        if (match) {
+          const status = parseInt(match[1], 10);
+          const jsonString = match[2];
+          console.log(`Parsed from error message - Status: ${status}, JSON String: ${jsonString}`);
+          if (status === 409) {
+            try {
+              const errorData = JSON.parse(jsonString);
+              console.log("Parsed error data from message:", errorData);
+              if (errorData?.status === 'confirmation_required') {
+                isConfirmationRequired = true;
+                console.log("Mismatch detected from error message, attempting to show confirmation dialog.");
+                setConfirmationDetails({
+                  competitionId: variables.competitionId,
+                  dbName: errorData.dbName,
+                  fetchedName: errorData.fetchedName,
+                  cleanedFetchedName: errorData.cleanedFetchedName,
+                });
+                setShowConfirmationDialog(true); // This should trigger the dialog
+              }
+            } catch (parseError) {
+              console.error("Failed to parse JSON from error message:", parseError);
+            }
+          }
+        }
+      }
+
+      // If confirmation wasn't triggered, show the standard toast
+      if (!isConfirmationRequired) {
+          console.log("Error is not a 409 confirmation required (or failed to parse message), showing standard toast."); // Add log
+          // Handle other errors
+          toast({
+            title: 'Error Triggering Update',
+            description: error.message || `Failed to trigger update for competition ID ${variables.competitionId}.`,
+            variant: 'destructive',
+          });
+      }
     }
   });
   // --- End: Modified Update Results Logic ---
@@ -219,7 +273,7 @@ export default function AdminResults() {
   
    const handleDelete = async () => {
      try {
-       await apiRequest('DELETE', `/api/admin/tournament-results/${selectedResult.id}`, {}); // Corrected path
+       await apiRequest('DELETE', `/api/admin/tournament-results/${selectedResult.id}`); // Corrected path, removed empty body
        toast({
          title: "Result deleted",
          description: "The result has been successfully deleted."
@@ -518,6 +572,40 @@ export default function AdminResults() {
               className="bg-red-500 hover:bg-red-600"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmation Dialog for Name Mismatch */}
+      <AlertDialog open={showConfirmationDialog} onOpenChange={setShowConfirmationDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Tournament Name Mismatch</AlertDialogTitle>
+            <AlertDialogDescription>
+              The competition name in the database does not match the name found in the results source:
+              <ul className="list-disc pl-5 mt-2 text-sm">
+                <li>Database Name: <strong>{confirmationDetails?.dbName}</strong></li>
+                <li>Fetched Name: <strong>{confirmationDetails?.fetchedName}</strong></li>
+                <li>(Cleaned Fetched Name: <strong>{confirmationDetails?.cleanedFetchedName}</strong>)</li>
+              </ul>
+              <p className="mt-3">Do you want to proceed with updating results using this source anyway?</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmationDetails(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmationDetails?.competitionId) {
+                  updateSelectedResults({
+                    competitionId: confirmationDetails.competitionId,
+                    forceUpdate: true // Force the update
+                  });
+                }
+                // Dialog will be closed by onSuccess/onError
+              }}
+            >
+              Proceed Anyway
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

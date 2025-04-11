@@ -76,14 +76,24 @@ interface PointDetail {
   captainPoints?: number; // Additional points from captaincy
 }
 
+// Define ProcessStatus type
+type ProcessStatus =
+  | { status: 'success' }
+  | { status: 'mismatch'; dbName: string; fetchedName: string; cleanedFetchedName: string }
+  | { status: 'error'; message: string };
+
+
 // Helper to safely get rows or empty array with type safety
 const getRows = <T extends QueryResultRow>(result: QueryResult<T> | undefined | null): T[] => result?.rows || []; // Added constraint
 
 // Modified to accept the connection pool directly with type annotation
-export async function updateResultsAndAllocatePoints(pool: Pool, competitionIdToProcess: number | null = null): Promise<void> {
-  console.log('Starting tournament results update and point allocation...');
+// - Add forceUpdate parameter
+// - Change return type to Promise<ProcessStatus | void>
+export async function updateResultsAndAllocatePoints(pool: Pool, competitionIdToProcess: number | null = null, forceUpdate: boolean = false): Promise<ProcessStatus | void> {
+  console.log(`Starting tournament results update and point allocation...${forceUpdate ? ' (Force Update Mode Active)' : ''}`);
   // Use the passed-in pool
   const client: PoolClient = await pool.connect(); // Use pool directly
+  let overallStatus: ProcessStatus | void = undefined; // To store status for single competition processing
 
   try {
     await client.query('BEGIN'); // Start transaction
@@ -98,7 +108,8 @@ export async function updateResultsAndAllocatePoints(pool: Pool, competitionIdTo
       if (competitionsToProcess.length === 0) {
         console.log(`Competition with ID ${competitionIdToProcess} not found.`);
         await client.query('ROLLBACK');
-        return;
+        // Return an error status if the specific competition wasn't found
+        return { status: 'error', message: `Competition with ID ${competitionIdToProcess} not found.` };
       }
     } else {
       // Process active and recently completed competitions
@@ -131,20 +142,46 @@ export async function updateResultsAndAllocatePoints(pool: Pool, competitionIdTo
     if (competitionsToProcess.length === 0) {
       console.log('No competitions found to process.');
       await client.query('COMMIT'); // Commit even if nothing to process
-      return;
+      return; // Return void if no competitions
     }
 
     // 3. Process each competition
     for (const competition of competitionsToProcess) {
-      await processCompetition(client, competition); // Pass client to helper
+      // Pass client and forceUpdate to helper
+      const status = await processCompetition(client, competition, forceUpdate);
+
+      if (competitionIdToProcess !== null) {
+        // If processing a single competition, store its status and break the loop
+        overallStatus = status;
+        break;
+      } else {
+        // If processing multiple, just log the status for this competition
+        if (status.status === 'mismatch') {
+          console.warn(`Competition ${competition.id} (${competition.name}) processing resulted in status: ${status.status} (DB: ${status.dbName}, Fetched: ${status.fetchedName})`);
+        } else if (status.status === 'error') {
+           console.error(`Competition ${competition.id} (${competition.name}) processing failed with error: ${status.message}`);
+        } else {
+           console.log(`Competition ${competition.id} (${competition.name}) processed with status: ${status.status}`);
+        }
+        // Continue to the next competition
+      }
     }
 
     await client.query('COMMIT'); // Commit transaction
-    console.log('Tournament results update and point allocation completed successfully.');
-  } catch (error) {
+    console.log('Tournament results update and point allocation completed.');
+    // Return the status if a single competition was processed, otherwise return void
+    return overallStatus;
+
+  } catch (error: any) { // Add type any
     await client.query('ROLLBACK'); // Rollback transaction on error
-    console.error('Error in updateResultsAndAllocatePoints:', error);
-    throw error; // Re-throw to allow caller to handle
+    const errorMessage = `Error in updateResultsAndAllocatePoints: ${error?.message || error}`;
+    console.error(errorMessage, error);
+    // If processing a single competition, return error status, otherwise throw
+    if (competitionIdToProcess !== null) {
+        return { status: 'error', message: errorMessage };
+    } else {
+        throw error; // Re-throw for multi-competition processing or general errors
+    }
   } finally {
     client.release(); // Release client back to the pool
     // Don't end the pool here if the main app might still be running
@@ -153,14 +190,16 @@ export async function updateResultsAndAllocatePoints(pool: Pool, competitionIdTo
 }
 
 // --- New Function: Fetch and Process PGA Tour Data via Scraping ---
-async function fetchAndProcessPgaData(client: PoolClient, competition: Competition): Promise<boolean> {
-  console.log(`Scraping PGA Tour data for competition: ${competition.name} (ID: ${competition.id})`);
+// - Add forceUpdate parameter
+// - Change return type to Promise<ProcessStatus>
+async function fetchAndProcessPgaData(client: PoolClient, competition: Competition, forceUpdate: boolean = false): Promise<ProcessStatus> {
+  console.log(`Scraping PGA Tour data for competition: ${competition.name} (ID: ${competition.id})${forceUpdate ? ' (Forced Update)' : ''}`); // Log forceUpdate
 
   // Use the specific URL stored for the competition
   const url = competition.externalLeaderboardUrl;
   if (!url) {
     console.error(`External leaderboard URL is missing for competition ${competition.id}. Skipping scrape.`);
-    return false;
+    return { status: 'error', message: `External leaderboard URL is missing for competition ${competition.id}` };
   }
   console.log(`Fetching HTML from URL: ${url}`);
 
@@ -172,7 +211,7 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
     const scriptContent = $('#leaderboard-seo-data').html();
     if (!scriptContent) {
       console.error(`Could not find script tag with id="leaderboard-seo-data" on page: ${url}`);
-      return false;
+      return { status: 'error', message: `Could not find script tag with id="leaderboard-seo-data" on page: ${url}` };
     }
 
     let leaderboardJson: any;
@@ -180,7 +219,11 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
       leaderboardJson = JSON.parse(scriptContent);
     } catch (parseError) {
       console.error(`Failed to parse JSON from script tag:`, parseError);
-      return false;
+      return { status: 'error', message: `Failed to parse JSON from script tag: ${parseError}` };
+    }
+    // Add error handling for JSON parsing failure
+    if (!leaderboardJson) { // Check if leaderboardJson is null/undefined after potential parse error
+        return { status: 'error', message: `Failed to parse JSON from script tag for URL: ${url}` };
     }
 
     // --- Extract Data from JSON ---
@@ -189,7 +232,7 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
 
     if (!jsonData || !Array.isArray(jsonData) || !jsonTournamentName) {
       console.error(`JSON data structure is not as expected. Could not find columns or tournament name.`);
-      return false;
+      return { status: 'error', message: 'JSON data structure not as expected.' }; // Return error status
     }
 
     // Find columns by name
@@ -200,14 +243,14 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
 
     if (!posColumn || !playerColumn || !scoreColumn || !thruColumn) {
       console.error(`Could not find required columns (POS, PLAYER, TOT, THRU) in JSON data.`);
-      return false;
+      return { status: 'error', message: 'Could not find required columns in JSON data.' }; // Return error status
     }
 
     // Check lengths
     const numPlayers = playerColumn['csvw:cells']?.length || 0;
     if (numPlayers === 0 || posColumn['csvw:cells']?.length !== numPlayers || scoreColumn['csvw:cells']?.length !== numPlayers || thruColumn['csvw:cells']?.length !== numPlayers) {
       console.error(`Column data length mismatch in JSON.`);
-      return false;
+      return { status: 'error', message: 'Column data length mismatch in JSON.' }; // Return error status
     }
 
     // Determine if tournament is complete (all players have 'F' in THRU column, or '-' for CUT)
@@ -224,10 +267,23 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
 
     // Consider more robust matching if needed
     if (dbCompetitionNameLower !== cleanedJsonTournamentName) {
-        console.warn(`Mismatch: DB competition name "${competition.name}" does not match JSON tournament name "${jsonTournamentName}" (cleaned: "${cleanedJsonTournamentName}"). Skipping update for competition ${competition.id}.`);
-        return false; // Prevent applying results to the wrong competition
+        const mismatchMessage = `Mismatch: DB competition name "${competition.name}" does not match JSON tournament name "${jsonTournamentName}" (cleaned: "${cleanedJsonTournamentName}").`;
+        if (!forceUpdate) {
+            console.warn(`${mismatchMessage} Skipping update for competition ${competition.id}.`);
+            // Return mismatch status
+            return {
+                status: 'mismatch',
+                dbName: competition.name,
+                fetchedName: jsonTournamentName,
+                cleanedFetchedName: cleanedJsonTournamentName
+            };
+        } else {
+            console.warn(`${mismatchMessage} Proceeding with update due to forceUpdate flag.`);
+            // Log warning but continue processing
+        }
+    } else {
+        console.log(`Tournament name match confirmed: "${jsonTournamentName}"`);
     }
-    console.log(`Tournament name match confirmed: "${jsonTournamentName}"`);
 
     // --- Fetch DB Golfers for Matching (Include shortName) ---
     const golfersRes: QueryResult<{ id: number; name: string; shortName: string | null }> = await client.query('SELECT id, name, "shortName" FROM golfers');
@@ -329,41 +385,62 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
        competition.isActive = true;
     }
 
-    return true; // Indicate success
+    return { status: 'success' }; // Indicate success
 
-  } catch (error) {
+  } catch (error: any) { // Add type any
+    let errorMessage = 'Unknown error during scraping or processing.';
     if (axios.isAxiosError(error)) {
-      console.error(`Error fetching PGA Tour page for competition ${competition.id}: ${error.message}`);
+      errorMessage = `Error fetching PGA Tour page for competition ${competition.id}: ${error.message}`;
+      console.error(errorMessage);
+    } else if (error instanceof Error) { // Check if it's a standard Error
+        errorMessage = `Error scraping or processing PGA Tour data for competition ${competition.id}: ${error.message}`;
+        console.error(errorMessage, error);
     } else {
-      console.error(`Error scraping or processing PGA Tour data for competition ${competition.id}:`, error);
+        // Handle cases where the error might not be an Error object
+        errorMessage = `An unexpected error occurred during scraping for competition ${competition.id}`;
+        console.error(errorMessage, error);
     }
-    return false; // Indicate failure
+    return { status: 'error', message: errorMessage }; // Indicate failure with error status
   }
 }
 // --- End New Function ---
 
 
 // Process a single competition using Scraping data
-async function processCompetition(client: PoolClient, competition: Competition): Promise<void> {
+// - Add forceUpdate parameter
+// - Change return type to Promise<ProcessStatus>
+// - Handle return status from fetchAndProcessPgaData
+async function processCompetition(client: PoolClient, competition: Competition, forceUpdate: boolean = false): Promise<ProcessStatus> {
   console.log(`Processing competition: ${competition.name} (ID: ${competition.id}) using PGA Tour scraping...`);
+  let processStatus: ProcessStatus; // Variable to hold the status
 
   try {
-    // Attempt to fetch and process data via scraping
-    const scrapeUpdateSuccess = await fetchAndProcessPgaData(client, competition);
+    // Attempt to fetch and process data via scraping, passing forceUpdate
+    const scrapeResult = await fetchAndProcessPgaData(client, competition, forceUpdate);
+    processStatus = scrapeResult; // Store the result status
 
-    if (scrapeUpdateSuccess) {
+    if (scrapeResult.status === 'success') {
       console.log(`PGA Tour scrape processed successfully for competition ${competition.id}. Proceeding to allocate points.`);
       // Allocate points based on the potentially updated results and competition status
       await allocatePoints(client, competition.id);
-    } else {
-      console.error(`Failed to process ESPN data for competition ${competition.id}. Skipping point allocation.`);
-      // Optionally, add fallback logic here if needed, but for now, we just skip.
+      // Keep status as 'success'
+    } else if (scrapeResult.status === 'mismatch') {
+      // Log already handled in fetchAndProcessPgaData if not forced
+      console.warn(`Skipping point allocation for competition ${competition.id} due to name mismatch (confirmation needed).`);
+      // Status is already 'mismatch'
+    } else { // status === 'error'
+      console.error(`Failed to process PGA Tour data for competition ${competition.id} due to error: ${scrapeResult.message}. Skipping point allocation.`);
+      // Status is already 'error'
     }
 
-  } catch (error) {
-    console.error(`Error processing competition ${competition.id}:`, error);
+  } catch (error: any) { // Add type any
+    const errorMessage = `Error processing competition ${competition.id}: ${error?.message || error}`;
+    console.error(errorMessage, error);
+    processStatus = { status: 'error', message: errorMessage }; // Set error status
     // Don't rollback here, let the main function handle it
   }
+
+  return processStatus; // Return the final status
 }
 
 // Complete a competition and finalize scores
