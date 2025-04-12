@@ -328,7 +328,8 @@ export default function Competition() {
 
         {/* Reverted: Use defaultValue, remove value/onValueChange/key */}
         <Tabs defaultValue="leaderboard">
-          <TabsList className="mb-6">
+          {/* Added flex-wrap to allow tabs to wrap on smaller screens */}
+          <TabsList className="mb-6 flex-wrap">
             {/* Reordered and Renamed Tabs */}
             {/* Reordered and Added Predictor Leaderboard */}
             <TabsTrigger value="predictor-leaderboard">Predictor Leaderboard</TabsTrigger>

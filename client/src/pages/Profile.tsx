@@ -258,7 +258,8 @@ export default function Profile() {
 
         {/* Tabs */}
         <Tabs defaultValue="profile">
-          <TabsList className="mb-6">
+          {/* Added flex-wrap */}
+          <TabsList className="mb-6 flex-wrap">
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="selections">Selections History</TabsTrigger>
           </TabsList>

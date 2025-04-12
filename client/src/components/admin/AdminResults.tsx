@@ -404,13 +404,14 @@ export default function AdminResults() {
             <div className="mb-4 flex justify-end">
               <Button onClick={openCreateDialog} disabled={!selectedCompetition}>
                 <i className="fas fa-plus mr-2"></i>
-                Add Result
-              </Button>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                <TableHead>Position</TableHead>
+                 Add Result
+               </Button>
+             </div>
+             <div className="overflow-x-auto"> {/* Added wrapper */}
+               <Table>
+                 <TableHeader>
+                   <TableRow>
+                   <TableHead>Position</TableHead>
                 <TableHead>Golfer</TableHead>
                 <TableHead>Points</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -457,6 +458,7 @@ export default function AdminResults() {
               )}
              </TableBody>
            </Table>
+           </div> {/* Close overflow-x-auto wrapper */}
           </> // Close the fragment here
          )}
        </CardContent>

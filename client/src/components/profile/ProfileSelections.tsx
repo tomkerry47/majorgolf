@@ -176,9 +176,9 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
             <CardTitle>{title}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-center py-5 text-gray-500">No {title.toLowerCase()} selections found for {username}.</p>
-          </CardContent>
-        </Card>
+           <p className="text-center py-5 text-gray-500">No {title.toLowerCase()} selections found for {username}.</p>
+         </CardContent>
+       </Card>
       );
     }
 
@@ -242,12 +242,13 @@ export default function ProfileSelections({ username }: ProfileSelectionsProps) 
     return (
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
+           <CardTitle>{title}</CardTitle>
+         </CardHeader>
+         {/* Added overflow-x-auto wrapper for the table */}
+         <CardContent className="p-0 overflow-x-auto"> 
+           <Table>
+             <TableHeader>
+               <TableRow>
                 <TableHead>Competition</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Selection 1</TableHead>

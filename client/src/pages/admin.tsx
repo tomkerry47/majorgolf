@@ -464,7 +464,8 @@ const Admin = () => {
       </div>
       
       <Tabs defaultValue="player-selections">
-        <TabsList className="mb-4">
+        {/* Added flex-wrap */}
+        <TabsList className="mb-4 flex-wrap">
           <TabsTrigger value="player-selections">Player Selections</TabsTrigger>
           <TabsTrigger value="tournaments">Tournaments</TabsTrigger>
           <TabsTrigger value="players">Golf Players</TabsTrigger>

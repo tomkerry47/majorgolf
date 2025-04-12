@@ -315,13 +315,14 @@ const AdminUserManagement: React.FC = () => {
           </AlertDialog>
           {/* Existing Create User Button */}
           <Button onClick={handleOpenCreateModal}>Create User</Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Avatar</TableHead>
+         </div>
+       </CardHeader>
+       <CardContent>
+         <div className="overflow-x-auto"> {/* Added wrapper */}
+           <Table>
+             <TableHeader>
+               <TableRow>
+                 <TableHead>Avatar</TableHead>
               <TableHead>Username</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Last Login</TableHead>
@@ -407,11 +408,12 @@ const AdminUserManagement: React.FC = () => {
                 <TableCell colSpan={10} className="text-center">No users found.</TableCell> {/* Adjusted colSpan */}
               </TableRow>
             )}
-          </TableBody>
-        </Table>
-      </CardContent>
-      {/* Render the modals */}
-      <EditUserModal
+           </TableBody>
+         </Table>
+         </div> {/* Close wrapper */}
+       </CardContent>
+       {/* Render the modals */}
+       <EditUserModal
         user={selectedUser}
         isOpen={isEditModalOpen}
         onClose={handleCloseEditModal}

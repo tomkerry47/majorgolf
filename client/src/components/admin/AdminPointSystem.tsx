@@ -96,13 +96,14 @@ export default function AdminPointSystem() {
         <CardTitle>Point System Management</CardTitle>
         <CardDescription>
           Manage the point values for different positions in tournaments.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableCaption>Points awarded based on final tournament position.</TableCaption>
-          <TableHeader>
-            <TableRow>
+         </CardDescription>
+       </CardHeader>
+       <CardContent>
+         <div className="overflow-x-auto"> {/* Added wrapper */}
+           <Table>
+             <TableCaption>Points awarded based on final tournament position.</TableCaption>
+             <TableHeader>
+               <TableRow>
               <TableHead>Position</TableHead>
               <TableHead>Points</TableHead>
               <TableHead className="w-[100px]">Actions</TableHead>
@@ -163,10 +164,11 @@ export default function AdminPointSystem() {
                 </TableCell>
               </TableRow>
             ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+           </TableBody>
+         </Table>
+         </div> {/* Close wrapper */}
+       </CardContent>
+     </Card>
   );
 }
 

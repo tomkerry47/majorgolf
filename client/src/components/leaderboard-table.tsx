@@ -124,7 +124,6 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
               <TableRow>
                 <TableHead>Rank</TableHead>
                   <TableHead>Player</TableHead>
-                  <TableHead>Points</TableHead>
                   {/* Conditionally render Selections Header */}
                   {displayMode === 'competition' && <TableHead>Selections</TableHead>}
                   <TableHead>Points</TableHead> {/* Changed from "Last Points" */}
@@ -145,7 +144,6 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell><Skeleton className="h-5 w-12" /></TableCell>
                    {/* Conditionally render Selections Skeleton */}
                    {displayMode === 'competition' && <TableCell><Skeleton className="h-4 w-56" /></TableCell>}
                    <TableCell><Skeleton className="h-6 w-16 rounded-full" /></TableCell>
@@ -173,17 +171,19 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
   return (
     <div className="bg-white shadow-md rounded-lg overflow-hidden">
       <div className="overflow-x-auto">
+        {/* Removed table-fixed */}
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Rank</TableHead>
-                <TableHead>Player</TableHead>
-                <TableHead>Points</TableHead>
-                {/* Conditionally render Selections Header */}
-                {displayMode === 'competition' && <TableHead>Selections</TableHead>}
-                <TableHead>Points</TableHead> {/* Changed from "Last Points" */}
-                {/* Conditionally render Chips Header */}
-                {displayMode === 'overall' && <TableHead className="text-center">Chips Used</TableHead>} {/* Changed from "Chips" */}
+              {/* Set fixed width for Rank */}
+              <TableHead className="w-20">Rank</TableHead> 
+                {/* Removed width constraints for Player */}
+                <TableHead>Player</TableHead> 
+                {/* Conditionally render Selections Header with responsive min-width */}
+                {displayMode === 'competition' && <TableHead className="min-w-[200px] sm:min-w-[250px] md:min-w-[300px]">Selections</TableHead>}
+                <TableHead className="w-20">Points</TableHead> {/* Changed from "Last Points" */}
+                {/* Conditionally render Chips Header with fixed width */}
+                {displayMode === 'overall' && <TableHead className="w-24 text-center">Chips Used</TableHead>} {/* Changed from "Chips" */}
               </TableRow>
             </TableHeader>
           <TableBody>
@@ -195,26 +195,27 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                   ${entry.userId === userId ? 'bg-gray-50 border-l-4 border-primary-600' : ''}
                 `}
               >
-                <TableCell className="font-medium">{entry.rank}</TableCell>
-                <TableCell>
+                {/* Restored default padding */}
+                <TableCell className="font-medium">{entry.rank}</TableCell> 
+                {/* Restored default padding */}
+                <TableCell> 
                   <div className="flex items-center">
-                    {/* Add flex-shrink-0 to prevent avatar shrinking */}
-                    <Avatar className="h-9 w-9 mr-4 overflow-hidden flex-shrink-0">
+                    {/* Reduced avatar size and margin */}
+                    <Avatar className="h-8 w-8 mr-1 overflow-hidden flex-shrink-0">
                       {/* Use AvatarImage component */}
                       <AvatarImage src={entry.avatarUrl} alt={entry.username} className="object-cover" />
                       <AvatarFallback className="bg-primary-600 text-white">
                         {entry.username.slice(0, 2).toUpperCase()}
                      </AvatarFallback>
                      </Avatar>
-                     {/* Add min-w-0 to allow shrinking and truncate for text overflow */}
-                     <div className="min-w-0">
-                       {/* Removed badges from username display */}
+                     {/* Added flex-1 and min-w-0 */}
+                     <div className="flex-1 min-w-0">
+                       {/* Removed badges from username display, removed nowrap */}
                        <div className="text-sm font-medium text-gray-900 truncate">{entry.username}</div>
                        <div className="text-sm text-gray-500 truncate">@{entry.username.toLowerCase().replace(/\s+/g, '')}</div>
-                     </div>
+                      </div>
                     </div>
                  </TableCell>
-                 <TableCell className="font-semibold">{entry.points}</TableCell>
                  {/* Conditionally render Selections Cell */}
                  {displayMode === 'competition' && (
                    <TableCell className="text-sm text-gray-500">

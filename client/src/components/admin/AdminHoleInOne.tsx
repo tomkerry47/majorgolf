@@ -232,53 +232,55 @@ export default function AdminHoleInOne() {
           </div>
         ) : isLoadingHoleInOnes || isLoadingGolfers ? (
           <div className="space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Golfer</TableHead>
-                <TableHead>Round</TableHead>
-                <TableHead>Hole</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {holeInOnes.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center py-4 text-gray-500">
-                    No hole-in-one records found for this competition.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                holeInOnes.map((hio) => {
-                  const golfer = golferMap.get(hio.golferId);
-                  return (
-                    <TableRow key={hio.id}>
-                      <TableCell className="font-medium">
-                        {golfer ? `${golfer.firstName} ${golfer.lastName}` : 'Unknown Golfer'} 
-                      </TableCell>
-                      <TableCell>{hio.roundNumber}</TableCell>
-                      <TableCell>{hio.holeNumber}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => openEditDialog(hio)}>
-                          <i className="fas fa-edit mr-1"></i> Edit
-                        </Button>
-                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => openDeleteDialog(hio)}>
-                          <i className="fas fa-trash mr-1"></i> Delete
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
+             <Skeleton className="h-10 w-full" />
+             <Skeleton className="h-10 w-full" />
+             <Skeleton className="h-10 w-full" />
+           </div>
+         ) : (
+           <div className="overflow-x-auto"> {/* Added wrapper */}
+             <Table>
+               <TableHeader>
+                 <TableRow>
+                   <TableHead>Golfer</TableHead>
+                   <TableHead>Round</TableHead>
+                   <TableHead>Hole</TableHead>
+                   <TableHead className="text-right">Actions</TableHead>
+                 </TableRow>
+               </TableHeader>
+               <TableBody>
+                 {holeInOnes.length === 0 ? (
+                   <TableRow>
+                     <TableCell colSpan={4} className="text-center py-4 text-gray-500">
+                       No hole-in-one records found for this competition.
+                     </TableCell>
+                   </TableRow>
+                 ) : (
+                   holeInOnes.map((hio) => {
+                     const golfer = golferMap.get(hio.golferId);
+                     return (
+                       <TableRow key={hio.id}>
+                         <TableCell className="font-medium">
+                           {golfer ? `${golfer.firstName} ${golfer.lastName}` : 'Unknown Golfer'} 
+                         </TableCell>
+                         <TableCell>{hio.roundNumber}</TableCell>
+                         <TableCell>{hio.holeNumber}</TableCell>
+                         <TableCell className="text-right">
+                           <Button variant="ghost" size="sm" onClick={() => openEditDialog(hio)}>
+                             <i className="fas fa-edit mr-1"></i> Edit
+                           </Button>
+                           <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => openDeleteDialog(hio)}>
+                             <i className="fas fa-trash mr-1"></i> Delete
+                           </Button>
+                         </TableCell>
+                       </TableRow>
+                     );
+                   })
+                 )}
+               </TableBody>
+             </Table>
+           </div>
+         )}
+       </CardContent>
 
       {/* Create/Edit Hole-in-One Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

@@ -127,7 +127,8 @@ export default function Dashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8 mt-6">
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Changed grid-cols-1 to grid-cols-2 for the base mobile layout */}
+        <div className="grid grid-cols-2 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title="Active Competitions"
             value={dashboardStats?.activeCompetitions || 0}

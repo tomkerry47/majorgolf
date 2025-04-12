@@ -101,7 +101,7 @@ export default function AdminGolfers() {
              </Alert>
           )}
           {golfersData && golfersData.golfers && (
-            <div className="border rounded-md max-h-96 overflow-y-auto"> {/* Added scroll */}
+            <div className="border rounded-md max-h-96 overflow-y-auto overflow-x-auto"> {/* Added x-scroll */}
               <Table>
                 <TableHeader>
                   <TableRow>

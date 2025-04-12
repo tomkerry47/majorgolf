@@ -384,10 +384,12 @@ export default function AdminCompetitions() {
             <Skeleton className="h-10 w-full" />
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
+          // Added overflow-x-auto wrapper
+          <div className="overflow-x-auto"> 
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
                 <TableHead>Venue</TableHead>
                 <TableHead>Dates</TableHead>
                 <TableHead>Deadline</TableHead>
@@ -483,6 +485,7 @@ export default function AdminCompetitions() {
               )}
             </TableBody>
           </Table>
+          </div> // Close overflow-x-auto wrapper
         )}
       </CardContent>
 

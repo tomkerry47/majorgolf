@@ -118,13 +118,14 @@ export default function AdminWaiverChips() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="max-w-sm"
-          />
-        </div>
+           />
+         </div>
 
-        <Table>
-          <TableCaption>List of users and their waiver chip status</TableCaption>
-          <TableHeader>
-            <TableRow>
+         <div className="overflow-x-auto"> {/* Added wrapper */}
+           <Table>
+             <TableCaption>List of users and their waiver chip status</TableCaption>
+             <TableHeader>
+               <TableRow>
               <TableHead>User</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Waiver Chip Status / Details</TableHead> 
@@ -170,10 +171,11 @@ export default function AdminWaiverChips() {
                 </TableRow>
               ))
             )}
-          </TableBody>
-        </Table>
-      </CardContent>
-      {/* Removed Confirmation Dialog */}
+           </TableBody>
+         </Table>
+         </div> {/* Close wrapper */}
+       </CardContent>
+       {/* Removed Confirmation Dialog */}
     </Card>
   );
 }
