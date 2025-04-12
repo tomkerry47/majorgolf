@@ -268,9 +268,10 @@ export default function CurrentCompetition() {
         
         <CardFooter className="bg-slate-50 px-4 py-4 sm:px-6 border-t border-gray-200">
           <div className="flex items-center justify-between w-full">
-            <p className="text-sm font-medium text-gray-500">
+            {/* Wrap the points display in a Link */}
+            <Link href={`/competitions/${currentCompetition.id}`} className="text-sm font-medium text-gray-500 hover:text-primary transition-colors">
               Total points for this competition: <span className="text-primary font-semibold">{totalPoints}</span>
-            </p>
+            </Link>
             <Button variant="outline" size="sm" className="text-gray-700" asChild>
               <Link href="/leaderboard">
                 <i className="fas fa-eye mr-1.5"></i> View Full Leaderboard
