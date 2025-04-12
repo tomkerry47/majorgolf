@@ -807,6 +807,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               playerName: golfer?.name || 'Unknown',
               rank: rankAtDeadline, // Add rank
               position: result?.position,
+              points: result?.points ?? null, // Add points from the result, default to null
               isCaptain: isCaptain,
               isWaiver: isWaiver
             };

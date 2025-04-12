@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react"; // Import Fragment
 import {
   Table,
   TableBody,
@@ -35,6 +35,7 @@ export interface LeaderboardEntry { // Added export
     isCaptain: boolean; // Added
     isWaiver: boolean; // Added
     rank?: number | null; // Added rank
+    points?: number | null; // Added points per golfer
   }[];
   lastPointsChange?: number | null; // Allow null as well
   // User-level chip status might still be useful for other UI elements, keep them for now
@@ -50,10 +51,12 @@ interface LeaderboardTableProps {
   isLoading: boolean;
   userId?: number;
   displayMode: 'overall' | 'competition'; // Added prop to control display logic
+  competitionId?: number | null; // Add competitionId if needed for fetching later
 }
 
-const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardTableProps) => {
+const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId }: LeaderboardTableProps) => {
   const [currentPage, setCurrentPage] = useState(1);
+  const [expandedRowId, setExpandedRowId] = useState<number | null>(null); // State for expanded row
   const itemsPerPage = 30; // Changed from 10 to 30
   
   // Calculate pagination
@@ -134,11 +137,11 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                   {displayMode === 'overall' && <TableHead className="w-24 text-center">Chips Used</TableHead>}
                 </TableRow>
               </TableHeader>
-            <TableBody>
-              {Array.from({ length: 5 }).map((_, idx) => (
-                <TableRow key={idx}>
-                  <TableCell><Skeleton className="h-5 w-5" /></TableCell>
-                  <TableCell>
+              <TableBody>
+                {Array.from({ length: 5 }).map((_, idx) => (
+                  <TableRow key={`skeleton-${idx}`}> {/* Ensure unique key */}
+                    <TableCell><Skeleton className="h-5 w-5" /></TableCell>
+                    <TableCell>
                     <div className="flex items-center">
                       <Skeleton className="h-8 w-8 rounded-full mr-4" />
                       <div>
@@ -194,20 +197,31 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                 {/* Conditionally render Chips Header with fixed width */}
                 {displayMode === 'overall' && <TableHead className="w-24 text-center">Chips Used</TableHead>}
               </TableRow>
-            </TableHeader>
-          <TableBody>
-            {currentItems.map((entry) => (
-              <TableRow 
-                key={entry.userId}
-                className={`
-                  ${entry.rank === 1 ? 'bg-amber-50 border-l-4 border-amber-500' : ''}
-                  ${entry.userId === userId ? 'bg-gray-50 border-l-4 border-primary-600' : ''}
-                `}
-              >
-                {/* Restored default padding */}
-                <TableCell className="font-medium">{entry.rank}</TableCell> 
-                {/* Restored default padding */}
-                <TableCell> 
+              </TableHeader>
+            <TableBody>
+              {currentItems.map((entry) => {
+                const isExpanded = expandedRowId === entry.userId;
+                const canExpand = displayMode === 'competition'; // Only allow expanding in competition mode
+
+                return (
+                  <Fragment key={entry.userId}>
+                    <TableRow
+                      className={`
+                        ${entry.rank === 1 ? 'bg-amber-50 border-l-4 border-amber-500' : ''}
+                        ${entry.userId === userId ? 'bg-gray-50 border-l-4 border-primary-600' : ''}
+                        ${canExpand ? 'cursor-pointer hover:bg-gray-100' : ''}
+                        ${isExpanded ? 'border-b-0' : ''} {/* Remove bottom border if expanded */}
+                      `}
+                      onClick={() => {
+                        if (canExpand) {
+                          setExpandedRowId(isExpanded ? null : entry.userId);
+                        }
+                      }}
+                    >
+                      {/* Restored default padding */}
+                      <TableCell className="font-medium">{entry.rank}</TableCell>
+                      {/* Restored default padding */}
+                      <TableCell>
                   <div className="flex items-center">
                     {/* Reduced avatar size and margin */}
                     <Avatar className="h-8 w-8 mr-1 overflow-hidden flex-shrink-0">
@@ -312,11 +326,60 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                        <span className="text-gray-400">-</span>
                      )}
                    </TableCell>
-                 )}
-               </TableRow>
-             ))}
-          </TableBody>
-        </Table>
+                      )}
+                    </TableRow>
+                    {/* Expanded Row */}
+                    {isExpanded && canExpand && (
+                      <TableRow className="bg-gray-50 border-t-0"> {/* Style expanded row */}
+                        {/* Span across all columns (always 4 in competition mode) */}
+                        <TableCell colSpan={4} className="p-3">
+                          <div className="text-sm">
+                            <h4 className="font-semibold mb-1 text-gray-700">Selections:</h4>
+                            {entry.selections && entry.selections.length > 0 ? (
+                              <ul className="list-disc pl-5 space-y-1">
+                                {entry.selections.map((selection, idx) => {
+                                  const isRankWildcard = typeof selection.rank === 'number' && selection.rank > 50;
+                                  const points = selection.points ?? null;
+                                  // Calculate displayed points (doubled if captain or rank wildcard)
+                                  const displayedPoints = points !== null ? points * (selection.isCaptain || isRankWildcard ? 2 : 1) : null;
+
+                                  return (
+                                    <li key={selection.playerId || idx} className="text-gray-600">
+                                      {selection.playerName}
+                                      {/* Display Position */}
+                                      {selection.position === 0 ? ' (MC)' : selection.position != null ? ` (${selection.position}${getOrdinalSuffix(selection.position)})` : ''}
+                                      {/* Display Points if available */}
+                                      {displayedPoints !== null && (
+                                        <span className="ml-1.5 font-medium text-sm">
+                                          ({displayedPoints > 0 ? '+' : ''}{displayedPoints} Pts)
+                                        </span>
+                                      )}
+                                      {/* Badges */}
+                                      {selection.isCaptain && (
+                                        <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-green-100 text-green-800 border-green-300">Captain</Badge>
+                                      )}
+                                      {selection.isWaiver && (
+                                        <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-blue-100 text-blue-800 border-blue-300">Waiver</Badge>
+                                      )}
+                                      {isRankWildcard && (
+                                        <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-orange-100 text-orange-800 border-orange-300">Wildcard</Badge>
+                                      )}
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            ) : (
+                              <p className="text-gray-500 italic">No selections made for this competition.</p>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
       </div>
       
       {totalPages > 1 && (
