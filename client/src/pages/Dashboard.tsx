@@ -115,14 +115,6 @@ export default function Dashboard() {
           <p className="text-sm text-gray-500">
             Welcome to your Golf Syndicate Tracker. View upcoming competitions and your current standings.
           </p>
-          <div className="mt-3 sm:mt-0">
-            <Button asChild>
-              <Link href="/competitions">
-                <span className="-ml-1 mr-2">➕</span>
-                New Selection
-              </Link>
-            </Button>
-          </div>
         </div>
       </div>
 
