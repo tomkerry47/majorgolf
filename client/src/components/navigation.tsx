@@ -66,7 +66,8 @@ const Navigation = () => {
 
   return (
     <header className="bg-primary-600 text-white shadow-md">
-      <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+      {/* Removed container/mx-auto, rely on padding for spacing from edges */}
+      <div className="px-12 py-4 flex justify-between items-center"> 
         {/* Removed the div containing the Shield icon and title */}
         
         {/* Mobile menu button - Kept for mobile navigation toggle */}
@@ -74,7 +75,7 @@ const Navigation = () => {
           {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
         
-        {/* Desktop navigation */}
+        {/* Desktop navigation (Links Only) */}
         <nav className="hidden sm:flex items-center space-x-6">
           {navLinks.map((link) => (
             <Link key={link.href} href={link.href}>
@@ -83,13 +84,17 @@ const Navigation = () => {
               </a>
             </Link>
           ))}
-          
-          {user && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center space-x-2 focus:outline-none p-0 hover:bg-transparent">
+        </nav>
+
+        {/* User Dropdown (Moved outside nav for correct positioning) */}
+        {/* Removed wrapper div */}
+        {user && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              {/* Restored padding px-2 py-1 */}
+              <Button variant="ghost" className="flex items-center space-x-2 focus:outline-none px-2 py-1 hover:bg-primary-700 rounded"> 
                   <Avatar className="h-8 w-8">
-                    {user.avatarUrl && <img src={user.avatarUrl} alt={user.username || 'User'} />}
+                    {user.avatarUrl && <img src={user.avatarUrl} alt={user.username || 'User'} className="object-cover" />} {/* Added object-cover */}
                     <AvatarFallback className="bg-primary-700">
                       {getAvatarFallback()}
                     </AvatarFallback>
@@ -116,11 +121,10 @@ const Navigation = () => {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut}>
                   Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </nav>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
       </div>
       
       {/* Mobile navigation */}

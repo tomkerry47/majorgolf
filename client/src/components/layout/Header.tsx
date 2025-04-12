@@ -52,18 +52,11 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
         <h2 className="text-xl font-semibold text-gray-700">Major Predictor</h2>
       </div>
 
-      {/* Right-aligned User Menu */}
-      <div className="ml-4 flex items-center md:ml-6">
+      {/* Right-aligned User Menu - Added pr-4 for padding */}
+      <div className="ml-4 flex items-center md:ml-6 pr-4"> 
           {user ? (
             <>
-              {/* Notifications Button (Optional) */}
-              <button
-                type="button"
-                className="p-1 rounded-full text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary mr-3"
-              >
-                <span className="sr-only">View notifications</span>
-                <i className="fas fa-bell h-6 w-6"></i> {/* Assuming FontAwesome */}
-              </button>
+              {/* Removed Notifications Button */}
 
               {/* Profile dropdown */}
               <DropdownMenu>
