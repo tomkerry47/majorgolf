@@ -126,9 +126,12 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                   <TableHead>Player</TableHead>
                   {/* Conditionally render Selections Header */}
                   {displayMode === 'competition' && <TableHead>Selections</TableHead>}
-                  <TableHead>Points</TableHead> {/* Changed from "Last Points" */}
+                  {/* Points column header - adjusted name based on mode */}
+                  <TableHead className="w-24 text-center">{displayMode === 'overall' ? 'Last Event Pts' : 'Points'}</TableHead>
+                  {/* Conditionally render Total Points Header */}
+                  {displayMode === 'overall' && <TableHead className="w-24 text-center">Total Points</TableHead>}
                   {/* Conditionally render Chips Header */}
-                  {displayMode === 'overall' && <TableHead className="text-center">Chips Used</TableHead>} {/* Changed from "Chips" */}
+                  {displayMode === 'overall' && <TableHead className="w-24 text-center">Chips Used</TableHead>}
                 </TableRow>
               </TableHeader>
             <TableBody>
@@ -146,9 +149,12 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                   </TableCell>
                    {/* Conditionally render Selections Skeleton */}
                    {displayMode === 'competition' && <TableCell><Skeleton className="h-4 w-56" /></TableCell>}
-                   <TableCell><Skeleton className="h-6 w-16 rounded-full" /></TableCell>
+                   {/* Last Event Points Skeleton */}
+                   <TableCell className="text-center"><Skeleton className="h-6 w-16 rounded-full" /></TableCell>
+                   {/* Conditionally render Total Points Skeleton */}
+                   {displayMode === 'overall' && <TableCell className="text-center"><Skeleton className="h-6 w-16 rounded-full" /></TableCell>}
                    {/* Conditionally render Chips Skeleton */}
-                   {displayMode === 'overall' && <TableCell><Skeleton className="h-5 w-10" /></TableCell>}
+                   {displayMode === 'overall' && <TableCell className="text-center"><Skeleton className="h-5 w-10" /></TableCell>}
                  </TableRow>
                ))}
             </TableBody>
@@ -181,9 +187,12 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                 <TableHead>Player</TableHead> 
                 {/* Conditionally render Selections Header with responsive min-width */}
                 {displayMode === 'competition' && <TableHead className="min-w-[200px] sm:min-w-[250px] md:min-w-[300px]">Selections</TableHead>}
-                <TableHead className="w-20">Points</TableHead> {/* Changed from "Last Points" */}
+                {/* Points column header - adjusted name based on mode */}
+                <TableHead className="w-24 text-center">{displayMode === 'overall' ? 'Last Event Pts' : 'Points'}</TableHead>
+                {/* Conditionally render Total Points Header */}
+                {displayMode === 'overall' && <TableHead className="w-24 text-center">Total Points</TableHead>}
                 {/* Conditionally render Chips Header with fixed width */}
-                {displayMode === 'overall' && <TableHead className="w-24 text-center">Chips Used</TableHead>} {/* Changed from "Chips" */}
+                {displayMode === 'overall' && <TableHead className="w-24 text-center">Chips Used</TableHead>}
               </TableRow>
             </TableHeader>
           <TableBody>
@@ -254,16 +263,19 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                      }
                    })()}
                    </TableCell>
-                 )}
-                 <TableCell>
+                  )}
+                 {/* Last Event Pts Cell - Style changes based on mode */}
+                 <TableCell className="text-center">
                    {/* Conditionally render last points change, checking for null/undefined */}
                    {entry.lastPointsChange !== undefined && entry.lastPointsChange !== null ? (
-                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full
-                      ${entry.lastPointsChange > 0
-                        ? 'bg-green-100 text-green-800'
-                        : entry.lastPointsChange < 0
-                          ? 'bg-red-100 text-red-800'
-                          : 'bg-gray-100 text-gray-800' // Handle 0 points case
+                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full tabular-nums
+                      ${displayMode === 'overall' 
+                        ? 'bg-orange-100 text-orange-800' /* Orange style for overall view */
+                        : entry.lastPointsChange > 0 /* Green/Red/Gray for competition view */
+                          ? 'bg-green-100 text-green-800'
+                          : entry.lastPointsChange < 0
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-gray-100 text-gray-800' 
                       }`}>
                       {entry.lastPointsChange > 0 ? '+' : ''}{entry.lastPointsChange}
                     </span>
@@ -271,8 +283,22 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                     <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
                       -
                      </span> // Display dash if null/undefined
-                   )}
+                    )}
                  </TableCell>
+                 {/* Conditionally render Total Points Cell for overall mode with Green/Red/Gray bubble */}
+                 {displayMode === 'overall' && (
+                   <TableCell className="text-center">
+                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full tabular-nums
+                       ${entry.points > 0
+                         ? 'bg-green-100 text-green-800'
+                         : entry.points < 0 // Handle potential negative total points
+                           ? 'bg-red-100 text-red-800'
+                           : 'bg-gray-100 text-gray-800' // Handle 0 total points
+                       }`}>
+                       {entry.points > 0 ? '+' : ''}{entry.points} {/* Display the total points with sign */}
+                     </span>
+                   </TableCell>
+                 )}
                  {/* Conditionally render Chips Cell for overall mode */}
                  {displayMode === 'overall' && (
                    <TableCell className="text-center">
