@@ -908,9 +908,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Selection routes
 
-  // User profile routes
-  app.get('/api/users/:id', validateJWT, async (req: Request, res: Response) => {
+  // Get ALL detailed selections for the LOGGED-IN user (used for Profile page)
+  app.get('/api/selections/my-all', validateJWT, async (req: Request, res: Response) => {
+    console.log(`[Route /api/selections/my-all] Request received.`); // Added log
     try {
       const { id } = req.params;
       const tokenUser = req.user as ExtendedUser;
@@ -1007,7 +1009,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to fetch user selections' });
     }
   });
-  // Updated route to return enriched selection details for the dashboard
+
+  // Get ALL detailed selections for a SPECIFIC user (used for Leaderboard expansion)
+  // Protected route, requires authentication
+  app.get('/api/users/:userId/selections/all', validateJWT, async (req: Request, res: Response) => {
+    console.log(`[Route /api/users/:userId/selections/all] Request received for user ID: ${req.params.userId}`);
+    try {
+      const userIdToFetch = parseInt(req.params.userId);
+      if (isNaN(userIdToFetch)) {
+        return res.status(400).json({ error: 'Invalid user ID parameter' });
+      }
+
+      // Optional: Add authorization check if only admins or the user themselves should see this?
+      // For now, assuming any logged-in user can view history via leaderboard expansion.
+      // const tokenUser = req.user as ExtendedUser;
+      // if (!tokenUser.isAdmin && tokenUser.database_id !== userIdToFetch) {
+      //   return res.status(403).json({ error: 'Unauthorized to view this user\'s history' });
+      // }
+
+      const userSelections = await storage.getUserSelectionsForAllCompetitions(userIdToFetch);
+      console.log(`[Route /api/users/:userId/selections/all] Selections retrieved for user ${userIdToFetch}. Count: ${userSelections?.length ?? 0}`);
+      res.json(userSelections);
+      console.log(`[Route /api/users/:userId/selections/all] Response sent successfully for user ${userIdToFetch}.`);
+    } catch (error) {
+      console.error(`[Route /api/users/:userId/selections/all] Error caught for user ${req.params.userId}:`, error);
+      res.status(500).json({ error: 'Failed to fetch user selection history' });
+    }
+  });
+
+  // Get specific selection details for the LOGGED-IN user for a specific competition (used for Dashboard/Competition page)
   app.get('/api/selections/:competitionId', validateJWT, async (req: Request, res: Response) => {
     try {
       const competitionId = parseInt(req.params.competitionId);

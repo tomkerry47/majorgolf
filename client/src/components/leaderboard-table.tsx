@@ -1,4 +1,6 @@
-import { useState, Fragment } from "react"; // Import Fragment
+import { useState, Fragment, useEffect } from "react"; // Import Fragment, useEffect
+import { useQuery } from "@tanstack/react-query"; // Import useQuery
+import { getAuthHeaders } from "@/lib/auth"; // Import auth helper
 import {
   Table,
   TableBody,
@@ -49,74 +51,136 @@ export interface LeaderboardEntry { // Added export
 interface LeaderboardTableProps {
   data: LeaderboardEntry[];
   isLoading: boolean;
-  userId?: number;
+  userId?: number; // ID of the currently logged-in user for highlighting
   displayMode: 'overall' | 'competition'; // Added prop to control display logic
-  competitionId?: number | null; // Add competitionId if needed for fetching later
+  // competitionId is no longer directly needed here as context comes from displayMode/data
 }
 
-const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId }: LeaderboardTableProps) => {
+// Define interface for the detailed selection data we expect from the new fetch
+// (Similar to ProfileSelections's EnrichedSelection, adjust as needed based on API)
+interface UserSelectionHistoryEntry {
+  id: number;
+  competitionId: number;
+  competition: { name: string; venue: string; startDate: string | null; endDate: string | null; isComplete: boolean; isActive: boolean; } | null;
+  golfer1: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; rank: number | null; waiverRank?: number | null; } | null;
+  golfer2: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; rank: number | null; waiverRank?: number | null; } | null;
+  golfer3: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; rank: number | null; waiverRank?: number | null; } | null;
+  golfer1Result: { position: number; points: number | null } | null;
+  golfer2Result: { position: number; points: number | null } | null;
+  golfer3Result: { position: number; points: number | null } | null;
+  totalPoints: number;
+  useCaptainsChip: boolean; // Added
+}
+
+
+const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardTableProps) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null); // State for expanded row
   const itemsPerPage = 30; // Changed from 10 to 30
-  
+
+  // --- State and Fetching for Overall Expanded View ---
+  const {
+    data: expandedUserData,
+    isLoading: isLoadingExpanded,
+    error: errorExpanded,
+    refetch: refetchExpandedUser // Function to trigger fetch
+  } = useQuery<UserSelectionHistoryEntry[], Error>({
+    // Use a dynamic query key based on the expanded user ID
+    queryKey: ['userSelectionsHistory', expandedRowId],
+    queryFn: async ({ queryKey }) => {
+      const [, userIdToFetch] = queryKey;
+      if (!userIdToFetch) {
+        // Should not happen if enabled is set correctly, but good practice
+        throw new Error("No user ID provided for fetching history.");
+      }
+      console.log(`[LeaderboardTable] Fetching selection history for user ID: ${userIdToFetch}`);
+      // *** IMPORTANT: This API endpoint needs to be created on the backend ***
+      const response = await fetch(`/api/users/${userIdToFetch}/selections/all`, {
+        headers: getAuthHeaders(), // Assuming auth might be needed
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[LeaderboardTable] Fetch failed for user ${userIdToFetch}:`, response.status, errorText);
+        throw new Error(`Failed to fetch user selection history: ${response.status} ${errorText}`);
+      }
+      const jsonData = await response.json();
+      console.log(`[LeaderboardTable] Fetch successful for user ${userIdToFetch}, received ${jsonData?.length ?? 0} selections.`);
+      return jsonData;
+    },
+    enabled: false, // Initially disable, enable only when a row is expanded in 'overall' mode
+    retry: false, // Don't retry automatically on error for this pattern
+    staleTime: 5 * 60 * 1000, // Cache data for 5 minutes
+    gcTime: 10 * 60 * 1000, // Keep data in cache for 10 minutes even if unused
+  });
+
+  // Effect to trigger fetch when expandedRowId changes in 'overall' mode
+  useEffect(() => {
+    if (displayMode === 'overall' && expandedRowId !== null) {
+      console.log(`[LeaderboardTable] Overall mode expansion detected for user ${expandedRowId}. Triggering fetch.`);
+      refetchExpandedUser(); // Trigger the fetch
+    }
+  }, [expandedRowId, displayMode, refetchExpandedUser]);
+  // --- End State and Fetching ---
+
   // Calculate pagination
   const totalPages = Math.ceil(data.length / itemsPerPage);
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = data.slice(indexOfFirstItem, indexOfLastItem);
-  
+
   // Generate page numbers
   const pageNumbers = [];
   for (let i = 1; i <= totalPages; i++) {
     pageNumbers.push(i);
   }
-  
+
   // Helper to handle pagination display
   const getPageNumbers = () => {
     const result = [];
     const maxPagesToShow = 5;
-    
+
     if (totalPages <= maxPagesToShow) {
       return Array.from({ length: totalPages }, (_, i) => i + 1);
     }
-    
+
     // Always show first page
     result.push(1);
-    
+
     // Calculate middle pages
     let startPage = Math.max(2, currentPage - 1);
     let endPage = Math.min(totalPages - 1, currentPage + 1);
-    
+
     // Adjust if at the start or end
     if (currentPage <= 2) {
       endPage = Math.min(totalPages - 1, maxPagesToShow - 1);
     } else if (currentPage >= totalPages - 1) {
       startPage = Math.max(2, totalPages - maxPagesToShow + 2);
     }
-    
+
     // Add ellipsis after first page if needed
     if (startPage > 2) {
       result.push('ellipsis1');
     }
-    
+
     // Add middle pages
     for (let i = startPage; i <= endPage; i++) {
       result.push(i);
     }
-    
+
     // Add ellipsis before last page if needed
     if (endPage < totalPages - 1) {
       result.push('ellipsis2');
     }
-    
+
     // Always show last page
     if (totalPages > 1) {
       result.push(totalPages);
     }
-    
+
     return result;
   };
-  
+
   // Render loading skeletons
   if (isLoading) {
     return (
@@ -166,7 +230,7 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
       </div>
     );
   }
-  
+
   // No data state
   if (!data || data.length === 0) {
     return (
@@ -176,7 +240,7 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
       </div>
     );
   }
-  
+
   return (
     <div className="bg-white shadow-md rounded-lg overflow-hidden">
       <div className="overflow-x-auto">
@@ -185,9 +249,9 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
           <TableHeader>
             <TableRow>
               {/* Set fixed width for Rank */}
-              <TableHead className="w-20">Rank</TableHead> 
+              <TableHead className="w-20">Rank</TableHead>
                 {/* Removed width constraints for Player */}
-                <TableHead>Player</TableHead> 
+                <TableHead>Player</TableHead>
                 {/* Conditionally render Selections Header with responsive min-width */}
                 {displayMode === 'competition' && <TableHead className="min-w-[200px] sm:min-w-[250px] md:min-w-[300px]">Selections</TableHead>}
                 {/* Points column header - adjusted name based on mode */}
@@ -201,7 +265,8 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
             <TableBody>
               {currentItems.map((entry) => {
                 const isExpanded = expandedRowId === entry.userId;
-                const canExpand = displayMode === 'competition'; // Only allow expanding in competition mode
+                // Allow expanding in both modes now
+                const canExpand = true;
 
                 return (
                   <Fragment key={entry.userId}>
@@ -213,9 +278,8 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
                         ${isExpanded ? 'border-b-0' : ''} {/* Remove bottom border if expanded */}
                       `}
                       onClick={() => {
-                        if (canExpand) {
-                          setExpandedRowId(isExpanded ? null : entry.userId);
-                        }
+                        // Toggle expansion regardless of mode
+                        setExpandedRowId(isExpanded ? null : entry.userId);
                       }}
                     >
                       {/* Restored default padding */}
@@ -283,13 +347,13 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
                    {/* Conditionally render last points change, checking for null/undefined */}
                    {entry.lastPointsChange !== undefined && entry.lastPointsChange !== null ? (
                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full tabular-nums
-                      ${displayMode === 'overall' 
+                      ${displayMode === 'overall'
                         ? 'bg-orange-100 text-orange-800' /* Orange style for overall view */
                         : entry.lastPointsChange > 0 /* Green/Red/Gray for competition view */
                           ? 'bg-green-100 text-green-800'
                           : entry.lastPointsChange < 0
                             ? 'bg-red-100 text-red-800'
-                            : 'bg-gray-100 text-gray-800' 
+                            : 'bg-gray-100 text-gray-800'
                       }`}>
                       {entry.lastPointsChange > 0 ? '+' : ''}{entry.lastPointsChange}
                     </span>
@@ -328,50 +392,102 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
                    </TableCell>
                       )}
                     </TableRow>
-                    {/* Expanded Row */}
-                    {isExpanded && canExpand && (
-                      <TableRow className="bg-gray-50 border-t-0"> {/* Style expanded row */}
-                        {/* Span across all columns (always 4 in competition mode) */}
-                        <TableCell colSpan={4} className="p-3">
-                          <div className="text-sm">
-                            <h4 className="font-semibold mb-1 text-gray-700">Selections:</h4>
-                            {entry.selections && entry.selections.length > 0 ? (
-                              <ul className="list-disc pl-5 space-y-1">
-                                {entry.selections.map((selection, idx) => {
-                                  const isRankWildcard = typeof selection.rank === 'number' && selection.rank > 50;
-                                  const points = selection.points ?? null;
-                                  // Calculate displayed points (doubled if captain or rank wildcard)
-                                  const displayedPoints = points !== null ? points * (selection.isCaptain || isRankWildcard ? 2 : 1) : null;
+                    {/* Expanded Row - Conditional Rendering based on mode */}
+                    {isExpanded && (
+                      <TableRow className="bg-gray-50 border-t-0">
+                        {/* Adjust colSpan based on displayMode */}
+                        <TableCell colSpan={displayMode === 'overall' ? 5 : 4} className="p-3">
+                          {/* --- Competition Mode Expanded View --- */}
+                          {displayMode === 'competition' && (
+                            <div className="text-sm">
+                              <h4 className="font-semibold mb-1 text-gray-700">Selections for this Competition:</h4>
+                              {entry.selections && entry.selections.length > 0 ? (
+                                <ul className="list-disc pl-5 space-y-1">
+                                  {entry.selections.map((selection, idx) => {
+                                    const isRankWildcard = typeof selection.rank === 'number' && selection.rank > 50;
+                                    const points = selection.points ?? null;
+                                    // Calculate displayed points (doubled if captain or rank wildcard)
+                                    const displayedPoints = points !== null ? points * (selection.isCaptain || isRankWildcard ? 2 : 1) : null;
 
-                                  return (
-                                    <li key={selection.playerId || idx} className="text-gray-600">
-                                      {selection.playerName}
-                                      {/* Display Position */}
-                                      {selection.position === 0 ? ' (MC)' : selection.position != null ? ` (${selection.position}${getOrdinalSuffix(selection.position)})` : ''}
-                                      {/* Display Points if available */}
-                                      {displayedPoints !== null && (
-                                        <span className="ml-1.5 font-medium text-sm">
-                                          ({displayedPoints > 0 ? '+' : ''}{displayedPoints} Pts)
-                                        </span>
-                                      )}
-                                      {/* Badges */}
-                                      {selection.isCaptain && (
-                                        <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-green-100 text-green-800 border-green-300">Captain</Badge>
-                                      )}
-                                      {selection.isWaiver && (
-                                        <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-blue-100 text-blue-800 border-blue-300">Waiver</Badge>
-                                      )}
-                                      {isRankWildcard && (
-                                        <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-orange-100 text-orange-800 border-orange-300">Wildcard</Badge>
-                                      )}
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            ) : (
-                              <p className="text-gray-500 italic">No selections made for this competition.</p>
-                            )}
-                          </div>
+                                    return (
+                                      <li key={selection.playerId || idx} className="text-gray-600">
+                                        {selection.playerName}
+                                        {/* Display Position */}
+                                        {selection.position === 0 ? ' (MC)' : selection.position != null ? ` (${selection.position}${getOrdinalSuffix(selection.position)})` : ''}
+                                        {/* Display Points if available */}
+                                        {displayedPoints !== null && (
+                                          <span className="ml-1.5 font-medium text-sm">
+                                            ({displayedPoints > 0 ? '+' : ''}{displayedPoints} Pts)
+                                          </span>
+                                        )}
+                                        {/* Badges */}
+                                        {selection.isCaptain && (
+                                          <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-green-100 text-green-800 border-green-300">Captain</Badge>
+                                        )}
+                                        {selection.isWaiver && (
+                                          <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-blue-100 text-blue-800 border-blue-300">Waiver</Badge>
+                                        )}
+                                        {isRankWildcard && (
+                                          <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-orange-100 text-orange-800 border-orange-300">Wildcard</Badge>
+                                        )}
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              ) : (
+                                <p className="text-gray-500 italic">No selections made for this competition.</p>
+                              )}
+                            </div>
+                          )}
+                          {/* --- Overall Mode Expanded View --- */}
+                          {displayMode === 'overall' && (
+                            <div className="text-sm">
+                              <h4 className="font-semibold mb-1 text-gray-700">Selection History:</h4>
+                              {isLoadingExpanded && (
+                                <div className="flex items-center justify-center py-4">
+                                  <Skeleton className="h-5 w-24" />
+                                  <span className="ml-2">Loading history...</span>
+                                </div>
+                              )}
+                              {errorExpanded && (
+                                <p className="text-destructive text-center py-4">Error loading history: {errorExpanded.message}</p>
+                              )}
+                              {!isLoadingExpanded && !errorExpanded && expandedUserData && expandedUserData.length > 0 && (
+                                // Render the fetched history (simple list for now, can be enhanced)
+                                <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                                  {expandedUserData.map((compSelection) => (
+                                    <div key={compSelection.id} className="border-b pb-2 last:border-b-0">
+                                      <p className="font-medium text-gray-800">{compSelection.competition?.name || 'Unknown Competition'}</p>
+                                      <ul className="list-disc pl-5 mt-1 text-xs space-y-0.5">
+                                        {[compSelection.golfer1, compSelection.golfer2, compSelection.golfer3].map((golfer, gIdx) => {
+                                          if (!golfer) return null;
+                                          const result = gIdx === 0 ? compSelection.golfer1Result : gIdx === 1 ? compSelection.golfer2Result : compSelection.golfer3Result;
+                                          const points = result?.points ?? null;
+                                          const isRankWildcard = typeof golfer.rank === 'number' && golfer.rank > 50;
+                                          const displayedPoints = points !== null ? points * (golfer.isCaptain || isRankWildcard ? 2 : 1) : null;
+
+                                          return (
+                                            <li key={golfer.id} className="text-gray-600">
+                                              {golfer.name}
+                                              {result?.position === 0 ? ' (MC)' : result?.position != null ? ` (${result.position}${getOrdinalSuffix(result.position)})` : ''}
+                                              {displayedPoints !== null && ` (${displayedPoints > 0 ? '+' : ''}${displayedPoints} Pts)`}
+                                              {golfer.isCaptain && <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-green-100 text-green-800 border-green-300">C</Badge>}
+                                              {golfer.isWildcard && <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-blue-100 text-blue-800 border-blue-300">W</Badge>}
+                                              {isRankWildcard && <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-orange-100 text-orange-800 border-orange-300">*</Badge>}
+                                            </li>
+                                          );
+                                        })}
+                                      </ul>
+                                      <p className="text-right text-xs font-semibold mt-1">Total: {compSelection.totalPoints || 0} Pts</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {!isLoadingExpanded && !errorExpanded && (!expandedUserData || expandedUserData.length === 0) && (
+                                <p className="text-gray-500 italic text-center py-4">No selection history found.</p>
+                              )}
+                            </div>
+                          )}
                         </TableCell>
                       </TableRow>
                     )}
@@ -381,13 +497,13 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
             </TableBody>
           </Table>
       </div>
-      
+
       {totalPages > 1 && (
         <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 sm:px-6">
           <div className="flex items-center justify-between">
             <div className="flex-1 flex justify-between sm:hidden">
               {/* Removed disabled prop */}
-              <PaginationLink 
+              <PaginationLink
                 onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                 aria-disabled={currentPage === 1} // Use aria-disabled for accessibility
                 className={currentPage === 1 ? 'pointer-events-none opacity-50' : ''} // Add styling for disabled state
@@ -395,7 +511,7 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
                 Previous
               </PaginationLink>
               {/* Removed disabled prop */}
-              <PaginationLink 
+              <PaginationLink
                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                 aria-disabled={currentPage === totalPages} // Use aria-disabled for accessibility
                 className={currentPage === totalPages ? 'pointer-events-none opacity-50' : ''} // Add styling for disabled state
@@ -417,13 +533,13 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
                 <PaginationContent>
                   <PaginationItem>
                     {/* Removed disabled prop */}
-                    <PaginationPrevious 
+                    <PaginationPrevious
                       onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                       aria-disabled={currentPage === 1} // Use aria-disabled for accessibility
                       className={currentPage === 1 ? 'pointer-events-none opacity-50' : ''} // Add styling for disabled state
                     />
                   </PaginationItem>
-                  
+
                   {getPageNumbers().map((page, idx) => (
                     page === 'ellipsis1' || page === 'ellipsis2' ? (
                       <PaginationItem key={`ellipsis-${idx}`}>
@@ -431,7 +547,7 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
                       </PaginationItem>
                     ) : (
                       <PaginationItem key={page}>
-                        <PaginationLink 
+                        <PaginationLink
                           onClick={() => setCurrentPage(Number(page))}
                           isActive={currentPage === page}
                         >
@@ -440,10 +556,10 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode, competitionId 
                       </PaginationItem>
                     )
                   ))}
-                  
+
                   <PaginationItem>
                     {/* Removed disabled prop */}
-                    <PaginationNext 
+                    <PaginationNext
                       onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                       aria-disabled={currentPage === totalPages} // Use aria-disabled for accessibility
                       className={currentPage === totalPages ? 'pointer-events-none opacity-50' : ''} // Add styling for disabled state
