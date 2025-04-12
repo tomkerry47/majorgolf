@@ -249,7 +249,7 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
           <TableHeader>
             <TableRow>
               {/* Set fixed width for Rank */}
-              <TableHead className="w-20">Rank</TableHead>
+              <TableHead className="w-9">Rank</TableHead>
                 {/* Removed width constraints for Player */}
                 <TableHead>Player</TableHead>
                 {/* Conditionally render Selections Header with responsive min-width */}
@@ -282,8 +282,8 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                         setExpandedRowId(isExpanded ? null : entry.userId);
                       }}
                     >
-                      {/* Restored default padding */}
-                      <TableCell className="font-medium">{entry.rank}</TableCell>
+                      {/* Apply width class to rank cell */}
+                      <TableCell className="font-medium w-9">{entry.rank}</TableCell>
                       {/* Restored default padding */}
                       <TableCell>
                   <div className="flex items-center">
