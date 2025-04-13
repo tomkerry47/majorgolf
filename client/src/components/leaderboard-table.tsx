@@ -301,8 +301,8 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
         <Table ref={tableRef}>
           <TableHeader>
             <TableRow>
-              {/* Set fixed width for Rank */}
-              <TableHead className="w-9">Rank</TableHead>
+              {/* Set fixed width, reduced padding, and center alignment for Rank */}
+              <TableHead className="w-4 px-2 py-1 text-center">Rank</TableHead> {/* Added text-center */}
                 {/* Removed width constraints for Player */}
                 <TableHead>Player</TableHead>
                 {/* Conditionally render Selections Header with responsive min-width */}
@@ -335,30 +335,30 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                         setExpandedRowId(isExpanded ? null : entry.userId);
                       }}
                     >
-                      {/* Apply width class to rank cell */}
-                      <TableCell className="font-medium w-9">{entry.rank}</TableCell>
-                      {/* Restored default padding */}
-                      <TableCell>
+                      {/* Apply width class, minimal padding, and center alignment to rank cell */}
+                      <TableCell className="font-medium w-4 px-0 py-1 text-center">{entry.rank}</TableCell> {/* Added text-center */}
+                      {/* Set left padding to zero and responsive right padding (zero on mobile) on Player cell */}
+                      <TableCell className="pl-0 pr-0 sm:pr-4"> {/* Changed pr-1 to pr-0 */}
                   <div className="flex items-center">
-                    {/* Reduced avatar size and margin */}
-                    <Avatar className="h-8 w-8 mr-1 overflow-hidden flex-shrink-0">
+                    {/* Reduced avatar size and removed margin */}
+                    <Avatar className="h-8 w-8 mr-0 overflow-hidden flex-shrink-0"> {/* Changed mr-1 to mr-0 */}
                       {/* Use AvatarImage component */}
                       <AvatarImage src={entry.avatarUrl} alt={entry.username} className="object-cover" />
                       <AvatarFallback className="bg-primary-600 text-white">
                         {entry.username.slice(0, 2).toUpperCase()}
                      </AvatarFallback>
                      </Avatar>
-                     {/* Added flex-1 and min-w-0 */}
-                     <div className="flex-1 min-w-0">
+                     {/* Added responsive flex-1 and min-w-0 */}
+                     <div className="min-w-0 sm:flex-1"> {/* Removed flex-1 default, added sm:flex-1 */}
                        {/* Removed badges from username display, removed nowrap */}
                        <div className="text-sm font-medium text-gray-900 truncate">{entry.username}</div>
                        <div className="text-sm text-gray-500 truncate">@{entry.username.toLowerCase().replace(/\s+/g, '')}</div>
                       </div>
                     </div>
                  </TableCell>
-                 {/* Conditionally render Selections Cell */}
+                 {/* Conditionally render Selections Cell with zero mobile left padding */}
                  {displayMode === 'competition' && (
-                   <TableCell className="text-sm text-gray-500">
+                   <TableCell className="text-sm text-gray-500 pl-0 sm:pl-4"> {/* Added pl-0 sm:pl-4 */}
                      {/* Check if selections exist and assign to a new variable */}
                   {(() => {
                     const selections = entry.selections; // Assign to new variable
@@ -395,8 +395,8 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                    })()}
                    </TableCell>
                   )}
-                 {/* Last Event Pts Cell - Style changes based on mode */}
-                 <TableCell className="text-center">
+                 {/* Last Event Pts Cell - Style changes based on mode, add zero mobile left padding */}
+                 <TableCell className="text-center pl-0 sm:pl-4"> {/* Added pl-0 sm:pl-4 */}
                    {/* Conditionally render last points change, checking for null/undefined */}
                    {entry.lastPointsChange !== undefined && entry.lastPointsChange !== null ? (
                     <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full tabular-nums
@@ -416,9 +416,9 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                      </span> // Display dash if null/undefined
                     )}
                  </TableCell>
-                 {/* Conditionally render Total Points Cell for overall mode with Green/Red/Gray bubble */}
+                 {/* Conditionally render Total Points Cell for overall mode with zero mobile left padding */}
                  {displayMode === 'overall' && (
-                   <TableCell className="text-center">
+                   <TableCell className="text-center pl-0 sm:pl-4"> {/* Added pl-0 sm:pl-4 */}
                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full tabular-nums
                        ${entry.points > 0
                          ? 'bg-green-100 text-green-800'
@@ -430,9 +430,9 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                      </span>
                    </TableCell>
                  )}
-                 {/* Conditionally render Chips Cell for overall mode */}
+                 {/* Conditionally render Chips Cell for overall mode with zero mobile left padding */}
                  {displayMode === 'overall' && (
-                   <TableCell className="text-center">
+                   <TableCell className="text-center pl-0 sm:pl-4"> {/* Added pl-0 sm:pl-4 */}
                      {entry.hasUsedCaptainsChip && (
                        <Badge variant="outline" className="mr-1 text-xs px-1.5 py-0.5 bg-green-100 text-green-800 border-green-300">C</Badge>
                      )}
