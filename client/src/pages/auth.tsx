@@ -67,6 +67,7 @@ const Auth = () => {
       toast({
         title: "Welcome back!",
         description: "You have been successfully logged in.",
+        duration: 2000, // Set duration to 2 seconds
       });
       setLocation("/");
     } catch (error: any) {

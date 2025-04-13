@@ -423,6 +423,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // New endpoint to get chip usage for a competition
+  app.get('/api/competitions/:competitionId/chips', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const competitionId = parseInt(req.params.competitionId);
+      if (isNaN(competitionId)) {
+        return res.status(400).json({ error: 'Invalid competition ID' });
+      }
+
+      // Check if deadline has passed (optional, but good practice - matches frontend logic)
+      const competition = await storage.getCompetitionById(competitionId);
+      if (!competition) {
+        return res.status(404).json({ error: 'Competition not found' });
+      }
+      const deadlinePassed = new Date() > new Date(competition.selectionDeadline);
+      if (!deadlinePassed) {
+        // Or return empty array if preferred
+        return res.status(400).json({ error: 'Chip usage data is only available after the selection deadline.' }); 
+      }
+
+      const selections = await storage.getAllSelections(competitionId);
+      if (!selections || selections.length === 0) {
+        return res.json({ chips: [] }); // No selections, so no chip usage
+      }
+
+      const chipUsageDetails = await Promise.all(selections.map(async (sel) => {
+        const user = await storage.getUser(sel.userId);
+        if (!user) return null; // Skip if user not found
+
+        let captainGolferName: string | null = null;
+        let captainGolferRank: number | null = null;
+        let waiverChipOriginalGolferName: string | null = null;
+        let waiverChipOriginalGolferRank: number | null = null;
+        let waiverChipReplacementGolferName: string | null = null;
+        let waiverChipReplacementGolferRank: number | null = null;
+
+        // Captain Chip Details
+        if (sel.useCaptainsChip && sel.captainGolferId) {
+          const captainGolfer = await storage.getGolferById(sel.captainGolferId);
+          const captainRankData = await storage.getSelectionRank(sel.userId, competitionId, sel.captainGolferId);
+          captainGolferName = captainGolfer?.name ?? 'Unknown Captain';
+          captainGolferRank = captainRankData?.rankAtDeadline ?? null;
+        }
+
+        // Waiver Chip Details - Check if waiver was used *in this competition*
+        const useWaiverChip = user.hasUsedWaiverChip && user.waiverChipUsedCompetitionId === competitionId;
+        if (useWaiverChip && user.waiverChipOriginalGolferId && user.waiverChipReplacementGolferId) {
+          // Original Golfer
+          const originalGolfer = await storage.getGolferById(user.waiverChipOriginalGolferId);
+          const originalRankData = await storage.getSelectionRank(sel.userId, competitionId, user.waiverChipOriginalGolferId);
+          waiverChipOriginalGolferName = originalGolfer?.name ?? 'Unknown Original';
+          waiverChipOriginalGolferRank = originalRankData?.rankAtDeadline ?? null;
+
+          // Replacement Golfer
+          const replacementGolfer = await storage.getGolferById(user.waiverChipReplacementGolferId);
+          // Fetch rank for replacement golfer - use the rank stored in the selection if available (waiverRank)
+          // or fetch from selection_ranks as a fallback (though waiverRank should be preferred)
+          const replacementRankData = await storage.getSelectionRank(sel.userId, competitionId, user.waiverChipReplacementGolferId);
+          waiverChipReplacementGolferName = replacementGolfer?.name ?? 'Unknown Replacement';
+          // Prioritize waiverRank from the selection table if it exists, otherwise use rankAtDeadline
+          waiverChipReplacementGolferRank = sel.waiverRank ?? replacementRankData?.rankAtDeadline ?? null; 
+        }
+
+        return {
+          userId: user.id,
+          username: user.username,
+          useCaptainsChip: sel.useCaptainsChip,
+          captainGolferId: sel.captainGolferId,
+          captainGolferName,
+          captainGolferRank,
+          useWaiverChip, // Derived based on user record and competition ID
+          waiverChipOriginalGolferId: useWaiverChip ? user.waiverChipOriginalGolferId : null,
+          waiverChipOriginalGolferName,
+          waiverChipOriginalGolferRank,
+          waiverChipReplacementGolferId: useWaiverChip ? user.waiverChipReplacementGolferId : null,
+          waiverChipReplacementGolferName,
+          waiverChipReplacementGolferRank,
+        };
+      }));
+
+      // Filter out any null results (e.g., if a user was deleted)
+      const validChipUsage = chipUsageDetails.filter(details => details !== null);
+
+      res.json({ chips: validChipUsage });
+
+    } catch (error) {
+      console.error(`Error fetching chip usage for competition ${req.params.competitionId}:`, error);
+      res.status(500).json({ error: 'Failed to fetch chip usage data' });
+    }
+  });
+
+
   // New endpoint for CSV User & Selection Import
   app.post('/api/admin/import-users-selections', validateJWT, csvUpload.single('csvFile'), async (req: Request, res: Response) => {
     try {
