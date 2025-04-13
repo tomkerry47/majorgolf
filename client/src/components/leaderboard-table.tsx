@@ -1,6 +1,10 @@
-import { useState, Fragment, useEffect } from "react"; // Import Fragment, useEffect
+import { useState, Fragment, useEffect, useRef, useCallback } from "react"; // Import Fragment, useEffect, useRef, useCallback
 import { useQuery } from "@tanstack/react-query"; // Import useQuery
 import { getAuthHeaders } from "@/lib/auth"; // Import auth helper
+import { toJpeg } from 'html-to-image'; // Import html-to-image
+import { useAuth } from "@/context/AuthContext"; // Import useAuth
+import { Button } from "@/components/ui/button"; // Import Button
+import { Download } from 'lucide-react'; // Import Download icon
 import {
   Table,
   TableBody,
@@ -19,8 +23,7 @@ import {
 } from "@/components/ui/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge"; // Import Badge
-// Import AvatarImage as well
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"; // Import AvatarImage as well
 
 // Define leaderboard entry type and export it
 export interface LeaderboardEntry { // Added export
@@ -72,11 +75,13 @@ interface UserSelectionHistoryEntry {
   useCaptainsChip: boolean; // Added
 }
 
-
 const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardTableProps) => {
+  const auth = useAuth(); // Get auth context
+  const tableRef = useRef<HTMLTableElement>(null); // Ref for the table element
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null); // State for expanded row
   const itemsPerPage = 30; // Changed from 10 to 30
+  const [isExporting, setIsExporting] = useState(false); // State for export loading
 
   // --- State and Fetching for Overall Expanded View ---
   const {
@@ -122,6 +127,53 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
     }
   }, [expandedRowId, displayMode, refetchExpandedUser]);
   // --- End State and Fetching ---
+
+  // --- JPEG Export Function ---
+  const handleExportJpeg = useCallback(async () => {
+    if (!tableRef.current) {
+      console.error("Table ref not found for export.");
+      // Optionally show a user-facing error message
+      return;
+    }
+    if (isExporting) return; // Prevent multiple clicks
+
+    setIsExporting(true);
+    console.log("Starting JPEG export...");
+
+    try {
+      // Ensure background is white for better image quality
+      const dataUrl = await toJpeg(tableRef.current, {
+        quality: 0.95,
+        backgroundColor: 'white',
+        // Consider adding pixelRatio for higher resolution if needed:
+        // pixelRatio: window.devicePixelRatio || 1,
+        // Filter out elements you don't want in the image (e.g., expansion rows if open)
+        // filter: (node) => {
+        //   // Example: Exclude expanded rows if needed
+        //   // return !node.classList?.contains('expanded-row-class'); // Add a class to expanded rows if needed
+        //   return true; // Include everything by default
+        // }
+      });
+
+      const link = document.createElement('a');
+      // Dynamic filename based on display mode
+      const filename = `${displayMode}-leaderboard-${new Date().toISOString().split('T')[0]}.jpeg`;
+      link.download = filename;
+      link.href = dataUrl;
+      document.body.appendChild(link); // Required for Firefox
+      link.click();
+      document.body.removeChild(link); // Clean up
+      console.log("JPEG export successful.");
+
+    } catch (err) {
+      console.error('Oops, something went wrong!', err);
+      // Optionally show a user-facing error message
+    } finally {
+      setIsExporting(false);
+      console.log("Finished JPEG export attempt.");
+    }
+  }, [tableRef, isExporting, displayMode]); // Include isExporting and displayMode in dependencies
+  // --- End JPEG Export Function ---
 
   // Calculate pagination
   const totalPages = Math.ceil(data.length / itemsPerPage);
@@ -243,9 +295,10 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
 
   return (
     <div className="bg-white shadow-md rounded-lg overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" > {/* Add ref here if you want scrollable area */}
         {/* Removed table-fixed */}
-        <Table>
+        {/* Add ref={tableRef} to the Table component */}
+        <Table ref={tableRef}>
           <TableHeader>
             <TableRow>
               {/* Set fixed width for Rank */}
@@ -569,6 +622,21 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
               </Pagination>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Admin Export Button - Show for admins in either view */}
+      {auth?.isAdmin && (
+        <div className="px-4 py-3 border-t border-gray-200 sm:px-6 flex justify-end">
+          <Button
+            onClick={handleExportJpeg}
+            disabled={isExporting || isLoading} // Disable while exporting or loading data
+            variant="outline"
+            size="sm"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            {isExporting ? 'Exporting...' : 'Export as JPEG'}
+          </Button>
         </div>
       )}
     </div>
