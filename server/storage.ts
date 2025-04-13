@@ -269,12 +269,10 @@ export class DatabaseStorage implements IStorage {
       })
       .from(competitions)
       .where(
-        and(
-          // A competition is active if the current date is between its start and end date
-          sql`NOW() >= ${competitions.startDate}`, 
-          sql`NOW() <= ${competitions.endDate}`,
-          eq(competitions.isComplete, false) // Keep the check for not completed
-        )
+        // A competition is active if its isActive flag is true
+        eq(competitions.isActive, true) 
+        // We might still want to ensure it's not marked as complete, though isActive should ideally be false then.
+        // eq(competitions.isComplete, false) 
       )
       .orderBy(competitions.startDate);
     // Explicitly map fields to ensure type correctness
@@ -679,6 +677,8 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(userPoints, and(eq(selections.userId, userPoints.userId), eq(selections.competitionId, userPoints.competitionId)))
       .orderBy(desc(competitions.startDate)); // Order by competition start date
 
+    console.log(`[Storage] getUserSelectionsForAllCompetitions - Found ${userSelectionsData.length} raw selection entries for user ${userId}.`); // Simplified log
+
     // Fetch the user record once to get waiver chip details
      const user = await this.getUser(userId);
      const userWaiverCompId = user?.waiverChipUsedCompetitionId;
@@ -708,10 +708,12 @@ export class DatabaseStorage implements IStorage {
        } as Result);
      });
 
+     console.log(`[Storage] getUserSelectionsForAllCompetitions - Created results map with ${resultsMap.size} entries.`); // Simplified log
+
      // No need to fetch ranks here if we use the user waiver details
 
      // Format the data for the frontend
-     return userSelectionsData.map(data => {
+     const finalMappedData = userSelectionsData.map(data => {
        const selection = data.selection;
        const competition = data.competition;
        const golfer1Result = resultsMap.get(`${selection.competitionId}-${selection.golfer1Id}`);
@@ -777,10 +779,13 @@ export class DatabaseStorage implements IStorage {
          golfer1Result: golfer1Result ? { position: golfer1Result.position, points: golfer1Result.points } : null,
          golfer2Result: golfer2Result ? { position: golfer2Result.position, points: golfer2Result.points } : null,
         golfer3Result: golfer3Result ? { position: golfer3Result.position, points: golfer3Result.points } : null,
-        totalPoints: data.userPoints?.points || 0 // Get total points from userPoints join
-      };
-    });
-  }
+         totalPoints: data.userPoints?.points || 0 // Get total points from userPoints join
+       };
+     });
+
+     console.log(`[Storage] getUserSelectionsForAllCompetitions - Finished mapping ${finalMappedData.length} selections for user ${userId}.`); // Simplified log
+     return finalMappedData;
+   }
 
   async getSelectionById(id: number): Promise<Selection | undefined> {
     const [selection] = await db

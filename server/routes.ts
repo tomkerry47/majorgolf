@@ -908,44 +908,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Selection routes
+  // User routes (continued)
 
-  // Get ALL detailed selections for the LOGGED-IN user (used for Profile page)
-  app.get('/api/selections/my-all', validateJWT, async (req: Request, res: Response) => {
-    console.log(`[Route /api/selections/my-all] Request received.`); // Added log
+  // GET User Profile Data (Added)
+  app.get('/api/users/:id', validateJWT, async (req: Request, res: Response) => {
+    console.log(`[Route GET /api/users/:id] Request received for ID: ${req.params.id}`);
     try {
-      const { id } = req.params;
+      const requestedUserIdStr = req.params.id;
       const tokenUser = req.user as ExtendedUser;
-      const requestedUserId = parseInt(id);
 
-      // Authorization check
-      if (tokenUser.database_id !== requestedUserId && !tokenUser.isAdmin) {
-        return res.status(403).json({ error: 'Unauthorized to access this resource' });
+      // Determine the actual user ID to fetch (handle 'me')
+      let userIdToFetch: number;
+      if (requestedUserIdStr === 'me') {
+        if (!tokenUser?.database_id) {
+          return res.status(401).json({ error: 'User context not found for "me"' });
+        }
+        userIdToFetch = tokenUser.database_id;
+        console.log(`[Route GET /api/users/:id] Resolved 'me' to user ID: ${userIdToFetch}`);
+      } else {
+        userIdToFetch = parseInt(requestedUserIdStr);
+        if (isNaN(userIdToFetch)) {
+          return res.status(400).json({ error: 'Invalid user ID parameter' });
+        }
+      }
+
+      // Authorization check: Allow admins or the user themselves
+      if (tokenUser.database_id !== userIdToFetch && !tokenUser.isAdmin) {
+        console.log(`[Route GET /api/users/:id] Authorization failed. Token user ${tokenUser.database_id} (admin: ${tokenUser.isAdmin}) trying to access user ${userIdToFetch}`);
+        return res.status(403).json({ error: 'Unauthorized to access this user profile' });
       }
 
       // Fetch basic user data
-      const user = await storage.getUser(requestedUserId);
+      console.log(`[Route GET /api/users/:id] Fetching user data for ID: ${userIdToFetch}`);
+      const user = await storage.getUser(userIdToFetch);
       if (!user) {
+        console.log(`[Route GET /api/users/:id] User not found for ID: ${userIdToFetch}`);
         return res.status(404).json({ error: 'User not found' });
       }
 
-      // Fetch user statistics (assuming storage.getUserStats exists)
-      const stats = await storage.getUserStats(requestedUserId); // Fetch stats
+      // Fetch user statistics
+      console.log(`[Route GET /api/users/:id] Fetching stats for user ID: ${userIdToFetch}`);
+      const stats = await storage.getUserStats(userIdToFetch); 
+      console.log(`[Route GET /api/users/:id] Stats fetched for user ID ${userIdToFetch}:`, stats);
 
       // Combine user data and stats, excluding password
       const { password, ...userDataWithoutPassword } = user;
       const responseData = {
         ...userDataWithoutPassword,
-        stats: stats || { competitionsPlayed: 0, totalPoints: 0, bestRank: 'N/A' } // Add stats, provide defaults
+        // Ensure stats are included, provide defaults if stats are null/undefined
+        stats: stats || { competitionsPlayed: 0, totalPoints: 0, bestRank: 'N/A' } 
       };
 
+      console.log(`[Route GET /api/users/:id] Sending response for user ID: ${userIdToFetch}`);
       res.json(responseData); // Send combined data
 
     } catch (error) {
-      console.error('Get user error:', error);
-      res.status(500).json({ error: 'Failed to fetch user' });
+      console.error(`[Route GET /api/users/:id] Error fetching user profile for ID ${req.params.id}:`, error);
+      res.status(500).json({ error: 'Failed to fetch user profile' });
     }
   });
+
   app.get('/api/users/:id/has-used-captains-chip', validateJWT, async (req: Request, res: Response) => {
     try { const tokenUser = req.user as ExtendedUser; let userIdToCheck: number; if (req.params.id === 'me') { userIdToCheck = tokenUser.database_id!; } else { userIdToCheck = parseInt(req.params.id); if (isNaN(userIdToCheck)) { return res.status(400).json({ error: 'Invalid user ID' }); } } if (tokenUser.database_id !== userIdToCheck && !tokenUser.isAdmin) { return res.status(403).json({ error: 'Unauthorized to access this resource' }); } const hasUsed = await storage.hasUsedCaptainsChip(userIdToCheck); res.json({ hasUsedCaptainsChip: hasUsed }); } catch (error) { console.error('Error checking captain\'s chip usage:', error); res.status(500).json({ error: 'Failed to check captain\'s chip usage' }); }
   });
