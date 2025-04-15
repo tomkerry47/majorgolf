@@ -465,7 +465,7 @@ const Admin = () => {
       
       <Tabs defaultValue="player-selections">
         {/* Added flex-wrap and further increased margin-bottom */}
-        <TabsList className="mb-12 flex-wrap"> {/* Further increased margin bottom */}
+        <TabsList className="mb-14 flex-wrap"> {/* Changed margin bottom to 14 */}
           <TabsTrigger value="player-selections">Player Selections</TabsTrigger>
           <TabsTrigger value="tournaments">Tournaments</TabsTrigger>
           <TabsTrigger value="players">Golf Players</TabsTrigger>
