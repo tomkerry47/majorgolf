@@ -127,7 +127,7 @@ export default function AdminWaiverChips() {
              <TableHeader>
                <TableRow>
               <TableHead>User</TableHead>
-              <TableHead>Email</TableHead>
+              {/* <TableHead>Email</TableHead> Removed Email Header */}
               <TableHead>Waiver Chip Status / Details</TableHead> 
               {/* Removed Actions column */}
             </TableRow>
@@ -135,7 +135,7 @@ export default function AdminWaiverChips() {
           <TableBody>
             {filteredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={3} className="text-center">No users found</TableCell> {/* Adjusted colSpan */}
+                <TableCell colSpan={2} className="text-center">No users found</TableCell> {/* Adjusted colSpan to 2 */}
               </TableRow>
             ) : (
               filteredUsers.map((user) => (
@@ -150,7 +150,7 @@ export default function AdminWaiverChips() {
                       <div className="text-sm text-muted-foreground">@{user.username}</div>
                     </div>
                   </TableCell>
-                  <TableCell>{user.email}</TableCell>
+                  {/* <TableCell>{user.email}</TableCell> Removed Email Cell */}
                   <TableCell>
                     {user.hasUsedWaiverChip ? (
                       <div>

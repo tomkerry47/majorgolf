@@ -354,7 +354,7 @@ export default function Competition() {
         </Card>
 
         <Tabs defaultValue="leaderboard">
-          <TabsList className="mb-12 flex-wrap"> {/* Changed margin bottom to 12 */}
+          <TabsList className="mb-14 flex-wrap"> {/* Changed margin bottom to 14 */}
             <TabsTrigger value="predictor-leaderboard">Predictor Leaderboard</TabsTrigger>
             <TabsTrigger value="leaderboard">Actual Leaderboard</TabsTrigger>
             <TabsTrigger value="results">Points Allocated</TabsTrigger>
