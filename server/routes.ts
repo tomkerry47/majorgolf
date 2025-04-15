@@ -945,7 +945,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const decodedToken = verifyToken(token) as any; if (!decodedToken) { return res.json(defaultStats); }
       const user = await storage.getUserByEmail(decodedToken.email); if (!user) { return res.json(defaultStats); }
       const userId = user.id; const activeCompetitions = await storage.getActiveCompetitions(); const upcomingCompetitions = await storage.getUpcomingCompetitions(); let nextDeadline = ""; if (upcomingCompetitions.length > 0) { upcomingCompetitions.sort((a, b) => new Date(a.selectionDeadline).getTime() - new Date(b.selectionDeadline).getTime()); nextDeadline = upcomingCompetitions[0].selectionDeadline; }
-      const leaderboardQuery = `SELECT SUM(points) as total_points, ROW_NUMBER() OVER (ORDER BY SUM(points) DESC) as rank FROM user_points WHERE "userId" = $1 GROUP BY "userId"`;
+      // Corrected query to rank only users (admins and non-admins) who have made selections
+      const leaderboardQuery = `
+        WITH UsersWithSelections AS (
+          SELECT DISTINCT "userId"
+          FROM selections
+        ),
+        RankedUsers AS (
+          SELECT
+            up."userId",
+            SUM(up.points) as total_points,
+            ROW_NUMBER() OVER (ORDER BY SUM(up.points) DESC, up."userId" ASC) as rank
+          FROM user_points up
+          JOIN UsersWithSelections uws ON up."userId" = uws."userId" -- Only rank users with selections
+          GROUP BY up."userId"
+        )
+        SELECT total_points, rank
+        FROM RankedUsers
+        WHERE "userId" = $1;
+      `;
       const leaderboardResult = await pgClient.query(leaderboardQuery, [userId]); const totalPoints = leaderboardResult.rows.length > 0 ? parseInt(leaderboardResult.rows[0].total_points) || 0 : 0; const currentRank = leaderboardResult.rows.length > 0 ? leaderboardResult.rows[0].rank : 'N/A';
       res.json({ activeCompetitions: activeCompetitions.length, nextDeadline, totalPoints, currentRank });
     } catch (error) { console.error('Dashboard stats error:', error); res.status(500).json({ error: 'Failed to fetch dashboard stats' }); }
