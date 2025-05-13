@@ -166,6 +166,8 @@ export interface Competition {
   lastResultsUpdateAt?: string | null; // Added type for last results update timestamp
   ranksCapturedAt?: string | null; // Added type for rank capture timestamp
   currentRound?: number | null; // Added type for current round number
+  selectionsCount?: number; // Added count of selections made
+  totalUsersCount?: number; // Added total count of users
 }
 
 export interface Golfer {

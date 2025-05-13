@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { sql, count, eq, notInArray } from 'drizzle-orm'; // Import sql, count, eq, and notInArray
 import * as schema from '../shared/schema'; // Import schema definitions
 
 const { Pool } = pg;
@@ -63,5 +64,35 @@ export const comparePassword = async (password: string, hashedPassword: string) 
 
 // No need for Supabase compatibility layer anymore - the transition is complete
 // All operations now directly use PostgreSQL
+
+// Function to get the count of selections for each competition
+export async function getCompetitionSelectionCounts() {
+  return db
+    .select({
+      competitionId: schema.selections.competitionId,
+      count: count(schema.selections.userId),
+    })
+    .from(schema.selections)
+    .groupBy(schema.selections.competitionId);
+}
+
+// Function to get the total number of users
+export async function getTotalUsersCount() {
+  const result = await db.select({ count: count() }).from(schema.users);
+  return result[0].count;
+}
+
+// Function to get users who haven't made selections for a competition
+export async function getUsersWithoutSelections(competitionId: number) {
+  const usersWithSelections = db
+    .select({ userId: schema.selections.userId })
+    .from(schema.selections)
+    .where(eq(schema.selections.competitionId, competitionId));
+
+  return db
+    .select({ id: schema.users.id, fullName: schema.users.fullName })
+    .from(schema.users)
+    .where(notInArray(schema.users.id, usersWithSelections));
+}
 
 console.log('PostgreSQL direct connection initialized');

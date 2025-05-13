@@ -35,7 +35,7 @@ import { fileURLToPath } from 'url'; // Import fileURLToPath for ES Modules
 import axios from 'axios'; // Import axios
 import * as cheerio from 'cheerio'; // Correct cheerio import for ES Modules
 import fs from 'fs/promises'; // Import fs promises for async file writing
-import { db } from './db'; // Assuming db is the exported Drizzle instance
+import { db, getCompetitionSelectionCounts, getTotalUsersCount, getUsersWithoutSelections } from './db'; // Import db and new functions
 import { users, selections } from '@shared/schema'; // Import schema tables
 import { eq, ne, and, or, inArray, notInArray } from 'drizzle-orm'; // Import Drizzle operators, added notInArray
 
@@ -1297,7 +1297,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try { const tokenUser = req.user as ExtendedUser; if (!tokenUser.isAdmin) { return res.status(403).json({ error: 'Admin access required' }); } const resultData = insertResultSchema.parse(req.body); const newResult = await storage.createResult(resultData); res.status(201).json(newResult); } catch (error) { if (error instanceof ZodError) { return res.status(400).json({ error: error.errors }); } console.error('Create result error:', error); res.status(500).json({ error: 'Failed to create result' }); }
   });
   app.get('/api/admin/competitions', validateJWT, async (req: Request, res: Response) => {
-    try { const competitions = await storage.getCompetitions(); res.json(competitions); } catch (error) { console.error('Admin get competitions error:', error); res.status(500).json({ error: 'Failed to fetch competitions' }); }
+    try {
+      const competitions = await storage.getCompetitions();
+      const selectionCounts = await getCompetitionSelectionCounts();
+      const totalUsersCount = await getTotalUsersCount();
+
+      const competitionsWithCounts = competitions.map(comp => {
+        const countEntry = selectionCounts.find(sc => sc.competitionId === comp.id);
+        return {
+          ...comp,
+          selectionsCount: countEntry ? countEntry.count : 0,
+          totalUsersCount: totalUsersCount,
+        };
+      });
+
+      res.json(competitionsWithCounts);
+    } catch (error) {
+      console.error('Get admin competitions error:', error);
+      res.status(500).json({ error: 'Failed to fetch competitions' });
+    }
+  });
+
+  // New endpoint to get users without selections for a competition
+  app.get('/api/admin/competitions/:competitionId/users-without-selections', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const competitionId = parseInt(req.params.competitionId);
+      if (isNaN(competitionId)) {
+        return res.status(400).json({ error: 'Invalid competition ID' });
+      }
+
+      const usersWithoutSelections = await getUsersWithoutSelections(competitionId);
+      res.json(usersWithoutSelections);
+    } catch (error) {
+      console.error('Get users without selections error:', error);
+      res.status(500).json({ error: 'Failed to fetch users without selections' });
+    }
   });
   app.patch('/api/admin/competitions/:id', validateJWT, async (req: Request, res: Response) => {
     try {

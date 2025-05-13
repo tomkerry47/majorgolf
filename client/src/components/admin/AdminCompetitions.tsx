@@ -37,7 +37,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { insertCompetitionSchema, type InsertCompetition, type Competition } from "@shared/schema";
+import { insertCompetitionSchema, type InsertCompetition, type Competition, type User } from "@shared/schema";
 import { Switch } from "@/components/ui/switch";
 import { Clock } from 'lucide-react'; // Import Clock icon
 
@@ -51,6 +51,9 @@ export default function AdminCompetitions() {
   const [isCreatingTournaments, setIsCreatingTournaments] = useState(false);
   const [capturingRanksId, setCapturingRanksId] = useState<number | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null); // State for the image preview
+  const [isUsersWithoutSelectionsDialogOpen, setIsUsersWithoutSelectionsDialogOpen] = useState(false); // State for the new dialog
+  const [usersWithoutSelections, setUsersWithoutSelections] = useState<User[]>([]); // State for the list of users
+  const [selectedCompetitionForUsers, setSelectedCompetitionForUsers] = useState<Competition | null>(null); // State to hold the competition for the users list
   // Removed captureTimes state
 
   const { data: competitions = [], isLoading } = useQuery<Competition[]>({
@@ -204,7 +207,7 @@ export default function AdminCompetitions() {
      if (!currentImageUrl) {
          // Optionally notify user if they click preview with empty field
          // toast({ variant: "default", title: "Preview Cleared", description: "Image URL is empty." });
-    }
+     }
   };
 
 
@@ -358,6 +361,23 @@ export default function AdminCompetitions() {
     }
   };
 
+  // Function to handle showing users without selections
+  const handleShowUsersWithoutSelections = async (competition: Competition) => {
+    try {
+      const users = await apiRequest(`/api/admin/competitions/${competition.id}/users-without-selections`, 'GET');
+      setUsersWithoutSelections(users);
+      setSelectedCompetitionForUsers(competition);
+      setIsUsersWithoutSelectionsDialogOpen(true);
+    } catch (error: any) {
+      console.error('Error fetching users without selections:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to fetch users without selections."
+      });
+    }
+  };
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -385,7 +405,7 @@ export default function AdminCompetitions() {
           </div>
         ) : (
           // Added overflow-x-auto wrapper
-          <div className="overflow-x-auto"> 
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -394,6 +414,7 @@ export default function AdminCompetitions() {
                 <TableHead>Dates</TableHead>
                 <TableHead>Deadline</TableHead>
                 <TableHead>Leaderboard URL</TableHead>
+                <TableHead>Selections</TableHead> {/* New column header */}
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -401,7 +422,7 @@ export default function AdminCompetitions() {
             <TableBody>
               {competitions?.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-4 text-gray-500">
+                  <TableCell colSpan={8} className="text-center py-4 text-gray-500"> {/* Increased colspan */}
                     No competitions found. Create one to get started.
                   </TableCell>
                 </TableRow>
@@ -425,6 +446,18 @@ export default function AdminCompetitions() {
                         >
                           {competition.externalLeaderboardUrl}
                         </a>
+                      ) : (
+                        <span className="text-gray-400">N/A</span>
+                      )}
+                    </TableCell>
+                    {/* New Table Cell for Selections */}
+                    <TableCell>
+                      {/* Placeholder for selection count and click handler */}
+                      {/* Display selection count and click handler */}
+                      {competition.selectionsCount !== undefined && competition.totalUsersCount !== undefined ? (
+                        <Button variant="link" size="sm" onClick={() => handleShowUsersWithoutSelections(competition)}>
+                          {`${competition.selectionsCount}/${competition.totalUsersCount}`}
+                        </Button>
                       ) : (
                         <span className="text-gray-400">N/A</span>
                       )}
@@ -499,212 +532,174 @@ export default function AdminCompetitions() {
           </DialogHeader>
           {/* Form directly inside scrollable content */}
           <Form {...form}>
-            {/* Add ID to form */}
             <form onSubmit={form.handleSubmit(onSubmit)} id="competition-form" className="space-y-4">
-              {/* Form fields go directly inside the form */}
               <FormField
                 control={form.control}
                 name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Competition Name" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="venue"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Venue</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Venue" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="startDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Competition Name</FormLabel>
+                      <FormLabel>Start Date</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g. The Masters 2023" {...field} />
+                        <Input type="datetime-local" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-
                 <FormField
                   control={form.control}
-                  name="venue"
+                  name="endDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Venue</FormLabel>
+                      <FormLabel>End Date</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g. Augusta National Golf Club" {...field} />
+                        <Input type="datetime-local" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="startDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Start Date</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="datetime-local"
-                            {...field}
-                            value={formatDateForInput(field.value)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="endDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>End Date</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="datetime-local"
-                            {...field}
-                            value={formatDateForInput(field.value)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
+              </div>
+              <FormField
+                control={form.control}
+                name="selectionDeadline"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Selection Deadline</FormLabel>
+                    <FormControl>
+                      <Input type="datetime-local" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Description" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="imageUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Image URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Image URL" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                    {/* Image Preview Section */}
+                    <div className="flex flex-col items-center space-y-2 w-24"> {/* Fixed width container for button and preview */}
+                      <Button
+                        type="button" // Important: Prevent form submission
+                        variant="outline"
+                        size="sm"
+                        onClick={handlePreviewImage}
+                        className="w-full" // Make button fill container width
+                      >
+                        Preview
+                      </Button>
+                      {previewImageUrl && (
+                        <img
+                          src={previewImageUrl}
+                          alt="Image Preview"
+                          className="mt-2 max-w-full h-auto object-contain" // Added object-contain
+                          onError={(e) => { // Simplified onError
+                            console.error("Error loading image:", e);
+                            setPreviewImageUrl(null); // Clear preview on error
+                            toast({
+                              variant: "destructive",
+                              title: "Image Load Error",
+                              description: "Could not load image from the provided URL.",
+                            });
+                          }}
+                        />
+                      )}
+                    </div>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="externalLeaderboardUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>External Leaderboard URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="External Leaderboard URL" {...field} value={field.value as string | undefined} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
-                  name="selectionDeadline"
+                  name="isActive"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Selection Deadline</FormLabel>
+                    <FormItem className="flex flex-row items-center justify-between p-3 border rounded-md">
+                      <FormLabel>Active</FormLabel>
                       <FormControl>
-                        <Input
-                          type="datetime-local"
-                          {...field}
-                          value={formatDateForInput(field.value)}
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
                         />
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
 
                 <FormField
                   control={form.control}
-                  name="description"
+                  name="isComplete"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description</FormLabel>
+                    <FormItem className="flex flex-row items-center justify-between p-3 border rounded-md">
+                      <FormLabel>Completed</FormLabel>
                       <FormControl>
-                        <Textarea
-                          placeholder="Enter a description of the tournament..."
-                          className="resize-none h-20"
-                          {...field}
-                          value={field.value ?? ''}
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
                         />
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
-
-                {/* Add External Leaderboard URL Field FIRST */}
-                <FormField
-                  control={form.control}
-                  name="externalLeaderboardUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>External Leaderboard URL</FormLabel>
-                      <FormControl>
-                        <Input placeholder="https://www.pgatour.com/tournaments/..." {...field} value={field.value ?? ''} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Image Fetching Section */}
-                {/* Image Fetching and Input Section */}
-                <FormField
-                  control={form.control}
-                  name="imageUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Competition Image URL</FormLabel>
-                      <div className="flex items-start space-x-4"> {/* items-start aligns tops */}
-                        <div className="flex-grow"> {/* Input takes available space */}
-                          <FormControl>
-                            <Input placeholder="https://example.com/logo.png" {...field} value={field.value ?? ''} />
-                          </FormControl>
-                          <FormMessage />
-                        </div>
-                        <div className="flex flex-col items-center space-y-2 w-24"> {/* Fixed width container for button and preview */}
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handlePreviewImage}
-                            className="w-full" // Button takes full width of its container
-                          >
-                            Preview
-                          </Button>
-                          {/* Preview based on the previewImageUrl state - ONLY render img if URL exists */}
-                          <div className="w-16 h-16 border rounded flex items-center justify-center text-xs text-muted-foreground">
-                            {previewImageUrl ? (
-                                <img
-                                  key={previewImageUrl} // Add key to force re-render on src change
-                                  src={previewImageUrl}
-                                  alt="Preview"
-                                  className="max-h-full max-w-full object-contain" // Ensure image fits
-                                  onError={() => { // Simplified onError
-                                    console.warn("Image preview failed to load:", previewImageUrl);
-                                    toast({ variant: "destructive", title: "Preview Error", description: "Could not load image. Check URL and browser console (F12) for CORS/security errors." });
-                                    setPreviewImageUrl(null); // Clear preview state on error
-                                  }}
-                                />
-                            ) : (
-                               <span title="Enter URL and click Preview">No Preview</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Enter a URL and click 'Preview'.
-                      </p>
-                    </FormItem>
-                  )}
-                />
-
-
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="isActive"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between p-3 border rounded-md">
-                        <FormLabel>Active</FormLabel>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="isComplete"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between p-3 border rounded-md">
-                        <FormLabel>Completed</FormLabel>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
+              </div>
             </form>
           </Form>
           {/* Standard Footer - Removed sticky positioning and adjusted padding */}
@@ -716,7 +711,46 @@ export default function AdminCompetitions() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Users Without Selections Dialog */}
+      <Dialog open={isUsersWithoutSelectionsDialogOpen} onOpenChange={setIsUsersWithoutSelectionsDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Users Without Selections for {selectedCompetitionForUsers?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            {usersWithoutSelections.length === 0 ? (
+              <p>All users have made selections for this competition.</p>
+            ) : (
+              <ul>
+                {usersWithoutSelections.map(user => (
+                  <li key={user.id}>{user.fullName}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <DialogFooter>
+            {usersWithoutSelections.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const fullNames = usersWithoutSelections.map(user => user.fullName).join('\n');
+                  navigator.clipboard.writeText(fullNames);
+                  toast({
+                    title: "Copied to Clipboard",
+                    description: `${usersWithoutSelections.length} full names copied.`,
+                  });
+                }}
+              >
+                Copy Full Names {/* Updated button text */}
+              </Button>
+            )}
+            <Button onClick={() => setIsUsersWithoutSelectionsDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Competition AlertDialog */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -738,4 +772,4 @@ export default function AdminCompetitions() {
       </AlertDialog>
     </Card>
   );
-} // Ensure this closing brace is present
+}
