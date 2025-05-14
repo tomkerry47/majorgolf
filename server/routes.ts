@@ -303,8 +303,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/competitions/active', async (req: Request, res: Response) => {
     try { const activeCompetitions = await storage.getActiveCompetitions(); res.json(activeCompetitions); } catch (error) { console.error('Get active competitions error:', error); res.status(500).json({ error: 'Failed to fetch active competitions' }); }
   });
-  app.get('/api/competitions/upcoming', async (req: Request, res: Response) => {
-    try { const upcomingCompetitions = await storage.getUpcomingCompetitions(); res.json(upcomingCompetitions); } catch (error) { console.error('Get upcoming competitions error:', error); res.status(500).json({ error: 'Failed to fetch upcoming competitions' }); }
+  app.get('/api/competitions/upcoming', async (req: Request, res: Response) => { // Removed validateJWT
+    try {
+      let userId: number | undefined = undefined;
+      // Attempt to get userId if user is authenticated (e.g., token was sent)
+      // This requires validateJWT to have run if a token is present, or a manual token check here.
+      // For simplicity, we'll check req.user which would be populated by a global or earlier middleware if token was valid.
+      // If making it truly public but with optional auth features, ensure validateJWT doesn't block unauthenticated users for this route.
+      // A more robust way for truly public with optional auth:
+      // 1. Make validateJWT middleware more granular or have it not reject but mark req.user as null/undefined.
+      // 2. Or, manually try to verify token here if present.
+      // For now, assuming if req.user exists, it's valid.
+      const authHeader = req.headers.authorization;
+      let token = '';
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      } else if (req.cookies && req.cookies.authToken) {
+        token = req.cookies.authToken;
+      }
+
+      if (token) {
+        try {
+          const decodedToken = verifyToken(token) as any;
+          if (decodedToken && decodedToken.email) {
+            const user = await storage.getUserByEmail(decodedToken.email);
+            if (user && typeof user.id === 'number') {
+              userId = user.id;
+            }
+          }
+        } catch (e) {
+          // Token validation failed, proceed as unauthenticated
+          console.log('Token present but validation failed for upcoming competitions, proceeding as unauthenticated.');
+        }
+      }
+      
+      const upcomingCompetitions = await storage.getUpcomingCompetitions(userId);
+      res.json(upcomingCompetitions);
+    } catch (error) {
+      console.error('Get upcoming competitions error:', error);
+      res.status(500).json({ error: 'Failed to fetch upcoming competitions' });
+    }
   });
 
   // Updated /api/competitions/:id route
@@ -944,7 +982,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!token) { return res.json(defaultStats); }
       const decodedToken = verifyToken(token) as any; if (!decodedToken) { return res.json(defaultStats); }
       const user = await storage.getUserByEmail(decodedToken.email); if (!user) { return res.json(defaultStats); }
-      const userId = user.id; const activeCompetitions = await storage.getActiveCompetitions(); const upcomingCompetitions = await storage.getUpcomingCompetitions(); let nextDeadline = ""; if (upcomingCompetitions.length > 0) { upcomingCompetitions.sort((a, b) => new Date(a.selectionDeadline).getTime() - new Date(b.selectionDeadline).getTime()); nextDeadline = upcomingCompetitions[0].selectionDeadline; }
+      const userId = user.id; const activeCompetitions = await storage.getActiveCompetitions(); const upcomingCompetitions = await storage.getUpcomingCompetitions(userId); let nextDeadline = ""; if (upcomingCompetitions.length > 0) { upcomingCompetitions.sort((a, b) => new Date(a.selectionDeadline).getTime() - new Date(b.selectionDeadline).getTime()); nextDeadline = upcomingCompetitions[0].selectionDeadline; }
       // Corrected query to rank only users (admins and non-admins) who have made selections
       const leaderboardQuery = `
         WITH UsersWithSelections AS (

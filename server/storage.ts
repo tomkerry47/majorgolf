@@ -29,7 +29,7 @@ export interface IStorage {
   // Competition methods
   getCompetitions(): Promise<Competition[]>;
   getActiveCompetitions(): Promise<Competition[]>;
-  getUpcomingCompetitions(): Promise<Competition[]>;
+  getUpcomingCompetitions(userId?: number): Promise<Competition[]>; // userId is now optional
   getCompletedCompetitions(): Promise<Competition[]>;
   getCompetitionById(id: number): Promise<Competition | undefined>;
   createCompetition(competition: InsertCompetition): Promise<Competition>;
@@ -329,10 +329,10 @@ export class DatabaseStorage implements IStorage {
     })) as Competition[];
   }
 
-  async getUpcomingCompetitions(): Promise<Competition[]> {
+  async getUpcomingCompetitions(userId?: number): Promise<Competition[]> {
     const currentDate = new Date();
-    const upcomingCompetitions = await db
-      .select({ // Select specific columns including the new one
+    const upcomingCompetitionsData = await db
+      .select({
         id: competitions.id,
         name: competitions.name,
         venue: competitions.venue,
@@ -344,9 +344,9 @@ export class DatabaseStorage implements IStorage {
         description: competitions.description,
         imageUrl: competitions.imageUrl,
         externalLeaderboardUrl: competitions.externalLeaderboardUrl,
-        ranksCapturedAt: competitions.ranksCapturedAt, // Added ranksCapturedAt
-        currentRound: competitions.currentRound, // Added currentRound
-        lastResultsUpdateAt: competitions.lastResultsUpdateAt, // Added lastResultsUpdateAt
+        ranksCapturedAt: competitions.ranksCapturedAt,
+        currentRound: competitions.currentRound,
+        lastResultsUpdateAt: competitions.lastResultsUpdateAt,
       })
       .from(competitions)
       .where(
@@ -355,24 +355,47 @@ export class DatabaseStorage implements IStorage {
           eq(competitions.isComplete, false)
         )
       )
-      .orderBy(competitions.startDate);
-    // Explicitly map fields to ensure type correctness
-    return upcomingCompetitions.map(c => ({ 
-      id: c.id,
-      name: c.name,
-      venue: c.venue,
-      startDate: safeToISOString(c.startDate, 'startDate', c.id, false)!,
-      endDate: safeToISOString(c.endDate, 'endDate', c.id, false)!,
-      selectionDeadline: safeToISOString(c.selectionDeadline, 'selectionDeadline', c.id, false)!,
-      isActive: c.isActive,
-      isComplete: c.isComplete,
-      description: c.description,
-      imageUrl: c.imageUrl,
-      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null,
-      ranksCapturedAt: safeToISOString(c.ranksCapturedAt, 'ranksCapturedAt', c.id, true),
-      currentRound: c.currentRound ?? null,
-      lastResultsUpdateAt: safeToISOString(c.lastResultsUpdateAt, 'lastResultsUpdateAt', c.id, true)
-    })) as Competition[];
+      .orderBy(asc(competitions.startDate));
+
+    if (!upcomingCompetitionsData.length) {
+      return [];
+    }
+
+    let userSelectionsMap = new Map<number, boolean>();
+
+    if (userId) {
+      const competitionIds = upcomingCompetitionsData.map(c => c.id);
+      if (competitionIds.length > 0) {
+        const userSelectionRecords = await db
+          .select({ competitionId: selections.competitionId })
+          .from(selections)
+          .where(and(eq(selections.userId, userId), inArray(selections.competitionId, competitionIds)))
+          .groupBy(selections.competitionId);
+
+        userSelectionRecords.forEach(sel => userSelectionsMap.set(sel.competitionId, true));
+      }
+    }
+
+    return upcomingCompetitionsData.map(c => {
+      const hasSubmitted = userId ? (userSelectionsMap.get(c.id) ?? false) : false;
+      return {
+        id: c.id,
+        name: c.name,
+        venue: c.venue,
+        startDate: safeToISOString(c.startDate, 'startDate', c.id, false)!,
+        endDate: safeToISOString(c.endDate, 'endDate', c.id, false)!,
+        selectionDeadline: safeToISOString(c.selectionDeadline, 'selectionDeadline', c.id, false)!,
+        isActive: c.isActive,
+        isComplete: c.isComplete,
+        description: c.description,
+        imageUrl: c.imageUrl,
+        externalLeaderboardUrl: c.externalLeaderboardUrl ?? null,
+        ranksCapturedAt: safeToISOString(c.ranksCapturedAt, 'ranksCapturedAt', c.id, true),
+        currentRound: c.currentRound ?? null,
+        lastResultsUpdateAt: safeToISOString(c.lastResultsUpdateAt, 'lastResultsUpdateAt', c.id, true),
+        hasSubmitted: hasSubmitted
+      };
+    }) as Competition[];
   }
 
   async getCompletedCompetitions(): Promise<Competition[]> {
