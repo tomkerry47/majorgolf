@@ -206,7 +206,11 @@ export default function AdminCompetitions() {
     setPreviewImageUrl(currentImageUrl || null);
      if (!currentImageUrl) {
          // Optionally notify user if they click preview with empty field
-         // toast({ variant: "default", title: "Preview Cleared", description: "Image URL is empty." });
+         toast({
+           variant: "default",
+           title: "Preview Cleared",
+           description: "Image URL is empty.",
+         });
      }
   };
 
@@ -567,7 +571,11 @@ export default function AdminCompetitions() {
                     <FormItem>
                       <FormLabel>Start Date</FormLabel>
                       <FormControl>
-                        <Input type="datetime-local" {...field} />
+                        <Input
+                          type="datetime-local"
+                          {...field}
+                          value={field.value ? new Date(field.value).toISOString().slice(0, 16) : ''}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -580,7 +588,11 @@ export default function AdminCompetitions() {
                     <FormItem>
                       <FormLabel>End Date</FormLabel>
                       <FormControl>
-                        <Input type="datetime-local" {...field} />
+                        <Input
+                          type="datetime-local"
+                          {...field}
+                          value={field.value ? new Date(field.value).toISOString().slice(0, 16) : ''}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -594,7 +606,11 @@ export default function AdminCompetitions() {
                   <FormItem>
                     <FormLabel>Selection Deadline</FormLabel>
                     <FormControl>
-                      <Input type="datetime-local" {...field} />
+                      <Input
+                        type="datetime-local"
+                        {...field}
+                        value={field.value ? new Date(field.value).toISOString().slice(0, 16) : ''}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -607,7 +623,11 @@ export default function AdminCompetitions() {
                   <FormItem>
                     <FormLabel>Description</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Description" {...field} />
+                      <Textarea
+                        placeholder="Description"
+                        {...field}
+                        value={field.value || ''} // Fallback to empty string
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -620,7 +640,11 @@ export default function AdminCompetitions() {
                   <FormItem>
                     <FormLabel>Image URL</FormLabel>
                     <FormControl>
-                      <Input placeholder="Image URL" {...field} />
+                      <Input
+                        placeholder="Image URL"
+                        {...field}
+                        value={field.value || ''} // Fallback to empty string
+                      />
                     </FormControl>
                     <FormMessage />
                     {/* Image Preview Section */}

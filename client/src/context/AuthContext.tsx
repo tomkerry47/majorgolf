@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react'; // Import useCallback
 import { getStoredUser, fetchUserProfile, logout, login, isAuthenticated } from '@/lib/auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLocation } from 'wouter';
@@ -10,13 +10,14 @@ interface AuthContextType {
   isLoading: boolean;
   signIn: (identifier: string, password: string) => Promise<any>; // Changed email to identifier
   signOut: () => Promise<void>;
+  refreshUserProfile: () => Promise<void>; // Added refresh function
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<any | null>(null);
-  const [profile, setProfile] = useState<any | null>(null);
+  const [user, setUser] = useState<any | null>(null); // This often stores the more basic user info from login
+  const [profile, setProfile] = useState<any | null>(null); // This stores the detailed profile
   const [isLoading, setIsLoading] = useState(true);
   const [, setLocation] = useLocation();
 
@@ -78,6 +79,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const refreshUserProfileData = useCallback(async () => { // Wrap with useCallback
+    // Ensure `user` is in the dependency array if it's used to fetch the profile (e.g., user.id)
+    // Also, `fetchUserProfile` should ideally be stable or included if it's not.
+    if (user && user.id) {
+      try {
+        console.log('AuthContext: Refreshing user profile...');
+        const updatedProfile = await fetchUserProfile(user.id);
+        setProfile(updatedProfile);
+        setUser(updatedProfile); // Update user state as well
+        console.log('AuthContext: User profile refreshed.', updatedProfile);
+      } catch (error) {
+        console.error('AuthContext: Error refreshing user profile:', error);
+      }
+    } else {
+      console.warn('AuthContext: Cannot refresh profile, no user ID available to refresh.');
+    }
+  }, [user?.id]); // Add user?.id as a dependency. `user` itself would cause a loop if `setUser` is called.
+
   // If still loading, show a simple loading state
   if (isLoading) {
     return (
@@ -94,13 +113,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAdmin = profile?.isAdmin || false;
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      profile, 
-      isAdmin, 
+    <AuthContext.Provider value={{
+      user,
+      profile,
+      isAdmin,
       isLoading,
       signIn: signInUser,
-      signOut: signOutUser
+      signOut: signOutUser,
+      refreshUserProfile: refreshUserProfileData // Provide the refresh function
     }}>
       {children}
     </AuthContext.Provider>

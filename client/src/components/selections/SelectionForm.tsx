@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle, Loader2 } from "lucide-react";
 // Import Competition type
-import { selectionFormSchema, type InsertSelection, type Golfer, type Selection, type Competition } from "@shared/schema";
+import { selectionFormSchema, type InsertSelection, type Golfer, type Selection, type Competition, type User } from "@shared/schema"; // Added User
 import { useAuth } from "@/context/AuthContext"; // Import useAuth
 import type { Control } from "react-hook-form"; // Import Control type
 
@@ -43,6 +43,7 @@ interface SelectionFormContentProps extends SelectionFormProps {
   mutation: ReturnType<typeof useMutation<any, any, InsertSelection>>; // Adjust types as needed
   // Add types for new data passed down
   allUserSelections: Selection[];
+  user: User | null; // Added user prop
   // Remove competition props
   // allCompetitions: Competition[];
   // currentCompetition: Competition | undefined;
@@ -57,10 +58,21 @@ export default function SelectionForm(props: SelectionFormProps) {
   const { competitionId } = props; // Destructure competitionId early
   const { toast } = useToast(); // Keep toast hook here if needed for mutation setup
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, refreshUserProfile } = useAuth(); // Get refreshUserProfile
   // State hooks remain in the parent
   const [isEditing, setIsEditing] = useState(false);
   const [showCaptainSelector, setShowCaptainSelector] = useState(false);
+
+  // Effect to refresh user profile when the form is displayed or competition changes
+  useEffect(() => {
+    if (user && user.id && refreshUserProfile) {
+      console.log(`SelectionForm for competition ${competitionId} (User: ${user.id}): Attempting to refresh user profile.`);
+      refreshUserProfile().catch(error => {
+        console.error("SelectionForm: Failed to refresh user profile:", error);
+        // Decide if this failure should be silent or notify the user
+      });
+    }
+  }, [competitionId, user?.id, refreshUserProfile]); // refreshUserProfile should be stable
 
   // --- All Query Hooks remain in the parent ---
   const { data: existingSelection, isLoading: isLoadingSelection } = useQuery<Selection | null>({
@@ -189,6 +201,7 @@ export default function SelectionForm(props: SelectionFormProps) {
       defaultValues={defaultValues} // Pass defaultValues down
       // Pass new data and loading states
       allUserSelections={allUserSelections}
+      user={user} // Pass user down
       // Remove competition props
       // allCompetitions={allCompetitions}
       // currentCompetition={currentCompetition}
@@ -222,6 +235,7 @@ function SelectionFormContent({
   defaultValues, // Destructure defaultValues from props
   // Destructure new props
   allUserSelections,
+  user, // Destructure user
   isLoadingAllSelections // Destructure loading states
   // Remove competition props destructuring
   // allCompetitions,
@@ -257,6 +271,16 @@ function SelectionFormContent({
       }
     });
 
+    // Add waiver chip golfers to the exclusion list if the chip has been used
+    if (user?.hasUsedWaiverChip) {
+      if (user.waiverChipOriginalGolferId) {
+        previouslySelectedGolferIds.add(user.waiverChipOriginalGolferId);
+      }
+      if (user.waiverChipReplacementGolferId) {
+        previouslySelectedGolferIds.add(user.waiverChipReplacementGolferId);
+      }
+    }
+
     // Get the IDs of golfers currently selected in *this* form (if editing)
     const currentlySelectedInThisForm = new Set<number>();
     if (isEditing && existingSelection) {
@@ -273,7 +297,7 @@ function SelectionFormContent({
       if (isEditing && currentlySelectedInThisForm.has(golfer.id)) {
         return true;
       }
-      // Otherwise, exclude if they were selected in a previous competition of the same type
+      // Otherwise, exclude if they were selected in a previous competition of the same type or via waiver
       return !previouslySelectedGolferIds.has(golfer.id);
     });
 
@@ -282,8 +306,8 @@ function SelectionFormContent({
       value: golfer.id,
       label: `${golfer.firstName} ${golfer.lastName} ${golfer.rank ? `(#${golfer.rank})` : ''}`
     }));
-    // Dependencies: golfers list, all user selections, current competitionId, editing state, and existing selection
-  }, [golfers, allUserSelections, competitionId, isEditing, existingSelection]);
+    // Dependencies: golfers list, all user selections, current competitionId, editing state, existing selection, and user object
+  }, [golfers, allUserSelections, competitionId, isEditing, existingSelection, user]);
 
 
   // Watch relevant fields for captain options dependency
