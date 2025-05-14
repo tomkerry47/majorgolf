@@ -36,7 +36,7 @@ import axios from 'axios'; // Import axios
 import * as cheerio from 'cheerio'; // Correct cheerio import for ES Modules
 import fs from 'fs/promises'; // Import fs promises for async file writing
 import { db, getCompetitionSelectionCounts, getTotalUsersCount, getUsersWithoutSelections } from './db'; // Import db and new functions
-import { users, selections } from '@shared/schema'; // Import schema tables
+import { users, selections, appMetadata } from '@shared/schema'; // Import schema tables, ADD appMetadata
 import { eq, ne, and, or, inArray, notInArray } from 'drizzle-orm'; // Import Drizzle operators, added notInArray
 
 // Define __dirname for ES Modules
@@ -2104,13 +2104,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         scriptError += data.toString();
       });
 
-      process.on('close', (code) => {
+      process.on('close', async (code) => { // Make this async
         console.log(`[Golfer Update Script] exited with code ${code}`);
         if (code === 0) {
           // Attempt to parse count/errors from output (simple example)
           const countMatch = scriptOutput.match(/Inserted (\d+) golfers/);
           const count = countMatch ? parseInt(countMatch[1], 10) : 'N/A';
-          res.json({ success: true, message: `Golfer update script finished.`, count: count, errors: 0 }); // Assume 0 errors on success code for now
+          // res.json({ success: true, message: `Golfer update script finished.`, count: count, errors: 0 }); // Assume 0 errors on success code for now
+          try {
+            const now = new Date();
+            await db.insert(appMetadata)
+              .values({
+                metaKey: 'golfers_last_updated_timestamp',
+                metaValueTimestamp: now,
+                updatedAt: now
+              })
+              .onConflictDoUpdate({
+                target: appMetadata.metaKey,
+                set: {
+                  metaValueTimestamp: now,
+                  updatedAt: now
+                }
+              });
+            console.log('Successfully updated golfers_last_updated_timestamp in app_metadata');
+            res.json({ success: true, message: 'Golfer update process completed and timestamp recorded.', count: count, errors: 0, output: scriptOutput, errorDetails: scriptError });
+          } catch (dbError) {
+            console.error('Error updating golfers_last_updated_timestamp in app_metadata:', dbError);
+            // Still send success for script, but note the db error
+            res.status(207).json({ success: true, message: 'Golfer update process completed, but failed to record timestamp.', count: count, errors: 0, output: scriptOutput, errorDetails: scriptError, dbError: (dbError as Error).message });
+          }
         } else {
           res.status(500).json({ success: false, error: `Golfer update script failed with code ${code}.`, details: scriptError || scriptOutput });
         }
@@ -2127,6 +2149,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+  app.get('/api/admin/golfers-last-updated', validateJWT, async (req: Request, res: Response) => {
+    if (!req.user?.isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    try {
+      const result = await db.select({
+          timestamp: appMetadata.metaValueTimestamp
+        })
+        .from(appMetadata)
+        .where(eq(appMetadata.metaKey, 'golfers_last_updated_timestamp'))
+        .limit(1);
+
+      if (result.length > 0 && result[0].timestamp) {
+        res.json({ lastUpdated: result[0].timestamp });
+      } else {
+        res.json({ lastUpdated: null });
+      }
+    } catch (error) {
+      console.error('Error fetching golfers_last_updated_timestamp:', error);
+      res.status(500).json({ error: 'Failed to fetch last updated timestamp' });
+    }
+  });
 
   // Return a new server but don't start it
   // This will be started in index.ts

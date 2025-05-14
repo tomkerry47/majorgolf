@@ -130,6 +130,13 @@ export const selectionRanks = pgTable("selection_ranks", {
   };
 });
 
+export const appMetadata = pgTable("app_metadata", {
+  id: serial("id").primaryKey(),
+  metaKey: varchar("meta_key", { length: 255 }).notNull().unique(),
+  metaValueTimestamp: timestamp("meta_value_timestamp"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+});
+
 
 // Define types based on Drizzle schema
 export interface User {
@@ -256,6 +263,13 @@ export interface SelectionRank {
   createdAt: string;
 }
 
+export interface AppMetadata {
+  id: number;
+  metaKey: string;
+  metaValueTimestamp?: string | null;
+  updatedAt: string;
+}
+
 // Validation schemas for insert operations using drizzle-zod
 export const insertUserSchema = createInsertSchema(users)
   .omit({ id: true, createdAt: true });
@@ -304,6 +318,9 @@ export const insertHoleInOneSchema = createInsertSchema(holeInOnes)
 export const insertSelectionRankSchema = createInsertSchema(selectionRanks)
   .omit({ id: true, createdAt: true });
 
+export const insertAppMetadataSchema = createInsertSchema(appMetadata)
+  .omit({ id: true, updatedAt: true });
+
 // Type definitions for typescript usage
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertCompetition = z.infer<typeof insertCompetitionSchema>;
@@ -315,6 +332,7 @@ export type InsertUserPoints = z.infer<typeof insertUserPointsSchema>;
 export type InsertWildcardGolfer = z.infer<typeof insertWildcardGolferSchema>;
 export type InsertHoleInOne = z.infer<typeof insertHoleInOneSchema>;
 export type InsertSelectionRank = z.infer<typeof insertSelectionRankSchema>; // Add type
+export type InsertAppMetadata = z.infer<typeof insertAppMetadataSchema>;
 
 // Hole in One form schema with validation
 export const holeInOneFormSchema = insertHoleInOneSchema
