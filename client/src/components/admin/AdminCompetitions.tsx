@@ -438,7 +438,7 @@ export default function AdminCompetitions() {
                     <TableCell>
                       {new Date(competition.startDate).toLocaleDateString()} - {new Date(competition.endDate).toLocaleDateString()}
                     </TableCell>
-                    <TableCell>{new Date(competition.selectionDeadline).toLocaleDateString()}</TableCell>
+                    <TableCell>{new Date(competition.selectionDeadline).toLocaleString()}</TableCell>
                     <TableCell className="max-w-[150px] truncate">
                       {competition.externalLeaderboardUrl ? (
                         <a
@@ -574,7 +574,7 @@ export default function AdminCompetitions() {
                         <Input
                           type="datetime-local"
                           {...field}
-                          value={field.value ? new Date(field.value).toISOString().slice(0, 16) : ''}
+                          value={formatDateForInput(field.value)}
                         />
                       </FormControl>
                       <FormMessage />
@@ -591,7 +591,7 @@ export default function AdminCompetitions() {
                         <Input
                           type="datetime-local"
                           {...field}
-                          value={field.value ? new Date(field.value).toISOString().slice(0, 16) : ''}
+                          value={formatDateForInput(field.value)}
                         />
                       </FormControl>
                       <FormMessage />
@@ -609,7 +609,7 @@ export default function AdminCompetitions() {
                       <Input
                         type="datetime-local"
                         {...field}
-                        value={field.value ? new Date(field.value).toISOString().slice(0, 16) : ''}
+                        value={formatDateForInput(field.value)}
                       />
                     </FormControl>
                     <FormMessage />

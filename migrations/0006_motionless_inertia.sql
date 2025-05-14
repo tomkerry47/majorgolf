@@ -1,2 +1,2 @@
-ALTER TABLE "selections" ADD COLUMN "waiverRank" integer;--> statement-breakpoint
-ALTER TABLE "users" ADD COLUMN "hasPaid" boolean DEFAULT false NOT NULL;
+-- ALTER TABLE "selections" ADD COLUMN "waiverRank" integer;--> statement-breakpoint
+-- ALTER TABLE "users" ADD COLUMN "hasPaid" boolean DEFAULT false NOT NULL;

@@ -13,6 +13,7 @@ export default function AdminGolfers() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isUpdating, setIsUpdating] = useState(false);
+  const [lastRunTimestamp, setLastRunTimestamp] = useState<Date | null>(null);
 
   // Fetch golfers data
   const { data: golfersData, isLoading: isLoadingGolfers, error: golfersError } = useQuery<{ golfers: Golfer[] }>({
@@ -34,6 +35,7 @@ export default function AdminGolfers() {
         title: "Update Successful",
         description: `Golfers table cleared and ${data?.count ?? 'N/A'} golfers inserted. Errors: ${data?.errors ?? 0}.`,
       });
+      setLastRunTimestamp(new Date()); // Update the timestamp
       // Invalidate golfer queries to refresh lists
       queryClient.invalidateQueries({ queryKey: ['/api/golfers'] });
     },
@@ -81,6 +83,11 @@ export default function AdminGolfers() {
           )}
           {isUpdating ? 'Updating Golfers...' : 'Update Golfer List from DataGolf'}
         </Button>
+        {lastRunTimestamp && (
+          <p className="text-sm text-muted-foreground ml-2 mt-1">
+            Last run: {lastRunTimestamp.toLocaleString()}
+          </p>
+        )}
 
         {/* Display current golfers */}
         <div className="mt-6">

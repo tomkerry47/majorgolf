@@ -114,6 +114,41 @@ function formatUserForResponse(user: any, selectionCount?: number, hasUsedCaptai
   };
 }
 
+// Helper function for robust Date to ISO string conversion
+function safeToISOString(dateVal: any, fieldName: string, compId: number | string, isNullable: boolean): string | null {
+  const fallbackDateString = '1970-01-01T00:00:00.000Z';
+  if (dateVal instanceof Date) {
+    if (!isNaN(dateVal.getTime())) {
+      try {
+        const year = dateVal.getFullYear();
+        // Check for years that might be problematic for toISOString or indicate bad data
+        if (year < 1 || year > 9999) {
+          console.error(`Date for ${fieldName}, competition ID ${compId} has an extreme year (${year}), falling back:`, dateVal);
+          return isNullable ? null : fallbackDateString;
+        }
+        return dateVal.toISOString();
+      } catch (e) {
+        console.error(`Error in toISOString for ${fieldName}, competition ID ${compId} (date: ${String(dateVal)}):`, e);
+        return isNullable ? null : fallbackDateString;
+      }
+    } else {
+      console.error(`Invalid Date object (getTime is NaN) for ${fieldName}, competition ID ${compId}:`, dateVal);
+      return isNullable ? null : fallbackDateString;
+    }
+  } else if (isNullable && (dateVal === null || typeof dateVal === 'undefined')) {
+    return null;
+  } else if (!isNullable && (dateVal === null || typeof dateVal === 'undefined')) {
+    console.error(`Null or undefined for non-nullable field ${fieldName}, competition ID ${compId}:`, dateVal);
+    return fallbackDateString;
+  } else {
+    // Log if it's not a Date and not an expected null/undefined for nullable fields
+    if (!(isNullable && (dateVal === null || typeof dateVal === 'undefined'))) {
+       console.error(`Unexpected type for ${fieldName}, competition ID ${compId} (expected Date): value is '${String(dateVal)}', type is '${typeof dateVal}'`);
+    }
+    return isNullable ? null : fallbackDateString;
+  }
+}
+
 // Implementation of IStorage using Drizzle ORM with PostgreSQL
 export class DatabaseStorage implements IStorage {
   // User methods
@@ -235,17 +270,17 @@ export class DatabaseStorage implements IStorage {
       id: c.id,
       name: c.name,
       venue: c.venue,
-      startDate: c.startDate,
-      endDate: c.endDate,
-      selectionDeadline: c.selectionDeadline,
+      startDate: safeToISOString(c.startDate, 'startDate', c.id, false)!,
+      endDate: safeToISOString(c.endDate, 'endDate', c.id, false)!,
+      selectionDeadline: safeToISOString(c.selectionDeadline, 'selectionDeadline', c.id, false)!,
       isActive: c.isActive,
       isComplete: c.isComplete,
       description: c.description,
       imageUrl: c.imageUrl,
-      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, 
-      ranksCapturedAt: c.ranksCapturedAt ?? null,
-      currentRound: c.currentRound ?? null, // Add currentRound
-      lastResultsUpdateAt: c.lastResultsUpdateAt ?? null // Add lastResultsUpdateAt
+      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null,
+      ranksCapturedAt: safeToISOString(c.ranksCapturedAt, 'ranksCapturedAt', c.id, true),
+      currentRound: c.currentRound ?? null,
+      lastResultsUpdateAt: safeToISOString(c.lastResultsUpdateAt, 'lastResultsUpdateAt', c.id, true)
     })) as Competition[];
   }
 
@@ -280,17 +315,17 @@ export class DatabaseStorage implements IStorage {
       id: c.id,
       name: c.name,
       venue: c.venue,
-      startDate: c.startDate,
-      endDate: c.endDate,
-      selectionDeadline: c.selectionDeadline,
+      startDate: safeToISOString(c.startDate, 'startDate', c.id, false)!,
+      endDate: safeToISOString(c.endDate, 'endDate', c.id, false)!,
+      selectionDeadline: safeToISOString(c.selectionDeadline, 'selectionDeadline', c.id, false)!,
       isActive: c.isActive,
       isComplete: c.isComplete,
       description: c.description,
       imageUrl: c.imageUrl,
-      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, 
-      ranksCapturedAt: c.ranksCapturedAt ?? null,
-      currentRound: c.currentRound ?? null, // Add currentRound
-      lastResultsUpdateAt: c.lastResultsUpdateAt ?? null // Add lastResultsUpdateAt
+      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null,
+      ranksCapturedAt: safeToISOString(c.ranksCapturedAt, 'ranksCapturedAt', c.id, true),
+      currentRound: c.currentRound ?? null,
+      lastResultsUpdateAt: safeToISOString(c.lastResultsUpdateAt, 'lastResultsUpdateAt', c.id, true)
     })) as Competition[];
   }
 
@@ -326,17 +361,17 @@ export class DatabaseStorage implements IStorage {
       id: c.id,
       name: c.name,
       venue: c.venue,
-      startDate: c.startDate,
-      endDate: c.endDate,
-      selectionDeadline: c.selectionDeadline,
+      startDate: safeToISOString(c.startDate, 'startDate', c.id, false)!,
+      endDate: safeToISOString(c.endDate, 'endDate', c.id, false)!,
+      selectionDeadline: safeToISOString(c.selectionDeadline, 'selectionDeadline', c.id, false)!,
       isActive: c.isActive,
       isComplete: c.isComplete,
       description: c.description,
       imageUrl: c.imageUrl,
-      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, 
-      ranksCapturedAt: c.ranksCapturedAt ?? null,
-      currentRound: c.currentRound ?? null, // Add currentRound
-      lastResultsUpdateAt: c.lastResultsUpdateAt ?? null // Add lastResultsUpdateAt
+      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null,
+      ranksCapturedAt: safeToISOString(c.ranksCapturedAt, 'ranksCapturedAt', c.id, true),
+      currentRound: c.currentRound ?? null,
+      lastResultsUpdateAt: safeToISOString(c.lastResultsUpdateAt, 'lastResultsUpdateAt', c.id, true)
     })) as Competition[];
   }
 
@@ -366,17 +401,17 @@ export class DatabaseStorage implements IStorage {
       id: c.id,
       name: c.name,
       venue: c.venue,
-      startDate: c.startDate,
-      endDate: c.endDate,
-      selectionDeadline: c.selectionDeadline,
+      startDate: safeToISOString(c.startDate, 'startDate', c.id, false)!,
+      endDate: safeToISOString(c.endDate, 'endDate', c.id, false)!,
+      selectionDeadline: safeToISOString(c.selectionDeadline, 'selectionDeadline', c.id, false)!,
       isActive: c.isActive,
       isComplete: c.isComplete,
       description: c.description,
       imageUrl: c.imageUrl,
-      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null, 
-      ranksCapturedAt: c.ranksCapturedAt ?? null,
-      currentRound: c.currentRound ?? null, // Add currentRound
-      lastResultsUpdateAt: c.lastResultsUpdateAt ?? null // Add lastResultsUpdateAt
+      externalLeaderboardUrl: c.externalLeaderboardUrl ?? null,
+      ranksCapturedAt: safeToISOString(c.ranksCapturedAt, 'ranksCapturedAt', c.id, true),
+      currentRound: c.currentRound ?? null,
+      lastResultsUpdateAt: safeToISOString(c.lastResultsUpdateAt, 'lastResultsUpdateAt', c.id, true)
     })) as Competition[];
   }
 
@@ -408,17 +443,17 @@ export class DatabaseStorage implements IStorage {
       id: competition.id,
       name: competition.name,
       venue: competition.venue,
-      startDate: competition.startDate,
-      endDate: competition.endDate,
-      selectionDeadline: competition.selectionDeadline,
+      startDate: safeToISOString(competition.startDate, 'startDate', competition.id, false)!,
+      endDate: safeToISOString(competition.endDate, 'endDate', competition.id, false)!,
+      selectionDeadline: safeToISOString(competition.selectionDeadline, 'selectionDeadline', competition.id, false)!,
       isActive: competition.isActive,
       isComplete: competition.isComplete,
       description: competition.description,
       imageUrl: competition.imageUrl,
-      externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null, 
-      ranksCapturedAt: competition.ranksCapturedAt ?? null,
-      currentRound: competition.currentRound ?? null, // Add currentRound
-      lastResultsUpdateAt: competition.lastResultsUpdateAt ?? null // Add lastResultsUpdateAt
+      externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null,
+      ranksCapturedAt: safeToISOString(competition.ranksCapturedAt, 'ranksCapturedAt', competition.id, true),
+      currentRound: competition.currentRound ?? null,
+      lastResultsUpdateAt: safeToISOString(competition.lastResultsUpdateAt, 'lastResultsUpdateAt', competition.id, true)
     } as Competition;
   }
 
@@ -443,7 +478,15 @@ export class DatabaseStorage implements IStorage {
       .values(competitionToInsert)
       .returning(); // Drizzle returns all columns by default unless specified
     // Include ranksCapturedAt in the returned object
-    return { ...newCompetition, externalLeaderboardUrl: newCompetition.externalLeaderboardUrl ?? null, ranksCapturedAt: newCompetition.ranksCapturedAt ?? null } as Competition;
+    return {
+      ...newCompetition,
+      startDate: safeToISOString(newCompetition.startDate, 'startDate', newCompetition.id, false)!,
+      endDate: safeToISOString(newCompetition.endDate, 'endDate', newCompetition.id, false)!,
+      selectionDeadline: safeToISOString(newCompetition.selectionDeadline, 'selectionDeadline', newCompetition.id, false)!,
+      externalLeaderboardUrl: newCompetition.externalLeaderboardUrl ?? null,
+      ranksCapturedAt: safeToISOString(newCompetition.ranksCapturedAt, 'ranksCapturedAt', newCompetition.id, true),
+      lastResultsUpdateAt: safeToISOString(newCompetition.lastResultsUpdateAt, 'lastResultsUpdateAt', newCompetition.id, true)
+    } as Competition;
   }
 
   async updateCompetition(id: number, competitionData: Partial<Competition>): Promise<Competition> {
@@ -453,6 +496,15 @@ export class DatabaseStorage implements IStorage {
         dataToUpdate.externalLeaderboardUrl = competitionData.externalLeaderboardUrl || null;
     }
     // Ensure timestamp fields are Date objects if provided as strings
+    if (typeof dataToUpdate.startDate === 'string') {
+      dataToUpdate.startDate = new Date(dataToUpdate.startDate);
+    }
+    if (typeof dataToUpdate.endDate === 'string') {
+      dataToUpdate.endDate = new Date(dataToUpdate.endDate);
+    }
+    if (typeof dataToUpdate.selectionDeadline === 'string') {
+      dataToUpdate.selectionDeadline = new Date(dataToUpdate.selectionDeadline);
+    }
     if (typeof dataToUpdate.lastResultsUpdateAt === 'string') {
       dataToUpdate.lastResultsUpdateAt = new Date(dataToUpdate.lastResultsUpdateAt);
     }
@@ -460,14 +512,21 @@ export class DatabaseStorage implements IStorage {
       dataToUpdate.ranksCapturedAt = new Date(dataToUpdate.ranksCapturedAt);
     }
 
-
     const [competition] = await db
       .update(competitions)
       .set(dataToUpdate)
       .where(eq(competitions.id, id))
       .returning(); // Drizzle returns all columns by default unless specified
     // Include ranksCapturedAt in the returned object
-    return { ...competition, externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null, ranksCapturedAt: competition.ranksCapturedAt ?? null } as Competition;
+    return {
+      ...competition,
+      startDate: safeToISOString(competition.startDate, 'startDate', competition.id, false)!,
+      endDate: safeToISOString(competition.endDate, 'endDate', competition.id, false)!,
+      selectionDeadline: safeToISOString(competition.selectionDeadline, 'selectionDeadline', competition.id, false)!,
+      externalLeaderboardUrl: competition.externalLeaderboardUrl ?? null,
+      ranksCapturedAt: safeToISOString(competition.ranksCapturedAt, 'ranksCapturedAt', competition.id, true),
+      lastResultsUpdateAt: safeToISOString(competition.lastResultsUpdateAt, 'lastResultsUpdateAt', competition.id, true)
+    } as Competition;
   }
 
   // Golfer methods

@@ -64,6 +64,13 @@
       "when": 1744361738031,
       "tag": "0008_mighty_mariko_yashida",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1747252504038,
+      "tag": "0009_milky_zodiak",
+      "breakpoints": true
     }
   ]
 }
