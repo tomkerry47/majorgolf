@@ -16,15 +16,19 @@ interface SelectionRankInfo {
   isWaiverReplacement: boolean;  // Indicates if this golfer was brought in via waiver for this user/comp
 }
 
-async function showRanksForSelection(competitionId: number, targetGolferIds: number[]) {
+async function showRanksForSelection(competitionId: number, targetGolferIds?: number[]) {
   let client: PoolClient | null = null;
-  console.log(`Fetching rank details for Competition ID: ${competitionId}, Golfer IDs: ${targetGolferIds.join(', ')}`);
+  if (targetGolferIds && targetGolferIds.length > 0) {
+    console.log(`Fetching rank details for Competition ID: ${competitionId}, Filtered by Golfer IDs: ${targetGolferIds.join(', ')}`);
+  } else {
+    console.log(`Fetching rank details for Competition ID: ${competitionId} (all selected golfers)`);
+  }
 
   try {
     client = await pool.connect();
 
     // Query to get relevant info from selections, users, golfers, and selection_ranks
-    const query = `
+    let baseQuery = `
       SELECT
           s."userId",
           u.username,
@@ -32,25 +36,36 @@ async function showRanksForSelection(competitionId: number, targetGolferIds: num
           g.name as "golferName",
           sr."rankAtDeadline",
           s."waiverRank",
-          -- Determine if this specific golfer was the waiver replacement for this user/comp
           (u."hasUsedWaiverChip" = TRUE AND u."waiverChipUsedCompetitionId" = s."competitionId" AND u."waiverChipReplacementGolferId" = g.id) as "isWaiverReplacement"
       FROM
           selections s
       JOIN
           users u ON s."userId" = u.id
-      -- Join based on any of the three golfer slots containing a target golfer ID
       JOIN
-          golfers g ON g.id = ANY(ARRAY[s."golfer1Id", s."golfer2Id", s."golfer3Id"]) AND g.id = ANY($2::int[])
-      -- Left join to selection_ranks to get the original deadline rank if it exists
+          golfers g ON g.id = ANY(ARRAY[s."golfer1Id", s."golfer2Id", s."golfer3Id"])
+          -- This ensures we get a row for each of the selected golfers (golfer1Id, golfer2Id, golfer3Id)
+          -- if they are not null.
       LEFT JOIN
           selection_ranks sr ON sr."userId" = s."userId" AND sr."competitionId" = s."competitionId" AND sr."golferId" = g.id
       WHERE
           s."competitionId" = $1
+    `;
+
+    const queryParams: any[] = [competitionId];
+    let finalQuery = baseQuery;
+
+    if (targetGolferIds && targetGolferIds.length > 0) {
+      // The parameter index will be $2 since $1 is competitionId
+      finalQuery += ` AND g.id = ANY($${queryParams.length + 1}::int[])`;
+      queryParams.push(targetGolferIds);
+    }
+
+    finalQuery += `
       ORDER BY
           u.username, g.name;
     `;
 
-    const result: QueryResult<SelectionRankInfo> = await client.query(query, [competitionId, targetGolferIds]);
+    const result: QueryResult<SelectionRankInfo> = await client.query(finalQuery, queryParams);
 
     if (result.rows.length === 0) {
       console.log('No selections found containing the specified golfers in this competition.');
@@ -84,10 +99,11 @@ async function showRanksForSelection(competitionId: number, targetGolferIds: num
 }
 
 // --- Script Execution ---
-const targetCompetitionId = 6;
-const targetGolferIds = [521, 523];
+const targetCompetitionId = 4;
+// const targetGolferIds = [521, 523]; // Example: Filter by specific golfers like [521, 523]
+// To show all golfers for the competition, call without the second argument or with an empty/undefined array.
 
-showRanksForSelection(targetCompetitionId, targetGolferIds).catch(err => {
+showRanksForSelection(targetCompetitionId).catch(err => {
     console.error("Script execution failed:", err);
     process.exit(1); // Exit with error code if the function rejects
 });
