@@ -15,7 +15,7 @@ import {
   type Selection,
   User,
   Golfer,
-
+  type InsertSelection, // Added import for InsertSelection
   
   type UserPoints,
   type SelectionRank, // Import SelectionRank type
@@ -1224,6 +1224,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(null); // No selection found for this user/competition
       }
 
+      // Check for a query parameter to return raw data for the form
+      if (req.query.format === 'raw') {
+        return res.json(selectionRecord); // Return the raw selection object
+      }
+
+      // If format is not 'raw', proceed to build the detailed response for display purposes
       // Fetch user details separately to get waiver chip info
       const user = await storage.getUser(userId);
       const userWaiverCompId = user?.waiverChipUsedCompetitionId;
@@ -1262,6 +1268,175 @@ export async function registerRoutes(app: Express): Promise<Server> {
             rankMap.set(rankData.golferId, rankData.rankAtDeadline ?? null); // Use nullish coalescing for rank
           }
         });
+      
+        // USER ROUTES FOR SELECTIONS
+        app.post('/api/selections', validateJWT, async (req: Request, res: Response) => {
+          try {
+            const userId = req.user!.database_id!; // User must be authenticated
+            const rawData = req.body;
+      
+            // Validate input using the shared schema
+            const validationResult = selectionFormSchema.safeParse(rawData);
+            if (!validationResult.success) {
+              return res.status(400).json({ error: 'Invalid selection data', details: validationResult.error.flatten() });
+            }
+            const selectionData = validationResult.data;
+      
+            // Check competition deadline
+            const competition = await storage.getCompetitionById(selectionData.competitionId);
+            if (!competition) {
+              return res.status(404).json({ error: 'Competition not found' });
+            }
+            if (new Date() > new Date(competition.selectionDeadline)) {
+              return res.status(400).json({ error: 'Selection deadline has passed. Cannot create selection.' });
+            }
+      
+            // Check if user already has a selection for this competition
+            // Assuming storage.getUserSelections returns a single Selection | null | undefined for a specific user/competition
+            const existingSelectionForPost = await storage.getUserSelections(userId, selectionData.competitionId);
+      
+            if (existingSelectionForPost) {
+              return res.status(409).json({ error: 'You have already made a selection for this competition. Please edit your existing selection.' });
+            }
+            
+            // Captain's Chip logic for POST
+            let needsUserChipStatusUpdateOnCreate = false;
+            if (selectionData.useCaptainsChip) {
+              const userProfile = await storage.getUser(userId);
+              if (!userProfile) {
+                return res.status(404).json({ error: 'User profile not found.' });
+              }
+              if (userProfile.hasUsedCaptainsChip) {
+                return res.status(400).json({ error: "Captain's chip has already been used." });
+              }
+              needsUserChipStatusUpdateOnCreate = true;
+            }
+      
+            // Align payload with InsertSelection which omits id, createdAt, updatedAt
+            // userId is added as it's not part of selectionFormSchema but required for DB
+            const payload: InsertSelection & { userId: number } = {
+              userId,
+              competitionId: selectionData.competitionId,
+              golfer1Id: selectionData.golfer1Id,
+              golfer2Id: selectionData.golfer2Id,
+              golfer3Id: selectionData.golfer3Id,
+              useCaptainsChip: selectionData.useCaptainsChip,
+              captainGolferId: selectionData.useCaptainsChip ? selectionData.captainGolferId : null,
+              // waiverRank is optional in InsertSelection, defaults if not provided
+            };
+      
+            const newSelection = await storage.createSelection(payload);
+      
+            // If captain's chip was used, update user's chip status
+            if (needsUserChipStatusUpdateOnCreate) {
+              await storage.updateUser(userId, {
+                hasUsedCaptainsChip: true
+              });
+            }
+      
+            res.status(201).json(newSelection);
+          } catch (error) {
+            console.error('Error creating selection:', error);
+            if (error instanceof ZodError) {
+              return res.status(400).json({ error: 'Validation error during creation', details: error.errors });
+            }
+            res.status(500).json({ error: 'Failed to create selection' });
+          }
+        });
+      
+        app.patch('/api/selections/:competitionId', validateJWT, async (req: Request, res: Response) => {
+          try {
+            const userId = req.user!.database_id!;
+            const competitionIdParam = parseInt(req.params.competitionId, 10);
+            
+            if (isNaN(competitionIdParam)) {
+              return res.status(400).json({ error: 'Invalid competition ID in URL' });
+            }
+      
+            const rawData = req.body;
+            const validationResult = selectionFormSchema.safeParse(rawData);
+            if (!validationResult.success) {
+              return res.status(400).json({ error: 'Invalid selection data for update', details: validationResult.error.flatten() });
+            }
+            const selectionData = validationResult.data;
+      
+            if (selectionData.competitionId !== competitionIdParam) {
+              return res.status(400).json({ error: 'Competition ID in body does not match URL parameter.' });
+            }
+      
+            const competition = await storage.getCompetitionById(competitionIdParam);
+            if (!competition) {
+              return res.status(404).json({ error: 'Competition not found' });
+            }
+            if (new Date() > new Date(competition.selectionDeadline)) {
+              return res.status(400).json({ error: 'Selection deadline has passed, cannot update selection.' });
+            }
+      
+            // Assuming storage.getUserSelections returns a single Selection | null | undefined
+            const existingSelection = await storage.getUserSelections(userId, competitionIdParam);
+      
+            if (!existingSelection) {
+              return res.status(404).json({ error: 'No existing selection found to update for this competition.' });
+            }
+      
+            const userProfile = await storage.getUser(userId);
+            if (!userProfile) {
+              return res.status(404).json({ error: 'User profile not found.' });
+            }
+      
+            let needsUserChipStatusUpdate = false;
+            let userChipStatusPayload: { hasUsedCaptainsChip: boolean } | undefined = undefined;
+      
+            if (selectionData.useCaptainsChip) { // User wants to use/keep chip
+              if (!existingSelection.useCaptainsChip) { // Chip was not used before, now user wants to use it
+                if (userProfile.hasUsedCaptainsChip) { // Check if chip already used globally
+                  return res.status(400).json({ error: "Captain's chip has already been used." });
+                }
+                // Chip is available, mark for update
+                userChipStatusPayload = { hasUsedCaptainsChip: true };
+                needsUserChipStatusUpdate = true;
+              }
+              // If chip was already used on this selection (existingSelection.useCaptainsChip was true)
+              // and selectionData.useCaptainsChip is still true, user's global chip status doesn't change here.
+            } else { // User does NOT want to use chip (selectionData.useCaptainsChip is false)
+              if (existingSelection.useCaptainsChip) { // Chip was used before, now user wants to remove it from this selection
+                // This makes the chip available again globally.
+                userChipStatusPayload = { hasUsedCaptainsChip: false };
+                needsUserChipStatusUpdate = true;
+              }
+              // If not used before and still not used, no change to user chip status.
+            }
+            
+            // Fields for storage.updateSelection. It likely takes selectionId and the partial data.
+            // updatedAt is handled by the DB trigger or Drizzle's defaultNow on update.
+            // The Selection interface has updatedAt: string.
+            const updatePayload: Partial<Omit<Selection, 'id' | 'userId' | 'competitionId' | 'createdAt'>> & { updatedAt: string } = {
+              golfer1Id: selectionData.golfer1Id,
+              golfer2Id: selectionData.golfer2Id,
+              golfer3Id: selectionData.golfer3Id,
+              useCaptainsChip: selectionData.useCaptainsChip,
+              captainGolferId: selectionData.useCaptainsChip ? selectionData.captainGolferId : null,
+              updatedAt: new Date().toISOString(),
+              // waiverRank is optional, not changing it here unless explicitly part of selectionData
+            };
+            
+            // Assuming storage.updateSelection takes the ID of the selection to update
+            const updatedSelection = await storage.updateSelection(existingSelection.id, updatePayload);
+      
+            if (needsUserChipStatusUpdate && userChipStatusPayload) {
+              await storage.updateUser(userId, userChipStatusPayload);
+            }
+            
+            res.status(200).json(updatedSelection);
+          } catch (error) {
+            console.error('Error updating selection:', error);
+            if (error instanceof ZodError) {
+              return res.status(400).json({ error: 'Validation error during update', details: error.errors });
+            }
+            res.status(500).json({ error: 'Failed to update selection' });
+          }
+        });
+      
       }
 
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"; 
+import React, { useEffect, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { useQuery } from "@tanstack/react-query";
@@ -170,9 +170,10 @@ function GolferSelectionDisplay({ selection }: { selection: UserCompetitionSelec
 
 export default function Competition() {
   const { user } = useAuth();
-  const [, setLocation] = useLocation(); 
+  const [, setLocation] = useLocation();
   const [match, params] = useRoute("/competitions/:id");
   const competitionId = params?.id ? parseInt(params.id) : 0;
+  const [isEditingSelection, setIsEditingSelection] = useState(false); // Moved state here
 
   // Redirect to login if no user
   useEffect(() => {
@@ -373,15 +374,21 @@ export default function Competition() {
           <TabsContent value="selections">
             {isLoadingUserSelections ? (
               <Card><CardContent className="p-6"><Skeleton className="h-48 w-full" /></CardContent></Card>
-            ) : userSelections && userSelections.length > 0 ? (
+            ) : isEditingSelection && competition ? (
+              <SelectionForm
+                competitionId={competitionId}
+                competitionName={competition.name}
+                selectionDeadline={competition.selectionDeadline}
+                onSuccess={() => setIsEditingSelection(false)} // Hide form on success
+              />
+            ) : userSelections && userSelections.length > 0 && competition ? (
               <Card>
                 <CardHeader>
                   <CardTitle>Your Selection</CardTitle>
-                  {/* Add check for competition existence */}
-                  {competition && <CardDescription>For {competition.name}. Deadline: {new Date(competition.selectionDeadline).toLocaleString()}</CardDescription>}
-                   {deadlinePassed && (
-                     <Badge variant="destructive" className="mt-2">Deadline Passed</Badge>
-                   )}
+                  <CardDescription>For {competition.name}. Deadline: {new Date(competition.selectionDeadline).toLocaleString()}</CardDescription>
+                  {deadlinePassed && (
+                    <Badge variant="destructive" className="mt-2">Deadline Passed</Badge>
+                  )}
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -390,25 +397,25 @@ export default function Competition() {
                     ))}
                   </div>
                   {!deadlinePassed && (
-                     <Button variant="outline" className="mt-4" onClick={() => alert('Edit functionality not yet implemented.')}>
-                       Edit Selection
-                     </Button>
-                   )}
+                    <Button variant="outline" className="mt-4" onClick={() => setIsEditingSelection(true)}>
+                      Edit Selection
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
-            ) : !deadlinePassed && competition ? ( // Check competition exists for form
+            ) : !deadlinePassed && competition ? (
               <SelectionForm
                 competitionId={competitionId}
                 competitionName={competition.name}
                 selectionDeadline={competition.selectionDeadline}
+                // onSuccess for new selections could also hide form or navigate, if desired
               />
             ) : deadlinePassed ? (
               <Card>
-                <CardHeader><CardTitle>No Selection Made</CardTitle></CardHeader> 
-                <CardContent><p className="text-sm text-gray-500">You did not make a selection for this competition before the deadline.</p></CardContent>
+                <CardHeader><CardTitle>No Selection Made or Deadline Passed</CardTitle></CardHeader>
+                <CardContent><p className="text-sm text-gray-500">You did not make a selection for this competition, or the deadline to edit has passed.</p></CardContent>
               </Card>
-            ) : null 
-            }
+            ) : null}
           </TabsContent>
 
           <TabsContent value="predictor-leaderboard">

@@ -76,8 +76,8 @@ export default function SelectionForm(props: SelectionFormProps) {
 
   // --- All Query Hooks remain in the parent ---
   const { data: existingSelection, isLoading: isLoadingSelection } = useQuery<Selection | null>({
-    queryKey: ['/api/selections', competitionId], // Use competitionId in queryKey
-    queryFn: () => apiRequest<Selection | null>(`/api/selections/${competitionId}`), // Fetch specific selection
+    queryKey: ['/api/selections', competitionId, 'raw'], // Add 'raw' to queryKey for uniqueness
+    queryFn: () => apiRequest<Selection | null>(`/api/selections/${competitionId}?format=raw`), // Add ?format=raw
     enabled: !!user && !!competitionId, // Only run if user and competitionId are available
     retry: false, // Don't retry if selection not found (404)
   });
@@ -339,25 +339,28 @@ function SelectionFormContent({
 
   // useEffect hooks are now inside the inner component
   useEffect(() => {
-    if (existingSelection) {
+    // Note: The `isEditing` state is now set by this effect itself.
+    // The primary dependency for populating the form is `existingSelection` and `golfers`.
+    if (existingSelection && golfers && golfers.length > 0) {
       form.reset({
         competitionId: existingSelection.competitionId,
-        golfer1Id: existingSelection.golfer1Id || 0,
-        golfer2Id: existingSelection.golfer2Id || 0,
-        golfer3Id: existingSelection.golfer3Id || 0,
+        golfer1Id: existingSelection.golfer1Id || undefined, // Use undefined for Combobox
+        golfer2Id: existingSelection.golfer2Id || undefined, // Use undefined for Combobox
+        golfer3Id: existingSelection.golfer3Id || undefined, // Use undefined for Combobox
         useCaptainsChip: existingSelection.useCaptainsChip || false,
         captainGolferId: existingSelection.captainGolferId || undefined,
       });
-      setIsEditing(true); // We are editing an existing selection
-      setShowCaptainSelector(existingSelection.useCaptainsChip || false); // Show captain selector if chip was used
-    } else {
-      // Reset to defaults if no existing selection (e.g., navigating between competitions)
+      setIsEditing(true);
+      setShowCaptainSelector(existingSelection.useCaptainsChip || false);
+    } else if (!existingSelection && golfers && golfers.length > 0) {
+      // Only reset to defaults if golfers are loaded, to prevent premature reset if defaultValues depend on async data (though not currently the case here)
       form.reset(defaultValues);
       setIsEditing(false);
       setShowCaptainSelector(false);
     }
-    // Revert: Add setters back to dependency array
-  }, [existingSelection, competitionId, setIsEditing, setShowCaptainSelector]);
+    // Dependencies: existingSelection, defaultValues (which depends on competitionId), golfers list, and the setters.
+    // form and competitionId are also dependencies.
+  }, [existingSelection, defaultValues, golfers, form, competitionId, setIsEditing, setShowCaptainSelector]);
 
    // Update captain selector visibility based on the watched checkbox value
    useEffect(() => {
