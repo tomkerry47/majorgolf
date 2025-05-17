@@ -69,6 +69,7 @@ interface PointDetail {
   golferId: number;
   position: number | string; // Can be number or 'MC/WD'
   basePoints: number; // Points based on position only
+  holeInOneBonus?: number; // Optional: Points added for a hole-in-one
   rankAtDeadline?: number | null; // Rank at deadline
   waiverRankUsed?: number | null; // Rank used if waiver applied
   rankSource: 'deadline' | 'waiver' | 'none'; // Source of the rank used for bonus
@@ -739,7 +740,7 @@ async function allocatePoints(client: PoolClient, competitionId: number): Promis
       return acc;
     }, {} as { [key: number]: number });
     // Add default for position 0 (missed cut) if not present
-    if (pointsLookup[0] === undefined) pointsLookup[0] = -7; 
+    if (pointsLookup[0] === undefined) pointsLookup[0] = -7;
 
     // --- Step 2.5: Update points in the results table ---
     console.log(`Updating points for ${results.length} golfer results...`);
@@ -747,7 +748,7 @@ async function allocatePoints(client: PoolClient, competitionId: number): Promis
     for (const result of results) {
       const calculatedPoints = pointsLookup[result.position] ?? 0; // Calculate points based on position
       // Update if points are null OR if they differ from calculated points
-      if (result.points === null || result.points !== calculatedPoints) { 
+      if (result.points === null || result.points !== calculatedPoints) {
         try {
           await client.query('UPDATE results SET points = $1 WHERE id = $2', [calculatedPoints, result.id]);
           console.log(`Updated points for result ID ${result.id} (Golfer ${result.golferId}) from ${result.points ?? 'NULL'} to ${calculatedPoints}`); // Log null if needed
@@ -764,6 +765,14 @@ async function allocatePoints(client: PoolClient, competitionId: number): Promis
     console.log('Finished updating golfer result points.');
     // --- End Step 2.5 ---
 
+    // 2.6 Get Hole-In-One data for the competition
+    const holeInOnesRes: QueryResult<{ golferId: number }> = await client.query(
+      'SELECT "golferId" FROM hole_in_ones WHERE "competitionId" = $1',
+      [competitionId]
+    );
+    const holeInOneGolferIds = new Set(getRows(holeInOnesRes).map(hio => hio.golferId));
+    console.log(`Found ${holeInOneGolferIds.size} hole-in-one entries for competition ${competitionId}`);
+
 
     // 3. Get selections for the competition, including waiverRank
     const selectionsRes: QueryResult<Selection> = await client.query('SELECT *, "waiverRank" FROM selections WHERE "competitionId" = $1', [competitionId]);
@@ -772,7 +781,7 @@ async function allocatePoints(client: PoolClient, competitionId: number): Promis
 
     // 4. Get captured selection ranks for this competition
     const ranksRes: QueryResult<SelectionRankEntry> = await client.query(
-      'SELECT "userId", "golferId", "rankAtDeadline" FROM selection_ranks WHERE "competitionId" = $1', 
+      'SELECT "userId", "golferId", "rankAtDeadline" FROM selection_ranks WHERE "competitionId" = $1',
       [competitionId]
     );
     const selectionRanksData: SelectionRankEntry[] = getRows(ranksRes);
@@ -803,14 +812,22 @@ async function allocatePoints(client: PoolClient, competitionId: number): Promis
         const rankAtDeadline = rankMap.get(`${selection.userId}-${golferId}`); // Get rank for this user/golfer
         let basePoints = 0;
         let position: number | string = 'N/A'; // Default position if no result
+        let holeInOneBonus = 0;
 
         if (result) {
           basePoints = result.points ?? 0; // Use points from result based on position
-          position = result.position; 
+          position = result.position;
         } else {
            // Handle case where selected golfer has no result (e.g., WD, missed cut without explicit position 0)
            basePoints = pointsLookup[0] || -7; // Assign missed cut points
            position = 'MC/WD';
+        }
+
+        // Check for Hole-In-One bonus
+        if (holeInOneGolferIds.has(golferId)) {
+          holeInOneBonus = 20;
+          console.log(`Golfer ${golferId} gets +20 points for a hole-in-one.`);
+          basePoints += holeInOneBonus; // Add HIO bonus before rank/captain multipliers
         }
 
         // Determine which rank to use for bonus calculation
@@ -843,7 +860,8 @@ async function allocatePoints(client: PoolClient, competitionId: number): Promis
         pointDetails.push({
           golferId,
           position,
-          basePoints,
+          basePoints: result ? (result.points ?? 0) : (pointsLookup[0] || -7), // Original points before HIO
+          holeInOneBonus: holeInOneBonus > 0 ? holeInOneBonus : undefined,
           rankAtDeadline: rankAtDeadline ?? null, // Still store deadline rank for info
           waiverRankUsed: waiverRankUsed, // Store the waiver rank if used
           rankSource, // Store the source of the rank used for bonus
