@@ -16,7 +16,7 @@ import {
   User,
   Golfer,
   type InsertSelection, // Added import for InsertSelection
-  
+  type HoleInOne, // Import HoleInOne type
   type UserPoints,
   type SelectionRank, // Import SelectionRank type
   type Result, // Import Result type
@@ -910,6 +910,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const golfer2 = await storage.getGolferById(selectionRecord.golfer2Id);
           const golfer3 = await storage.getGolferById(selectionRecord.golfer3Id);
           const results = await storage.getResults(competitionId);
+          const holeInOnes: HoleInOne[] = await storage.getHoleInOnes(competitionId); // Fetch HIOs - corrected method and added type
+          const holeInOneGolferIds = new Set(holeInOnes.map((hio: HoleInOne) => hio.golferId)); // Create a set for quick lookup - added type to hio
+
           // Fetch ranks for all golfers in this selection
           const golferIdsInSelection = [selectionRecord.golfer1Id, selectionRecord.golfer2Id, selectionRecord.golfer3Id];
           const ranks = await Promise.all(
@@ -951,6 +954,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // selectionWaiverRank is not applicable for original selections.
             }
 
+            const scoredHoleInOne = holeInOneGolferIds.has(golferId);
+            const hioBonusPoints = scoredHoleInOne ? 20 : undefined;
+
             return {
               playerId: golferId,
               playerName: golfer?.name || 'Unknown',
@@ -959,7 +965,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               position: result?.position,
               points: result?.points ?? null,
               isCaptain: isCaptain,
-              isWaiver: isThisGolferAWaiverReplacement
+              isWaiver: isThisGolferAWaiverReplacement,
+              holeInOne: scoredHoleInOne,
+              holeInOnePoints: hioBonusPoints
             };
           };
 

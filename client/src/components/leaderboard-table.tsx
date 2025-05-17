@@ -42,8 +42,11 @@ export interface LeaderboardEntry { // Added export
     rank?: number | null; // Added rank (general rank or current tournament rank)
     selectionWaiverRank?: number | null; // Roo: Original rank of the player if they are a waiver replacement
     points?: number | null; // Added points per golfer
+    holeInOne?: boolean; // Added for H1 display
+    holeInOnePoints?: number; // Added for H1 points display
   }[];
   lastPointsChange?: number | null; // Allow null as well
+  lastEventHadHoleInOne?: boolean; // Added for overall leaderboard H1 summary
   // User-level chip status might still be useful for other UI elements, keep them for now
   hasUsedCaptainsChip: boolean;
   hasUsedWaiverChip: boolean;
@@ -66,9 +69,9 @@ interface UserSelectionHistoryEntry {
   id: number;
   competitionId: number;
   competition: { name: string; venue: string; startDate: string | null; endDate: string | null; isComplete: boolean; isActive: boolean; } | null;
-  golfer1: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; rank: number | null; waiverRank?: number | null; } | null;
-  golfer2: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; rank: number | null; waiverRank?: number | null; } | null;
-  golfer3: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; rank: number | null; waiverRank?: number | null; } | null;
+  golfer1: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; rank: number | null; waiverRank?: number | null; holeInOne?: boolean; holeInOnePoints?: number; } | null;
+  golfer2: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; rank: number | null; waiverRank?: number | null; holeInOne?: boolean; holeInOnePoints?: number; } | null;
+  golfer3: { id: number; name: string; avatar: string | null; isCaptain: boolean; isWildcard: boolean; rank: number | null; waiverRank?: number | null; holeInOne?: boolean; holeInOnePoints?: number; } | null;
   golfer1Result: { position: number; points: number | null } | null;
   golfer2Result: { position: number; points: number | null } | null;
   golfer3Result: { position: number; points: number | null } | null;
@@ -337,7 +340,10 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                       }}
                     >
                       {/* Apply width class, minimal padding, and center alignment to rank cell */}
-                      <TableCell className="font-medium w-4 px-0 py-1 text-center">{entry.rank}</TableCell> {/* Added text-center */}
+                      <TableCell className="font-medium w-4 px-0 py-1 text-center">
+                        {entry.rank}
+                        {displayMode === 'overall' && entry.lastEventHadHoleInOne && <span className="text-xs text-blue-600 font-bold ml-0.5">(H1)</span>}
+                      </TableCell> {/* Added text-center */}
                       {/* Set left padding to zero and responsive right padding (zero on mobile) on Player cell */}
                       <TableCell className="pl-0 pr-0 sm:pr-4"> {/* Changed pr-1 to pr-0 */}
                   <div className="flex items-center">
@@ -389,6 +395,10 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                             {/* Add Wildcard (*) badge */}
                             {displayMode === 'competition' && isRankWildcard && (
                               <Badge variant="outline" className="ml-1 text-xs px-1 py-0.5 bg-orange-100 text-orange-800 border-orange-300">*</Badge>
+                            )}
+                            {/* Add Hole in One (H1) badge */}
+                            {displayMode === 'competition' && selection.holeInOne && (
+                              <Badge variant="outline" className="ml-1 text-xs px-1 py-0.5 bg-sky-100 text-sky-800 border-sky-300">H1</Badge>
                             )}
                             {/* Add comma separator if not the last item */}
                             {idx < selections.length - 1 && <span className="ml-1">,</span>}
@@ -493,6 +503,12 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                                         {isRankWildcard && (
                                           <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-orange-100 text-orange-800 border-orange-300">Wildcard</Badge>
                                         )}
+                                        {/* Display Hole in One details */}
+                                        {selection.holeInOne && (
+                                          <span className="ml-1.5 text-sky-700 font-medium">
+                                            ({selection.holeInOnePoints && selection.holeInOnePoints > 0 ? `+${isRankWildcard ? selection.holeInOnePoints * 2 : selection.holeInOnePoints}` : '0'} Pts) Hole in One
+                                          </span>
+                                        )}
                                       </li>
                                     );
                                   })}
@@ -526,8 +542,8 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                                           if (!golfer) return null;
                                           const result = gIdx === 0 ? compSelection.golfer1Result : gIdx === 1 ? compSelection.golfer2Result : compSelection.golfer3Result;
                                           const points = result?.points ?? null;
-                                          const isRankWildcard = typeof golfer.rank === 'number' && golfer.rank > 50;
-                                          const displayedPoints = points !== null ? points * (golfer.isCaptain || isRankWildcard ? 2 : 1) : null;
+                                          const isRankWildcardGolfer = typeof golfer.rank === 'number' && golfer.rank > 50; // Renamed to avoid conflict
+                                          const displayedPoints = points !== null ? points * (golfer.isCaptain || isRankWildcardGolfer ? 2 : 1) : null;
 
                                           return (
                                             <li key={golfer.id} className="text-gray-600">
@@ -536,7 +552,13 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                                               {displayedPoints !== null && ` (${displayedPoints > 0 ? '+' : ''}${displayedPoints} Pts)`}
                                               {golfer.isCaptain && <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-green-100 text-green-800 border-green-300">C</Badge>}
                                               {golfer.isWildcard && <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-blue-100 text-blue-800 border-blue-300">W</Badge>}
-                                              {isRankWildcard && <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-orange-100 text-orange-800 border-orange-300">*</Badge>}
+                                              {isRankWildcardGolfer && <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-orange-100 text-orange-800 border-orange-300">*</Badge>}
+                                              {/* Display Hole in One details for overall expanded view */}
+                                              {golfer.holeInOne && (
+                                                <span className="ml-1.5 text-sky-700 font-medium">
+                                                  ({golfer.holeInOnePoints && golfer.holeInOnePoints > 0 ? `+${isRankWildcardGolfer ? golfer.holeInOnePoints * 2 : golfer.holeInOnePoints}` : '0'} Pts) Hole in One
+                                                </span>
+                                              )}
                                             </li>
                                           );
                                         })}
@@ -612,7 +634,7 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                       <PaginationItem key={page}>
                         <PaginationLink
                           onClick={() => setCurrentPage(Number(page))}
-                          isActive={currentPage === page}
+                          isActive={currentPage === Number(page)}
                         >
                           {page}
                         </PaginationLink>
@@ -634,13 +656,12 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
           </div>
         </div>
       )}
-
-      {/* Admin Export Button - Show for admins in either view */}
-      {auth?.isAdmin && (
+      {/* Export Button - Only show if auth.user is available */}
+      {auth.user && (
         <div className="px-4 py-3 border-t border-gray-200 sm:px-6 flex justify-end">
           <Button
             onClick={handleExportJpeg}
-            disabled={isExporting || isLoading} // Disable while exporting or loading data
+            disabled={isExporting}
             variant="outline"
             size="sm"
           >
@@ -653,20 +674,15 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
   );
 };
 
-// Helper function to get ordinal suffix
+// Helper function to get ordinal suffix (e.g., 1st, 2nd, 3rd)
+// Ensure this function is defined or imported if it's used elsewhere
+// For simplicity, defining it here if not already globally available
 function getOrdinalSuffix(num: number): string {
-  const j = num % 10;
-  const k = num % 100;
-  if (j === 1 && k !== 11) {
-    return "st";
-  }
-  if (j === 2 && k !== 12) {
-    return "nd";
-  }
-  if (j === 3 && k !== 13) {
-    return "rd";
-  }
-  return "th";
+  if (num <= 0) return ""; // Or handle as an error/default
+  const s = ["th", "st", "nd", "rd"];
+  const v = num % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
 }
+
 
 export default LeaderboardTable;

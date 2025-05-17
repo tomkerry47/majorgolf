@@ -797,6 +797,25 @@ export class DatabaseStorage implements IStorage {
 
      console.log(`[Storage] getUserSelectionsForAllCompetitions - Created results map with ${resultsMap.size} entries.`); // Simplified log
 
+     // Fetch all hole-in-ones for these competitions
+     const allHoleInOnes = competitionIds.length > 0 ? await db
+       .select()
+       .from(holeInOnes)
+       .where(inArray(holeInOnes.competitionId, competitionIds)) : [];
+
+     // Map hole-in-ones by competitionId and golferId
+     const holeInOnesMap = new Map<string, HoleInOne>();
+     allHoleInOnes.forEach(hioFromDb => { // Renamed hio to hioFromDb to avoid confusion
+       const formattedHio: HoleInOne = {
+         ...hioFromDb,
+         createdAt: safeToISOString(hioFromDb.createdAt, 'hio.createdAt', `${hioFromDb.competitionId}-${hioFromDb.golferId}`, false)!,
+         updatedAt: safeToISOString(hioFromDb.updatedAt, 'hio.updatedAt', `${hioFromDb.competitionId}-${hioFromDb.golferId}`, false)!,
+       };
+       holeInOnesMap.set(`${formattedHio.competitionId}-${formattedHio.golferId}`, formattedHio);
+     });
+     console.log(`[Storage] getUserSelectionsForAllCompetitions - Created holeInOnes map with ${holeInOnesMap.size} entries.`);
+
+
      // No need to fetch ranks here if we use the user waiver details
 
      // Format the data for the frontend
@@ -841,7 +860,9 @@ export class DatabaseStorage implements IStorage {
            waiverRank: data.waiverRank, // Include waiverRank
            isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer1.id,
            // Check if this golfer was the waiver replacement in this specific competition
-           isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer1.id
+           isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer1.id,
+           holeInOne: holeInOnesMap.has(`${selection.competitionId}-${data.golfer1.id}`),
+           holeInOnePoints: holeInOnesMap.has(`${selection.competitionId}-${data.golfer1.id}`) ? 20 : undefined,
          } : null,
          golfer2: data.golfer2?.id ? {
            id: data.golfer2.id,
@@ -851,7 +872,9 @@ export class DatabaseStorage implements IStorage {
            waiverRank: data.waiverRank, // Include waiverRank
            isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer2.id,
            // Check if this golfer was the waiver replacement in this specific competition
-           isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer2.id
+           isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer2.id,
+           holeInOne: holeInOnesMap.has(`${selection.competitionId}-${data.golfer2.id}`),
+           holeInOnePoints: holeInOnesMap.has(`${selection.competitionId}-${data.golfer2.id}`) ? 20 : undefined,
          } : null,
          golfer3: data.golfer3?.id ? {
            id: data.golfer3.id,
@@ -861,7 +884,9 @@ export class DatabaseStorage implements IStorage {
            waiverRank: data.waiverRank, // Include waiverRank
            isCaptain: selection.useCaptainsChip && selection.captainGolferId === data.golfer3.id,
            // Check if this golfer was the waiver replacement in this specific competition
-           isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer3.id
+           isWildcard: userHasUsedWaiver && userWaiverCompId === selection.competitionId && userWaiverReplacementId === data.golfer3.id,
+           holeInOne: holeInOnesMap.has(`${selection.competitionId}-${data.golfer3.id}`),
+           holeInOnePoints: holeInOnesMap.has(`${selection.competitionId}-${data.golfer3.id}`) ? 20 : undefined,
          } : null,
          golfer1Result: golfer1Result ? { position: golfer1Result.position, points: golfer1Result.points } : null,
          golfer2Result: golfer2Result ? { position: golfer2Result.position, points: golfer2Result.points } : null,
