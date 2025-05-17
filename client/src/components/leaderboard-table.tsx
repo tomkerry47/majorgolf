@@ -398,7 +398,7 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                             )}
                             {/* Add Hole in One (H1) badge */}
                             {displayMode === 'competition' && selection.holeInOne && (
-                              <Badge variant="outline" className="ml-1 text-xs px-1 py-0.5 bg-sky-100 text-sky-800 border-sky-300">H1</Badge>
+                              <Badge variant="outline" className="ml-1 text-xs px-1 py-0.5 bg-red-100 text-red-800 border-red-300">H1</Badge>
                             )}
                             {/* Add comma separator if not the last item */}
                             {idx < selections.length - 1 && <span className="ml-1">,</span>}
@@ -505,7 +505,7 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                                         )}
                                         {/* Display Hole in One details */}
                                         {selection.holeInOne && (
-                                          <span className="ml-1.5 text-sky-700 font-medium">
+                                          <span className="ml-1.5 text-red-700 font-medium">
                                             ({selection.holeInOnePoints && selection.holeInOnePoints > 0 ? `+${isRankWildcard ? selection.holeInOnePoints * 2 : selection.holeInOnePoints}` : '0'} Pts) Hole in One
                                           </span>
                                         )}
@@ -555,7 +555,7 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                                               {isRankWildcardGolfer && <Badge variant="outline" className="ml-1.5 text-xs px-1 py-0.5 bg-orange-100 text-orange-800 border-orange-300">*</Badge>}
                                               {/* Display Hole in One details for overall expanded view */}
                                               {golfer.holeInOne && (
-                                                <span className="ml-1.5 text-sky-700 font-medium">
+                                                <span className="ml-1.5 text-red-700 font-medium">
                                                   ({golfer.holeInOnePoints && golfer.holeInOnePoints > 0 ? `+${isRankWildcardGolfer ? golfer.holeInOnePoints * 2 : golfer.holeInOnePoints}` : '0'} Pts) Hole in One
                                                 </span>
                                               )}
