@@ -39,7 +39,8 @@ export interface LeaderboardEntry { // Added export
     position?: number;
     isCaptain: boolean; // Added
     isWaiver: boolean; // Added
-    rank?: number | null; // Added rank
+    rank?: number | null; // Added rank (general rank or current tournament rank)
+    selectionWaiverRank?: number | null; // Roo: Original rank of the player if they are a waiver replacement
     points?: number | null; // Added points per golfer
   }[];
   lastPointsChange?: number | null; // Allow null as well
@@ -364,7 +365,12 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                     const selections = entry.selections; // Assign to new variable
                     if (selections && selections.length > 0) {
                       return selections.map((selection, idx) => {
-                        const isRankWildcard = typeof selection.rank === 'number' && selection.rank > 50; // Check rank
+                        // Roo: Determine which rank to use for wildcard check
+                        // If it's a waiver and selectionWaiverRank is available, use that. Otherwise, use the general rank.
+                        const rankToConsiderForWildcard = selection.isWaiver && typeof selection.selectionWaiverRank === 'number'
+                                                          ? selection.selectionWaiverRank
+                                                          : selection.rank;
+                        const isRankWildcard = typeof rankToConsiderForWildcard === 'number' && rankToConsiderForWildcard > 50;
                         return (
                           // Use a span for each selection to allow inline badges
                           <span key={selection.playerId || idx} className="mr-2 inline-flex items-center"> {/* Added key, mr-2, inline-flex, items-center */}
@@ -457,7 +463,11 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                               {entry.selections && entry.selections.length > 0 ? (
                                 <ul className="list-disc pl-5 space-y-1">
                                   {entry.selections.map((selection, idx) => {
-                                    const isRankWildcard = typeof selection.rank === 'number' && selection.rank > 50;
+                                    // Roo: Determine which rank to use for wildcard check in expanded view
+                                    const rankToConsiderForWildcardExpanded = selection.isWaiver && typeof selection.selectionWaiverRank === 'number'
+                                                                              ? selection.selectionWaiverRank
+                                                                              : selection.rank;
+                                    const isRankWildcard = typeof rankToConsiderForWildcardExpanded === 'number' && rankToConsiderForWildcardExpanded > 50;
                                     const points = selection.points ?? null;
                                     // Calculate displayed points (doubled if captain or rank wildcard)
                                     const displayedPoints = points !== null ? points * (selection.isCaptain || isRankWildcard ? 2 : 1) : null;

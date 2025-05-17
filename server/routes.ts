@@ -927,18 +927,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const createSelectionEntry = (golfer: Golfer | undefined, golferId: number) => {
             const result = results.find(r => r.golferId === golferId);
             const isCaptain = selectionRecord?.captainGolferId === golferId;
-            // Check if this golfer is the one chosen via waiver chip for this user
-            const isWaiver = hasUsedWaiverChip && waiverReplacementGolferId === golferId && selectionRecord?.competitionId === user?.waiverChipUsedCompetitionId;
-            const rankAtDeadline = rankMap.get(golferId) ?? null; // Get rank from map
+            // Check if this golfer is the one chosen via waiver chip for this user in this competition
+            const isThisGolferAWaiverReplacement = hasUsedWaiverChip &&
+                                                 waiverReplacementGolferId === golferId &&
+                                                 selectionRecord?.competitionId === user?.waiverChipUsedCompetitionId;
+            
+            const rankAtDeadlineForThisGolfer = rankMap.get(golferId) ?? null; // This is the rank when selection was made/deadline
+
+            let displayRank: number | null;
+            let selectionWaiverRankForThisGolfer: number | null = null;
+
+            if (isThisGolferAWaiverReplacement) {
+              // This golfer IS a waiver replacement.
+              // Their wildcard status is determined by their rank when they were acquired (rankAtDeadlineForThisGolfer).
+              selectionWaiverRankForThisGolfer = rankAtDeadlineForThisGolfer;
+              // The general 'rank' field can be their current OWGR rank from the golfers table, if available and different.
+              // Frontend will prioritize selectionWaiverRank for wildcard checks on waivers.
+              displayRank = typeof golfer?.rank === 'number' ? golfer.rank : rankAtDeadlineForThisGolfer; // Fallback to deadline rank if current not available
+            } else {
+              // This golfer is an original selection.
+              // Their wildcard status is determined by their rank at time of selection/deadline.
+              displayRank = rankAtDeadlineForThisGolfer;
+              // selectionWaiverRank is not applicable for original selections.
+            }
 
             return {
               playerId: golferId,
               playerName: golfer?.name || 'Unknown',
-              rank: rankAtDeadline, // Add rank
+              rank: displayRank,
+              selectionWaiverRank: selectionWaiverRankForThisGolfer,
               position: result?.position,
-              points: result?.points ?? null, // Add points from the result, default to null
+              points: result?.points ?? null,
               isCaptain: isCaptain,
-              isWaiver: isWaiver
+              isWaiver: isThisGolferAWaiverReplacement
             };
           };
 
