@@ -340,15 +340,15 @@ const LeaderboardTable = ({ data, isLoading, userId, displayMode }: LeaderboardT
                       }}
                     >
                       {/* Apply width class, minimal padding, and center alignment to rank cell */}
-                      <TableCell className="font-medium w-4 px-0 py-1 text-center">
+                      <TableCell className="font-medium w-4 px-2 py-1 text-center">
                         {entry.rank}
                         {displayMode === 'overall' && entry.lastEventHadHoleInOne && <span className="text-xs text-blue-600 font-bold ml-0.5">(H1)</span>}
-                      </TableCell> {/* Added text-center */}
+                      </TableCell> {/* Added text-center, changed px-0 to px-2 */}
                       {/* Set left padding to zero and responsive right padding (zero on mobile) on Player cell */}
-                      <TableCell className="pl-0 pr-0 sm:pr-4"> {/* Changed pr-1 to pr-0 */}
+                      <TableCell className="px-2"> {/* Changed padding for more space */}
                   <div className="flex items-center">
                     {/* Reduced avatar size and removed margin */}
-                    <Avatar className="h-8 w-8 mr-0 overflow-hidden flex-shrink-0"> {/* Changed mr-1 to mr-0 */}
+                    <Avatar className="h-8 w-8 mr-2 overflow-hidden flex-shrink-0"> {/* Changed mr-0 to mr-2 */}
                       {/* Use AvatarImage component */}
                       <AvatarImage src={entry.avatarUrl} alt={entry.username} className="object-cover" />
                       <AvatarFallback className="bg-primary-600 text-white">
