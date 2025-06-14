@@ -408,6 +408,11 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
         const playerNameExact = playerNameRaw.toLowerCase().trim();
         // Normalize Player Name (for fuzzy match)
         const playerNameNormalized = normalizeName(playerNameRaw);
+        
+        // Debug logging for D. McCarthy
+        if (playerNameRaw.includes('McCarthy')) {
+            console.log(`[DEBUG] McCarthy player found - Raw: "${playerNameRaw}", Exact: "${playerNameExact}", Normalized: "${playerNameNormalized}"`);
+        }
 
         // Clean and Parse Position
         let position: number;
@@ -442,6 +447,7 @@ async function fetchAndProcessPgaData(client: PoolClient, competition: Competiti
                 "cam young": 627, // Force match for Cam Young -> Cameron Young (ID 627)
                 "sw kim": 538, // Force match for S.W. Kim -> Si Woo Kim (ID 538)
                 "m kim": 528, // Force match for M. Kim -> Michael Kim (ID 528)
+                "d mccarthy": 520, // Force match for D. McCarthy -> Denny McCarthy (ID 136) - Note: no period after normalization
                 // Add other specific overrides here if needed in the future
                 // e.g., "some other tricky name": 123,
             };
