@@ -243,8 +243,9 @@ async function updateGolfersFromDataGolf() {
     process.exit(1); // Exit with error code
   } finally {
     client.release(); // Release client back to the pool
-    await pool.end(); // Close the pool connection
-    console.log('Database pool closed.');
+    // Don't close the pool here - it might be shared with the main server
+    // The pool will be closed when the process exits
+    console.log('Database client released.');
   }
 }
 

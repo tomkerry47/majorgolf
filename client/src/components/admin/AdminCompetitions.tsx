@@ -270,7 +270,7 @@ export default function AdminCompetitions() {
           isActive: false,
           isComplete: false,
           description: "The Masters Tournament is played annually at Augusta National Golf Club in Augusta, Georgia. It is one of the four major championships in professional golf.",
-          imageUrl: "https://www.masters.com/images/pics/large/masters_logo_meta.jpg"
+          imageUrl: "/Masters.PNG"
         },
         {
           name: "PGA Championship",
@@ -281,7 +281,7 @@ export default function AdminCompetitions() {
           isActive: false,
           isComplete: false,
           description: "The PGA Championship is one of golf's four major championships. Since 2019, it has been played in May, making it the second major of the golf season.",
-          imageUrl: "https://www.pgachampionship.com/assets/images/pgachampionship-logo.png"
+          imageUrl: "/PGA.PNG"
         },
         {
           name: "U.S. Open",
@@ -292,7 +292,7 @@ export default function AdminCompetitions() {
           isActive: false,
           isComplete: false,
           description: "The United States Open Championship is the annual open national championship of golf in the United States. It is the third of the four major championships.",
-          imageUrl: "https://www.usopen.com/content/dam/usopen/logo/us-open-championship-logo.svg"
+          imageUrl: "/USOpen.PNG"
         },
         {
           name: "The Open Championship",
@@ -303,7 +303,7 @@ export default function AdminCompetitions() {
           isActive: false,
           isComplete: false,
           description: "The Open Championship, often referred to as The Open or the British Open, is the oldest golf tournament in the world. It is one of the four major championships.",
-          imageUrl: "https://www.theopen.com/assets/site/logos/the-open-logo-white.svg"
+          imageUrl: "/OPEN.PNG"
         },
         {
           name: "The Players Championship",
@@ -314,7 +314,7 @@ export default function AdminCompetitions() {
           isActive: false,
           isComplete: false,
           description: "The Players Championship is an annual golf tournament on the PGA Tour. Originally known as the Tournament Players Championship, it is often regarded as golf's fifth major.",
-          imageUrl: "https://www.theplayers.com/content/dam/pga/tournaments/tournament-sites/the-players-championship/the-players-logo.svg"
+          imageUrl: "/Players.PNG"
         }
       ];
 
