@@ -53,6 +53,7 @@ export interface IStorage {
   updateSelection(id: number, selectionData: Partial<Selection>): Promise<Selection>;
   deleteSelection(id: number): Promise<void>;
   deleteUserSelectionsForCompetition(userId: number, competitionId: number): Promise<number>; // Added method
+  deleteCompetition(id: number): Promise<void>;
 
   // Results methods
   getResults(competitionId: number): Promise<Result[]>;
@@ -555,6 +556,22 @@ export class DatabaseStorage implements IStorage {
       ranksCapturedAt: safeToISOString(competition.ranksCapturedAt, 'ranksCapturedAt', competition.id, true),
       lastResultsUpdateAt: safeToISOString(competition.lastResultsUpdateAt, 'lastResultsUpdateAt', competition.id, true)
     } as Competition;
+  }
+
+  async deleteCompetition(id: number): Promise<void> {
+    // Delete related records first to maintain referential integrity
+    // Delete results for this competition
+    await db.delete(results).where(eq(results.competitionId, id));
+    // Delete user points for this competition
+    await db.delete(userPoints).where(eq(userPoints.competitionId, id));
+    // Delete selections for this competition
+    await db.delete(selections).where(eq(selections.competitionId, id));
+    // Delete selection ranks for this competition
+    await db.delete(selectionRanks).where(eq(selectionRanks.competitionId, id));
+    // Delete hole-in-ones for this competition
+    await db.delete(holeInOnes).where(eq(holeInOnes.competitionId, id));
+    // Finally, delete the competition itself
+    await db.delete(competitions).where(eq(competitions.id, id));
   }
 
   // Golfer methods

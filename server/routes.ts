@@ -1589,6 +1589,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to update competition' });
     }
   });
+  app.delete('/api/admin/competitions/:id', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+      const { id } = req.params;
+      const competitionId = parseInt(id);
+      if (isNaN(competitionId)) {
+        return res.status(400).json({ error: 'Invalid competition ID' });
+      }
+      // Check if competition exists
+      const competition = await storage.getCompetitionById(competitionId);
+      if (!competition) {
+        return res.status(404).json({ error: 'Competition not found' });
+      }
+      // Delete the competition (cascading deletes handled in storage)
+      await storage.deleteCompetition(competitionId);
+      res.json({ success: true, message: 'Competition deleted successfully' });
+    } catch (error) {
+      console.error('Admin delete competition error:', error);
+      res.status(500).json({ error: 'Failed to delete competition' });
+    }
+  });
   // Modified GET /api/admin/users to include waiver chip details
   app.get('/api/admin/users', validateJWT, async (req: Request, res: Response) => {
     try {
