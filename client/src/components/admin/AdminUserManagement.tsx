@@ -127,10 +127,13 @@ const AdminUserManagement: React.FC = () => {
   const resetPasswordMutation = useMutation({
     mutationFn: (userId: number) => apiRequest(`/api/admin/users/${userId}/reset-password`, 'POST'),
     onSuccess: (data: any) => {
+      const description = data.emailSent
+        ? `Password for ${userToReset?.username} reset. Temp PW: ${data.temporaryPassword}. Email sent to ${userToReset?.email}.`
+        : `Password for ${userToReset?.username} reset. Temp PW: ${data.temporaryPassword}. Email failed: ${data.emailError || 'unknown error'}`;
       toast({
         title: "Password Reset Successful",
-        description: data.message || `Password for ${userToReset?.username} reset and emailed.`,
-        duration: 6000
+        description,
+        duration: 12000
       });
       closeResetDialog(); // Close the dialog on success
     },
@@ -382,7 +385,7 @@ const AdminUserManagement: React.FC = () => {
                             <AlertDialogTitle>Reset Password for {userToReset?.username}?</AlertDialogTitle>
                             {/* Always show the confirmation message */}
                             <AlertDialogDescription>
-                              This action cannot be undone. A new temporary password will be generated and emailed to the user.
+                              This action cannot be undone. A new temporary password will be generated, shown to you, and also emailed if mail delivery succeeds.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>

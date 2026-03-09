@@ -5,7 +5,7 @@ type MailConfig = {
   fromAddress: string;
 };
 
-function getMailConfig(): MailConfig {
+export function getMailConfig(): MailConfig {
   const tenantId = process.env.AZURE_MAIL_TENANT_ID;
   const clientId = process.env.AZURE_MAIL_CLIENT_ID;
   const clientSecret = process.env.AZURE_MAIL_CLIENT_SECRET;
@@ -91,8 +91,10 @@ async function sendMail(message: {
   }
 
   return {
+    provider: "microsoft-graph",
     from: config.fromAddress,
     to: message.to,
+    subject: message.subject,
   };
 }
 
@@ -119,6 +121,20 @@ export async function sendPasswordResetLinkEmail(to: string, username: string, r
     "<p>We received a request to reset your Major Golf password.</p>",
     `<p><a href="${resetUrl}">Reset your password</a></p>`,
     "<p>This link expires in 1 hour. If you did not request this, you can ignore this email.</p>",
+  ].join("");
+
+  return sendMail({
+    to,
+    subject,
+    html,
+  });
+}
+
+export async function sendAdminTestEmail(to: string) {
+  const subject = "Major Golf mail test";
+  const html = [
+    "<p>This is a test email from Major Golf.</p>",
+    `<p>Sent at ${new Date().toISOString()}.</p>`,
   ].join("");
 
   return sendMail({

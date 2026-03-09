@@ -15,6 +15,7 @@ import AdminPointSystem from "@/components/admin/AdminPointSystem";
 import AdminCompetitions from "@/components/admin/AdminCompetitions";
 import AdminGolfers from "@/components/admin/AdminGolfers"; // Import AdminGolfers component
 import AdminUserManagement from "@/components/admin/AdminUserManagement"; // Import the new component
+import AdminMailTest from "@/components/admin/AdminMailTest";
 import {
   Card,
   CardContent,
@@ -474,6 +475,7 @@ const Admin = () => {
           <TabsTrigger value="hole-in-ones">Hole-in-Ones</TabsTrigger>
           <TabsTrigger value="waiver-chips">Waiver Chips</TabsTrigger>
           <TabsTrigger value="user-management">User Management</TabsTrigger> {/* Add User Management Trigger */}
+          <TabsTrigger value="email">Email</TabsTrigger>
         </TabsList>
         
         <TabsContent value="player-selections">
@@ -1011,6 +1013,9 @@ const Admin = () => {
         </TabsContent>
         <TabsContent value="user-management"> {/* Add User Management Content */}
           <AdminUserManagement />
+        </TabsContent>
+        <TabsContent value="email">
+          <AdminMailTest />
         </TabsContent>
       </Tabs>
     </div>

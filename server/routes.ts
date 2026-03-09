@@ -42,7 +42,7 @@ import fs from 'fs/promises'; // Import fs promises for async file writing
 import { db, getCompetitionSelectionCounts, getTotalUsersCount, getUsersWithoutSelections } from './db'; // Import db and new functions
 import { users, selections, appMetadata } from '@shared/schema'; // Import schema tables, ADD appMetadata
 import { eq, ne, and, or, inArray, notInArray, gt, isNull } from 'drizzle-orm'; // Import Drizzle operators, added notInArray
-import { sendPasswordResetLinkEmail, sendTemporaryPasswordEmail } from './mail';
+import { getMailConfig, sendAdminTestEmail, sendPasswordResetLinkEmail, sendTemporaryPasswordEmail } from './mail';
 
 // Define __dirname for ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -1884,25 +1884,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update the password in storage
       await storage.updateUserPassword(userIdToReset, hashedPassword);
 
+      let emailSent = false;
+      let emailError: string | null = null;
+
       try {
         await sendTemporaryPasswordEmail(userExists.email, userExists.username, newPassword);
+        emailSent = true;
       } catch (mailError) {
         console.error(`Password reset email failed for user ID ${userIdToReset}:`, mailError);
-        return res.status(500).json({
-          error: 'Password was reset but the email could not be sent. Run the reset again to issue a new temporary password.',
-        });
+        emailError = mailError instanceof Error ? mailError.message : 'Unknown mail error';
       }
 
-      console.log(`Admin reset password email sent for user ID ${userIdToReset}.`);
+      console.log(`Admin reset password completed for user ID ${userIdToReset}. Email sent: ${emailSent}.`);
 
       res.json({
         success: true,
-        message: `Password reset successfully for ${userExists.username}. Temporary password emailed to ${userExists.email}.`,
+        emailSent,
+        emailError,
+        temporaryPassword: newPassword,
+        message: emailSent
+          ? `Password reset successfully for ${userExists.username}. Temporary password emailed to ${userExists.email}.`
+          : `Password reset successfully for ${userExists.username}, but the email could not be sent.`,
       });
 
     } catch (error) {
       console.error(`Admin reset password error for user ID ${req.params.id}:`, error);
       res.status(500).json({ error: 'Failed to reset password' });
+    }
+  });
+
+  app.post('/api/admin/mail/test', validateJWT, async (req: Request, res: Response) => {
+    const logs: string[] = [];
+
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const requestedTo = typeof req.body?.to === 'string' ? req.body.to.trim() : '';
+      const to = requestedTo || tokenUser.email;
+
+      if (!to || !to.includes('@')) {
+        return res.status(400).json({ error: 'A valid recipient email is required' });
+      }
+
+      logs.push('Preparing admin mail test');
+      logs.push(`Recipient: ${to}`);
+
+      const config = getMailConfig();
+      logs.push(`Configured sender: ${config.fromAddress}`);
+      logs.push(`Tenant configured: ${config.tenantId}`);
+      logs.push(`Client ID configured: ${config.clientId}`);
+
+      const result = await sendAdminTestEmail(to);
+      logs.push('Graph sendMail request completed successfully');
+
+      res.json({
+        success: true,
+        logs,
+        result,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown mail error';
+      logs.push(`Mail test failed: ${errorMessage}`);
+      console.error('Admin mail test error:', error);
+      res.status(500).json({
+        success: false,
+        logs,
+        error: errorMessage,
+      });
     }
   });
 
