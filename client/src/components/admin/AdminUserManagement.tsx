@@ -125,11 +125,14 @@ const AdminUserManagement: React.FC = () => {
 
   // Mutation for resetting password
   const resetPasswordMutation = useMutation({
-    mutationFn: (userId: number) => apiRequest(`/api/admin/users/${userId}/reset-password`, 'POST'),
-    onSuccess: (data: any) => {
+    mutationFn: (user: AdminUser) =>
+      apiRequest(`/api/admin/users/${user.id}/reset-password`, 'POST'),
+    onSuccess: (data: any, user: AdminUser) => {
+      const username = data.username || user.username;
+      const email = data.email || user.email;
       const description = data.emailSent
-        ? `Password for ${userToReset?.username} reset. Temp PW: ${data.temporaryPassword}. Email sent to ${userToReset?.email}.`
-        : `Password for ${userToReset?.username} reset. Temp PW: ${data.temporaryPassword}. Email failed: ${data.emailError || 'unknown error'}`;
+        ? `Password for ${username} reset. Temp PW: ${data.temporaryPassword}. Email sent to ${email}.`
+        : `Password for ${username} reset. Temp PW: ${data.temporaryPassword}. Email failed: ${data.emailError || 'unknown error'}`;
       toast({
         title: "Password Reset Successful",
         description,
@@ -237,7 +240,7 @@ const AdminUserManagement: React.FC = () => {
 
   const confirmPasswordReset = () => {
     if (userToReset) {
-      resetPasswordMutation.mutate(userToReset.id);
+      resetPasswordMutation.mutate(userToReset);
       // Let onSuccess or onError handle closing the dialog via setUserToReset(null)
     }
   };

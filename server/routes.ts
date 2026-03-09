@@ -1902,6 +1902,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         emailSent,
         emailError,
         temporaryPassword: newPassword,
+        username: userExists.username,
+        email: userExists.email,
         message: emailSent
           ? `Password reset successfully for ${userExists.username}. Temporary password emailed to ${userExists.email}.`
           : `Password reset successfully for ${userExists.username}, but the email could not be sent.`,
