@@ -7,7 +7,6 @@ import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from 'cookie-parser'; // Import cookie-parser
 import cors from 'cors'; // Import cors
 import { registerRoutes } from "./routes";
-import { setupVite, log } from "./vite"; // Remove serveStatic import
 import fs from "fs"; // Import fs for checking directory existence
 import path from "path";
 import { fileURLToPath } from "url";
@@ -19,6 +18,17 @@ if (!process.env.NODE_ENV) {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+function log(message: string, source = "express") {
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+
+  console.log(`${formattedTime} [${source}] ${message}`);
+}
 
 const app = express();
 
@@ -171,6 +181,7 @@ app.use((req, res, next) => {
   if (app.get("env") === "development") {
     console.log("[Server Startup] Setting up Vite in development mode..."); // Updated log
     try {
+      const { setupVite } = await import("./vite");
       await setupVite(app, server);
       console.log("[Server Startup] Vite setup completed successfully."); // Updated log
     } catch (error) {
