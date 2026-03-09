@@ -126,14 +126,11 @@ const AdminUserManagement: React.FC = () => {
   // Mutation for resetting password
   const resetPasswordMutation = useMutation({
     mutationFn: (userId: number) => apiRequest(`/api/admin/users/${userId}/reset-password`, 'POST'),
-    onSuccess: (data: any) => { // Expect data with temporaryPassword
-      console.log("Received temporary password:", data.temporaryPassword);
-      // setNewPassword(data.temporaryPassword); // Don't store in state for dialog
+    onSuccess: (data: any) => {
       toast({
         title: "Password Reset Successful",
-        // Display password in the toast description
-        description: `Password for ${userToReset?.username} reset. Temp PW: ${data.temporaryPassword}`,
-        duration: 9000 // Increase duration to allow reading the password
+        description: data.message || `Password for ${userToReset?.username} reset and emailed.`,
+        duration: 6000
       });
       closeResetDialog(); // Close the dialog on success
     },

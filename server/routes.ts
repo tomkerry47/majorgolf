@@ -38,6 +38,7 @@ import fs from 'fs/promises'; // Import fs promises for async file writing
 import { db, getCompetitionSelectionCounts, getTotalUsersCount, getUsersWithoutSelections } from './db'; // Import db and new functions
 import { users, selections, appMetadata } from '@shared/schema'; // Import schema tables, ADD appMetadata
 import { eq, ne, and, or, inArray, notInArray } from 'drizzle-orm'; // Import Drizzle operators, added notInArray
+import { sendTemporaryPasswordEmail } from './mail';
 
 // Define __dirname for ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -1763,15 +1764,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update the password in storage
       await storage.updateUserPassword(userIdToReset, hashedPassword);
 
-      console.log(`Admin reset password for user ID ${userIdToReset}. New temp password: ${newPassword}`);
+      try {
+        await sendTemporaryPasswordEmail(userExists.email, userExists.username, newPassword);
+      } catch (mailError) {
+        console.error(`Password reset email failed for user ID ${userIdToReset}:`, mailError);
+        return res.status(500).json({
+          error: 'Password was reset but the email could not be sent. Run the reset again to issue a new temporary password.',
+        });
+      }
 
-      // Return the *new plain-text password* to the admin
-      // IMPORTANT: This is only acceptable because there's no email system assumed.
-      // In a real system, you'd send a reset link via email.
-      res.json({ 
-        success: true, 
-        message: `Password reset successfully for ${userExists.username}.`,
-        temporaryPassword: newPassword // Return the temporary password
+      console.log(`Admin reset password email sent for user ID ${userIdToReset}.`);
+
+      res.json({
+        success: true,
+        message: `Password reset successfully for ${userExists.username}. Temporary password emailed to ${userExists.email}.`,
       });
 
     } catch (error) {
