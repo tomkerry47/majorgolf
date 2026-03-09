@@ -7,6 +7,9 @@ import path from 'path';
 import fsSync from 'fs'; // Use fsSync for synchronous operations like mkdirSync
 import {
   loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  changePasswordSchema,
   selectionFormSchema,
   insertResultSchema,
   insertCompetitionSchema,
@@ -20,7 +23,8 @@ import {
   type UserPoints,
   type SelectionRank, // Import SelectionRank type
   type Result, // Import Result type
-  type WildcardGolfer // Import WildcardGolfer type
+  type WildcardGolfer, // Import WildcardGolfer type
+  passwordResetTokens,
 } from '@shared/schema';
 import { generateToken, verifyToken, comparePassword, hashPassword } from './db'; // Import hashPassword
 import { ZodError, z } from 'zod'; // Import z
@@ -37,8 +41,8 @@ import * as cheerio from 'cheerio'; // Correct cheerio import for ES Modules
 import fs from 'fs/promises'; // Import fs promises for async file writing
 import { db, getCompetitionSelectionCounts, getTotalUsersCount, getUsersWithoutSelections } from './db'; // Import db and new functions
 import { users, selections, appMetadata } from '@shared/schema'; // Import schema tables, ADD appMetadata
-import { eq, ne, and, or, inArray, notInArray } from 'drizzle-orm'; // Import Drizzle operators, added notInArray
-import { sendTemporaryPasswordEmail } from './mail';
+import { eq, ne, and, or, inArray, notInArray, gt, isNull } from 'drizzle-orm'; // Import Drizzle operators, added notInArray
+import { sendPasswordResetLinkEmail, sendTemporaryPasswordEmail } from './mail';
 
 // Define __dirname for ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -51,6 +55,12 @@ interface ExtendedUser {
   user_metadata?: Record<string, any>;
   database_id?: number;
   isAdmin?: boolean;
+}
+
+const FORGOT_PASSWORD_MESSAGE = "If an account exists for that email, a reset link has been sent.";
+
+function hashResetToken(token: string) {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 // Extend Express Request type to include user property
@@ -74,6 +84,8 @@ const validateJWT = async (req: Request, res: Response, next: NextFunction) => {
   // List of explicitly public routes (paths starting after /api/)
   const publicRoutes = [
     '/auth/login POST',
+    '/auth/forgot-password POST',
+    '/auth/reset-password POST',
     '/competitions GET',
     '/competitions/all GET',
     '/competitions/active GET',
@@ -293,6 +305,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/auth/logout', async (req: Request, res: Response) => {
     res.clearCookie('authToken'); res.json({ success: true });
+  });
+
+  app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
+    try {
+      const { email } = forgotPasswordSchema.parse(req.body);
+      const normalizedEmail = email.toLowerCase().trim();
+      const user = await storage.getUserByEmail(normalizedEmail);
+
+      if (!user) {
+        return res.json({ success: true, message: FORGOT_PASSWORD_MESSAGE });
+      }
+
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = hashResetToken(resetToken);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
+      const resetUrl = `${baseUrl}/?reset=${encodeURIComponent(resetToken)}`;
+
+      await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
+      await db.insert(passwordResetTokens).values({
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      });
+
+      await sendPasswordResetLinkEmail(user.email, user.username, resetUrl);
+
+      res.json({ success: true, message: FORGOT_PASSWORD_MESSAGE });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({ error: error.errors[0]?.message || 'Invalid email address' });
+      }
+
+      console.error('Forgot password error:', error);
+      res.status(500).json({ error: 'Failed to process forgot password request' });
+    }
+  });
+
+  app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
+    try {
+      const { token, password } = resetPasswordSchema.parse(req.body);
+      const tokenHash = hashResetToken(token);
+
+      const [resetRecord] = await db
+        .select()
+        .from(passwordResetTokens)
+        .where(and(
+          eq(passwordResetTokens.tokenHash, tokenHash),
+          gt(passwordResetTokens.expiresAt, new Date()),
+          isNull(passwordResetTokens.usedAt),
+        ));
+
+      if (!resetRecord) {
+        return res.status(400).json({ error: 'This reset link is invalid or has expired.' });
+      }
+
+      const hashedPassword = await hashPassword(password);
+      await storage.updateUserPassword(resetRecord.userId, hashedPassword);
+      await db
+        .update(passwordResetTokens)
+        .set({ usedAt: new Date() })
+        .where(eq(passwordResetTokens.id, resetRecord.id));
+
+      res.json({ success: true, message: 'Password updated successfully. You can now sign in.' });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({ error: error.errors[0]?.message || 'Invalid reset request' });
+      }
+
+      console.error('Reset password error:', error);
+      res.status(500).json({ error: 'Failed to reset password' });
+    }
   });
 
   app.get('/api/competitions', async (req: Request, res: Response) => {
@@ -1153,6 +1237,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   app.patch('/api/users/:id', validateJWT, async (req: Request, res: Response) => {
     try { const { id } = req.params; const userId = parseInt(id); const tokenUser = req.user as ExtendedUser; if (tokenUser.database_id !== userId && !tokenUser.isAdmin) { return res.status(403).json({ error: 'Not authorized to update this user' }); } const user = await storage.getUser(userId); if (!user) { return res.status(404).json({ error: 'User not found' }); } const updatedUser = await storage.updateUser(userId, req.body); const { password, ...userData } = updatedUser; res.json(userData); } catch (error) { console.error('Update user error:', error); res.status(500).json({ error: 'Failed to update user' }); }
+  });
+
+  app.post('/api/users/:id/change-password', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+      const tokenUser = req.user as ExtendedUser;
+
+      if (tokenUser.database_id !== userId && !tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Not authorized to change this password' });
+      }
+
+      const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
+      const user = await storage.getUser(userId);
+
+      if (!user || !user.password) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const isCurrentPasswordValid = await comparePassword(currentPassword, user.password);
+      if (!isCurrentPasswordValid) {
+        return res.status(400).json({ error: 'Current password is incorrect' });
+      }
+
+      const hashedPassword = await hashPassword(newPassword);
+      await storage.updateUserPassword(userId, hashedPassword);
+      await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, userId));
+
+      res.json({ success: true, message: 'Password updated successfully.' });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({ error: error.errors[0]?.message || 'Invalid password change request' });
+      }
+
+      console.error('Change password error:', error);
+      res.status(500).json({ error: 'Failed to change password' });
+    }
   });
 
   // User Avatar Upload (Self)

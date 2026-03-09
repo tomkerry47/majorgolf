@@ -1,18 +1,25 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { loginSchema, type LoginCredentials } from "@shared/schema"; // Import shared schema
-import { 
-  Card, 
+import {
+  forgotPasswordSchema,
+  loginSchema,
+  resetPasswordSchema,
+  type ForgotPasswordRequest,
+  type LoginCredentials,
+  type ResetPasswordRequest,
+} from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
+import {
+  Card,
   CardContent,
-  CardDescription, 
-  CardFooter, 
-  CardHeader, 
-  CardTitle
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -26,58 +33,139 @@ import {
 } from "@/components/ui/form";
 import { Trophy } from "lucide-react";
 
-// Removed local loginSchema definition
+type AuthMode = "login" | "forgot" | "reset";
 
-// Use LoginCredentials type from shared schema
-// type LoginValues = z.infer<typeof loginSchema>; // Removed local type
+function getResetTokenFromUrl() {
+  return new URLSearchParams(window.location.search).get("reset")?.trim() || "";
+}
 
 const Auth = () => {
-  console.log("Auth component rendered");
   const { signIn } = useAuth();
   const { toast } = useToast();
-  const [_, setLocation] = useLocation();
-  
+  const [, setLocation] = useLocation();
+  const [resetToken, setResetToken] = useState(() => getResetTokenFromUrl());
+  const [authMode, setAuthMode] = useState<AuthMode>(() => (
+    getResetTokenFromUrl() ? "reset" : "login"
+  ));
+
   useEffect(() => {
-    console.log("Auth component mounted");
-    // Preflight check to ensure API connectivity
-    fetch('/api/competitions')
-      .then(response => {
-        console.log("API connectivity test result:", response.status);
-      })
-      .catch(error => {
-        console.error("API connectivity test failed:", error);
-      });
+    fetch("/api/competitions").catch((error) => {
+      console.error("API connectivity test failed:", error);
+    });
+
+    const handlePopState = () => {
+      const token = getResetTokenFromUrl();
+      setResetToken(token);
+      setAuthMode(token ? "reset" : "login");
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  // Login form - Use imported schema and type
   const loginForm = useForm<LoginCredentials>({
-    resolver: zodResolver(loginSchema), // Use imported schema
+    resolver: zodResolver(loginSchema),
     defaultValues: {
-      identifier: "", // Use identifier
+      identifier: "",
       password: "",
     },
   });
 
-  const onLoginSubmit = async (values: LoginCredentials) => { // Use imported type
+  const forgotForm = useForm<ForgotPasswordRequest>({
+    resolver: zodResolver(forgotPasswordSchema),
+    defaultValues: {
+      email: "",
+    },
+  });
+
+  const resetForm = useForm<ResetPasswordRequest>({
+    resolver: zodResolver(resetPasswordSchema),
+    defaultValues: {
+      token: resetToken,
+      password: "",
+      confirmPassword: "",
+    },
+  });
+
+  useEffect(() => {
+    resetForm.setValue("token", resetToken);
+  }, [resetToken, resetForm]);
+
+  const showLogin = () => {
+    setAuthMode("login");
+    setResetToken("");
+    resetForm.reset({
+      token: "",
+      password: "",
+      confirmPassword: "",
+    });
+    window.history.replaceState(null, "", window.location.pathname);
+  };
+
+  const onLoginSubmit = async (values: LoginCredentials) => {
     try {
-      const normalizedIdentifier = values.identifier.trim(); // Use identifier
-      console.log('Attempting login with:', normalizedIdentifier);
-      const result = await signIn(normalizedIdentifier, values.password); // Pass identifier
-      console.log('Login successful:', result);
+      const normalizedIdentifier = values.identifier.trim();
+      await signIn(normalizedIdentifier, values.password);
       toast({
         title: "Welcome back!",
         description: "You have been successfully logged in.",
-        duration: 2000, // Set duration to 2 seconds
+        duration: 2000,
       });
       setLocation("/");
     } catch (error: any) {
-      console.error('Login error:', error);
       toast({
         title: "Login failed",
         description: error.message || "There was a problem logging in. Please check your credentials.",
         variant: "destructive",
       });
     }
+  };
+
+  const onForgotPasswordSubmit = async (values: ForgotPasswordRequest) => {
+    try {
+      const response = await apiRequest<{ message: string }>("/api/auth/forgot-password", "POST", values);
+      toast({
+        title: "Check your email",
+        description: response.message,
+      });
+      forgotForm.reset();
+      showLogin();
+    } catch (error: any) {
+      toast({
+        title: "Request failed",
+        description: error.message || "Could not send reset email.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const onResetPasswordSubmit = async (values: ResetPasswordRequest) => {
+    try {
+      const response = await apiRequest<{ message: string }>("/api/auth/reset-password", "POST", values);
+      toast({
+        title: "Password updated",
+        description: response.message,
+      });
+      showLogin();
+    } catch (error: any) {
+      toast({
+        title: "Reset failed",
+        description: error.message || "Could not reset your password.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const titleByMode: Record<AuthMode, string> = {
+    login: "Login",
+    forgot: "Forgot Password",
+    reset: "Set New Password",
+  };
+
+  const descriptionByMode: Record<AuthMode, string> = {
+    login: "Enter your credentials to access your account.",
+    forgot: "Enter your email address and we'll send you a reset link.",
+    reset: "Choose a new password for your account.",
   };
 
   return (
@@ -95,25 +183,22 @@ const Auth = () => {
           </p>
         </div>
         <Card>
-          <CardHeader className="text-center"> {/* Added text-center class */}
-            <CardTitle>Login</CardTitle>
-            <CardDescription>Enter your credentials to access your account.</CardDescription>
+          <CardHeader className="text-center">
+            <CardTitle>{titleByMode[authMode]}</CardTitle>
+            <CardDescription>{descriptionByMode[authMode]}</CardDescription>
           </CardHeader>
           <CardContent>
-            <Form {...loginForm}>
-              <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
-                <FormField
-                  control={loginForm.control}
-                    name="identifier" // Change name to identifier
+            {authMode === "login" && (
+              <Form {...loginForm}>
+                <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
+                  <FormField
+                    control={loginForm.control}
+                    name="identifier"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email or Username</FormLabel> {/* Change label */}
+                        <FormLabel>Email or Username</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="text" // Change type to text
-                            placeholder="Email or Username" // Change placeholder
-                            {...field} 
-                          />
+                          <Input type="text" placeholder="Email or Username" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -132,21 +217,102 @@ const Auth = () => {
                       </FormItem>
                     )}
                   />
-                  <Button 
-                    type="submit" 
-                    className="w-full"
-                    disabled={loginForm.formState.isSubmitting}
-                  >
+                  <Button type="submit" className="w-full" disabled={loginForm.formState.isSubmitting}>
                     {loginForm.formState.isSubmitting ? "Logging in..." : "Sign In"}
                   </Button>
-                  {/* Moved Forgot Password instruction */}
-                  <div className="text-sm text-right pt-2"> {/* Added padding-top */}
-                    <span className="font-medium text-gray-600 hover:text-gray-500">
-                      Forgot password? Contact admin.
-                    </span>
+                  <div className="text-sm text-right pt-2">
+                    <button
+                      type="button"
+                      className="font-medium text-primary-600 hover:text-primary-500"
+                      onClick={() => setAuthMode("forgot")}
+                    >
+                      Forgot password?
+                    </button>
                   </div>
-              </form>
-            </Form>
+                </form>
+              </Form>
+            )}
+
+            {authMode === "forgot" && (
+              <Form {...forgotForm}>
+                <form onSubmit={forgotForm.handleSubmit(onForgotPasswordSubmit)} className="space-y-4">
+                  <FormField
+                    control={forgotForm.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input type="email" placeholder="you@example.com" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button type="submit" className="w-full" disabled={forgotForm.formState.isSubmitting}>
+                    {forgotForm.formState.isSubmitting ? "Sending..." : "Send Reset Link"}
+                  </Button>
+                  <Button type="button" variant="ghost" className="w-full" onClick={showLogin}>
+                    Back to login
+                  </Button>
+                </form>
+              </Form>
+            )}
+
+            {authMode === "reset" && (
+              <>
+                {resetToken ? (
+                  <Form {...resetForm}>
+                    <form onSubmit={resetForm.handleSubmit(onResetPasswordSubmit)} className="space-y-4">
+                      <FormField
+                        control={resetForm.control}
+                        name="password"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>New Password</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="New password" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={resetForm.control}
+                        name="confirmPassword"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Confirm Password</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="Confirm password" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <Button type="submit" className="w-full" disabled={resetForm.formState.isSubmitting}>
+                        {resetForm.formState.isSubmitting ? "Updating..." : "Set New Password"}
+                      </Button>
+                      <Button type="button" variant="ghost" className="w-full" onClick={showLogin}>
+                        Back to login
+                      </Button>
+                    </form>
+                  </Form>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                      This reset link is missing or invalid. Request a new password reset email.
+                    </p>
+                    <Button type="button" className="w-full" onClick={() => setAuthMode("forgot")}>
+                      Request new reset link
+                    </Button>
+                    <Button type="button" variant="ghost" className="w-full" onClick={showLogin}>
+                      Back to login
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
           </CardContent>
           <CardFooter className="text-center text-sm text-gray-500">
             By continuing, you agree to our Terms of Service and Privacy Policy.

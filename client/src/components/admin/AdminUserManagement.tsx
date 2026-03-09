@@ -382,7 +382,7 @@ const AdminUserManagement: React.FC = () => {
                             <AlertDialogTitle>Reset Password for {userToReset?.username}?</AlertDialogTitle>
                             {/* Always show the confirmation message */}
                             <AlertDialogDescription>
-                              This action cannot be undone. A new temporary password will be generated and shown in a notification.
+                              This action cannot be undone. A new temporary password will be generated and emailed to the user.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>

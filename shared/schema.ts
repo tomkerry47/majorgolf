@@ -137,6 +137,15 @@ export const appMetadata = pgTable("app_metadata", {
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
 
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 
 // Define types based on Drizzle schema
 export interface User {
@@ -270,6 +279,15 @@ export interface AppMetadata {
   updatedAt: string;
 }
 
+export interface PasswordResetToken {
+  id: number;
+  userId: number;
+  tokenHash: string;
+  expiresAt: string;
+  usedAt?: string | null;
+  createdAt: string;
+}
+
 // Validation schemas for insert operations using drizzle-zod
 export const insertUserSchema = createInsertSchema(users)
   .omit({ id: true, createdAt: true });
@@ -321,6 +339,9 @@ export const insertSelectionRankSchema = createInsertSchema(selectionRanks)
 export const insertAppMetadataSchema = createInsertSchema(appMetadata)
   .omit({ id: true, updatedAt: true });
 
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens)
+  .omit({ id: true, createdAt: true, usedAt: true });
+
 // Type definitions for typescript usage
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertCompetition = z.infer<typeof insertCompetitionSchema>;
@@ -333,6 +354,7 @@ export type InsertWildcardGolfer = z.infer<typeof insertWildcardGolferSchema>;
 export type InsertHoleInOne = z.infer<typeof insertHoleInOneSchema>;
 export type InsertSelectionRank = z.infer<typeof insertSelectionRankSchema>; // Add type
 export type InsertAppMetadata = z.infer<typeof insertAppMetadataSchema>;
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
 
 // Hole in One form schema with validation
 export const holeInOneFormSchema = insertHoleInOneSchema
@@ -360,6 +382,34 @@ export const registerSchema = insertUserSchema.extend({
 });
 
 export type RegisterCredentials = z.infer<typeof registerSchema>;
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email({ message: "A valid email address is required" }),
+});
+
+export type ForgotPasswordRequest = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, { message: "Reset token is required" }),
+  password: z.string().min(8, { message: "Password must be at least 8 characters" }),
+  confirmPassword: z.string().min(8, { message: "Password confirmation is required" }),
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
+
+export type ResetPasswordRequest = z.infer<typeof resetPasswordSchema>;
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(6, { message: "Current password is required" }),
+  newPassword: z.string().min(8, { message: "New password must be at least 8 characters" }),
+  confirmPassword: z.string().min(8, { message: "Password confirmation is required" }),
+}).refine(data => data.newPassword === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
+
+export type ChangePasswordRequest = z.infer<typeof changePasswordSchema>;
 
 // Selection form schema with validation
 export const selectionFormSchema = insertSelectionSchema

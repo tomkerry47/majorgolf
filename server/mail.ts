@@ -111,3 +111,19 @@ export async function sendTemporaryPasswordEmail(to: string, username: string, t
     html,
   });
 }
+
+export async function sendPasswordResetLinkEmail(to: string, username: string, resetUrl: string) {
+  const subject = "Reset your Major Golf password";
+  const html = [
+    `<p>Hello ${username},</p>`,
+    "<p>We received a request to reset your Major Golf password.</p>",
+    `<p><a href="${resetUrl}">Reset your password</a></p>`,
+    "<p>This link expires in 1 hour. If you did not request this, you can ignore this email.</p>",
+  ].join("");
+
+  return sendMail({
+    to,
+    subject,
+    html,
+  });
+}
