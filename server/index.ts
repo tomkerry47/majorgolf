@@ -1,4 +1,8 @@
-import 'dotenv/config'; // Load .env file variables into process.env
+try {
+  await import('dotenv/config');
+} catch {
+  // Production can rely on platform-provided environment variables.
+}
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from 'cookie-parser'; // Import cookie-parser
 import cors from 'cors'; // Import cors
