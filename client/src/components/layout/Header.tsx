@@ -82,6 +82,9 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
                   <DropdownMenuItem asChild>
                     <Link href="/profile">Profile</Link>
                   </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/rules">Rules</Link>
+                  </DropdownMenuItem>
                   {/* Add other relevant links */}
                   {isAdmin && (
                     <DropdownMenuItem asChild>

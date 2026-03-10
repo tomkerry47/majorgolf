@@ -72,6 +72,17 @@ export default function Sidebar({ open, setOpen }: SidebarProps) {
               Leaderboard
             </Link>
             <Link 
+              href="/rules"
+              className={cn(
+                "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",
+                isActivePath('/rules') ? "bg-primary" : "hover:bg-primary/20"
+              )}
+              onClick={closeSidebar}
+            >
+              <i className="fas fa-book-open w-6 h-6 mr-3 text-white"></i>
+              Rules
+            </Link>
+            <Link 
               href="/profile"
               className={cn(
                 "flex items-center px-2 py-3 text-sm font-medium text-white rounded-md",

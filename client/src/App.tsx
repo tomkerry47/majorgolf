@@ -7,6 +7,7 @@ import Competition from "@/pages/Competition";
 import Leaderboard from "@/pages/leaderboard";
 import Admin from "@/pages/admin";
 import Profile from "@/pages/Profile";
+import Rules from "@/pages/Rules";
 import NotFound from "@/pages/not-found";
 // import PointSystemAdmin from "@/pages/admin/PointSystem"; // Removed import
 // import TournamentResultsAdmin from "@/pages/admin/TournamentResults"; // Removed import
@@ -103,6 +104,7 @@ function App() {
               <Route path="/competitions" component={Competitions} />
               <Route path="/competitions/:id" component={Competition} />
               <Route path="/leaderboard" component={Leaderboard} />
+              <Route path="/rules" component={Rules} />
               <Route path="/admin" component={Admin} />
               {/* <Route path="/admin/point-system" component={PointSystemAdmin} /> */}
               {/* <Route path="/admin/tournament-results" component={TournamentResultsAdmin} /> */}
