@@ -70,6 +70,8 @@ async function sendMail(message: {
   const accessToken = await getGraphAccessToken(config);
   const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(config.fromAddress)}/sendMail`;
 
+  console.log(`[mail] Sending "${message.subject}" from ${config.fromAddress} to ${message.to}`);
+
   const response = await fetch(sendMailUrl, {
     method: "POST",
     headers: {
@@ -99,6 +101,8 @@ async function sendMail(message: {
     const errorBody = await response.text();
     throw new Error(`Failed to send mail with Graph: ${response.status} ${errorBody}`);
   }
+
+  console.log(`[mail] Graph sendMail accepted "${message.subject}" for ${message.to}`);
 
   return {
     provider: "microsoft-graph",

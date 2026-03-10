@@ -23,6 +23,7 @@ export interface IStorage {
   updateUser(id: number, userData: Partial<User>): Promise<User>;
   getAllUsers(): Promise<User[]>; // Will update this to include selection count
   updateUserPassword(id: number, passwordHash: string): Promise<void>; // Added method for password reset
+  deleteUser(id: number): Promise<void>;
   hasUsedWaiverChip(userId: number): Promise<boolean>;
   markWaiverChipAsUsed(userId: number): Promise<User>;
 
@@ -248,6 +249,14 @@ export class DatabaseStorage implements IStorage {
       .update(users)
       .set({ password: passwordHash })
       .where(eq(users.id, id));
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, id));
+    await db.delete(selectionRanks).where(eq(selectionRanks.userId, id));
+    await db.delete(userPoints).where(eq(userPoints.userId, id));
+    await db.delete(selections).where(eq(selections.userId, id));
+    await db.delete(users).where(eq(users.id, id));
   }
 
   // Competition methods

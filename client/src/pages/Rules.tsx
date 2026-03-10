@@ -82,15 +82,23 @@ export default function Rules() {
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-900 text-white">
+          <Card className="border-primary/20 bg-primary/5 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-white">Quick Summary</CardTitle>
+              <CardTitle className="text-primary">Quick Summary</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm text-slate-200">
-              <p>5 events total: The Players plus the 4 Majors.</p>
-              <p>3 golfers per event, 15 golfers used across the full season.</p>
-              <p>Entry fee: £20.</p>
-              <p>Late picks are auto-assigned from your lowest available top-50 players.</p>
+            <CardContent className="space-y-3 text-sm text-slate-700">
+              <div className="rounded-xl bg-white/80 px-4 py-3 ring-1 ring-primary/10">
+                <p>5 events total: The Players plus the 4 Majors.</p>
+              </div>
+              <div className="rounded-xl bg-white/80 px-4 py-3 ring-1 ring-primary/10">
+                <p>3 golfers per event, 15 golfers used across the full season.</p>
+              </div>
+              <div className="rounded-xl bg-white/80 px-4 py-3 ring-1 ring-primary/10">
+                <p>Entry fee: £20.</p>
+              </div>
+              <div className="rounded-xl bg-white/80 px-4 py-3 ring-1 ring-primary/10">
+                <p>Late picks are auto-assigned from your lowest available top-50 players.</p>
+              </div>
             </CardContent>
           </Card>
         </div>

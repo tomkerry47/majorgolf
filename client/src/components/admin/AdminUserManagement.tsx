@@ -43,6 +43,7 @@ const AdminUserManagement: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null); // User for editing or viewing selections
   // const [showResetConfirm, setShowResetConfirm] = useState(false); // Remove this state, use userToReset directly
   const [userToReset, setUserToReset] = useState<AdminUser | null>(null);
+  const [userToDelete, setUserToDelete] = useState<AdminUser | null>(null);
   const [isClearDbConfirmOpen, setIsClearDbConfirmOpen] = useState(false); // State for clear DB confirmation
   const [selectedFile, setSelectedFile] = useState<File | null>(null); // State for CSV file
   const [importFeedback, setImportFeedback] = useState<{ success: boolean; message: string; errors?: string[] } | null>(null); // State for import feedback
@@ -151,6 +152,26 @@ const AdminUserManagement: React.FC = () => {
     },
   });
 
+  const deleteUserMutation = useMutation({
+    mutationFn: (user: AdminUser) => apiRequest(`/api/admin/users/${user.id}`, 'DELETE'),
+    onSuccess: (data: any, user: AdminUser) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users/details'] });
+      toast({
+        title: "User Deleted",
+        description: data?.message || `User ${user.username} has been deleted.`,
+      });
+      closeDeleteDialog();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Delete Failed",
+        description: error.response?.data?.error || error.message || "Could not delete user.",
+        variant: "destructive",
+      });
+      setUserToDelete(null);
+    },
+  });
+
   // Mutation for updating user details (including hasPaid)
   const updateUserMutation = useMutation({
     mutationFn: ({ userId, data }: { userId: number; data: Partial<AdminUser> }) =>
@@ -249,6 +270,20 @@ const AdminUserManagement: React.FC = () => {
     setUserToReset(null);
     // setNewPassword(null); // No longer needed
   }
+
+  const handleDeleteUserClick = (user: AdminUser) => {
+    setUserToDelete(user);
+  };
+
+  const confirmDeleteUser = () => {
+    if (userToDelete) {
+      deleteUserMutation.mutate(userToDelete);
+    }
+  };
+
+  const closeDeleteDialog = () => {
+    setUserToDelete(null);
+  };
 
   // Handler for changing the 'hasPaid' status
   const handlePaidChange = (userId: number, currentStatus: boolean) => {
@@ -378,6 +413,29 @@ const AdminUserManagement: React.FC = () => {
                   <TableCell>
                     <div className="flex space-x-2">
                       <Button variant="outline" size="sm" onClick={() => handleEditClick(user)}>Edit</Button>
+                      <AlertDialog open={userToDelete?.id === user.id} onOpenChange={(open) => { if (!open) closeDeleteDialog(); }}>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="outline" size="sm" onClick={() => handleDeleteUserClick(user)}>Delete</Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete {userToDelete?.username}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This action cannot be undone. The user account and all related selections, points, and reset tokens will be permanently deleted.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel onClick={closeDeleteDialog}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={confirmDeleteUser}
+                              disabled={deleteUserMutation.isPending}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              {deleteUserMutation.isPending ? 'Deleting...' : 'Delete User'}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                       {/* Use AlertDialogTrigger for the reset button - open controlled by userToReset state */}
                       <AlertDialog open={userToReset?.id === user.id} onOpenChange={(open) => { if (!open) closeResetDialog(); }}>
                         <AlertDialogTrigger asChild>

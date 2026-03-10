@@ -341,7 +341,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         expiresAt,
       });
 
-      await sendPasswordResetLinkEmail(user.email, user.username, resetUrl);
+      const mailResult = await sendPasswordResetLinkEmail(user.email, user.username, resetUrl);
+      console.log(`[forgot-password] Reset email accepted for user ${user.username} (${user.email}) via ${mailResult.provider}`);
 
       res.json({ success: true, message: FORGOT_PASSWORD_MESSAGE });
     } catch (error) {
@@ -1868,6 +1869,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
          return res.status(409).json({ error: 'Email address already in use.' });
       }
       res.status(500).json({ error: 'Failed to update user details' });
+    }
+  });
+
+  app.delete('/api/admin/users/:id', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const tokenUser = req.user as ExtendedUser;
+      if (!tokenUser.isAdmin) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const userIdToDelete = parseInt(req.params.id);
+      if (isNaN(userIdToDelete)) {
+        return res.status(400).json({ error: 'Invalid user ID' });
+      }
+
+      if (tokenUser.database_id === userIdToDelete) {
+        return res.status(400).json({ error: 'You cannot delete your own account.' });
+      }
+
+      const userExists = await storage.getUser(userIdToDelete);
+      if (!userExists) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      await storage.deleteUser(userIdToDelete);
+
+      res.json({
+        success: true,
+        message: `User ${userExists.username} deleted successfully.`,
+      });
+    } catch (error) {
+      console.error(`Admin delete user error for ID ${req.params.id}:`, error);
+      res.status(500).json({ error: 'Failed to delete user' });
     }
   });
 
