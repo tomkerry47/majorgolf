@@ -9,6 +9,7 @@ export const users = pgTable("users", {
   username: varchar("username", { length: 50 }).notNull(),
   fullName: varchar("fullName", { length: 100 }).notNull(),
   password: text("password"),
+  mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
   avatarUrl: text("avatarUrl"),
   isAdmin: boolean("isAdmin").default(false).notNull(),
   hasUsedWaiverChip: boolean("hasUsedWaiverChip").default(false).notNull(),
@@ -154,6 +155,7 @@ export interface User {
   username: string;
   fullName: string;
   password?: string;
+  mustChangePassword: boolean;
   avatarUrl?: string;
   isAdmin: boolean;
   hasUsedWaiverChip: boolean;

@@ -299,7 +299,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const token = generateToken(user.id, user.email, user.isAdmin);
       res.cookie('authToken', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 7 * 24 * 60 * 60 * 1000 });
       // Include lastLoginAt in the response user object if needed by the frontend immediately after login
-      res.json({ user: { id: user.id.toString(), email: user.email, username: user.username, avatarUrl: user.avatarUrl, isAdmin: user.isAdmin, lastLoginAt: now.toISOString() }, token });
+      res.json({
+        user: {
+          id: user.id.toString(),
+          email: user.email,
+          username: user.username,
+          avatarUrl: user.avatarUrl,
+          isAdmin: user.isAdmin,
+          mustChangePassword: user.mustChangePassword,
+          lastLoginAt: now.toISOString(),
+        },
+        token,
+      });
     } catch (error) { if (error instanceof ZodError) { return res.status(400).json({ error: error.errors }); } console.error('Login error:', error); res.status(500).json({ error: 'Login failed' }); }
   });
 
@@ -321,7 +332,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tokenHash = hashResetToken(resetToken);
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
       const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
-      const resetUrl = `${baseUrl}/?reset=${encodeURIComponent(resetToken)}`;
+      const resetUrl = `${baseUrl}/login?reset=${encodeURIComponent(resetToken)}`;
 
       await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
       await db.insert(passwordResetTokens).values({
@@ -363,6 +374,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const hashedPassword = await hashPassword(password);
       await storage.updateUserPassword(resetRecord.userId, hashedPassword);
+      await storage.updateUser(resetRecord.userId, { mustChangePassword: false });
       await db
         .update(passwordResetTokens)
         .set({ usedAt: new Date() })
@@ -1262,6 +1274,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const hashedPassword = await hashPassword(newPassword);
       await storage.updateUserPassword(userId, hashedPassword);
+      await storage.updateUser(userId, { mustChangePassword: false });
       await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, userId));
 
       res.json({ success: true, message: 'Password updated successfully.' });
@@ -1883,6 +1896,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Update the password in storage
       await storage.updateUserPassword(userIdToReset, hashedPassword);
+      await storage.updateUser(userIdToReset, { mustChangePassword: true });
 
       let emailSent = false;
       let emailError: string | null = null;

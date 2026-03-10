@@ -16,6 +16,7 @@ import Header from "@/components/layout/Header";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import Auth from "./pages/auth";
+import ForcePasswordChange from "@/components/auth/ForcePasswordChange";
 import { useLocation, type RouteComponentProps } from "wouter"; // Import useLocation and RouteComponentProps
 
 // Wrapper component to handle route params
@@ -39,9 +40,11 @@ const TournamentResultDetailWrapper = (props: RouteComponentProps<{ id: string }
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, isLoading } = useAuth();
+  const [location] = useLocation();
+  const hasResetToken = new URLSearchParams(window.location.search).has("reset");
   
   console.log("App component mounted - PostgreSQL database connected");
-  console.log("Auth state:", { user, isLoading });
+  console.log("Auth state:", { user, isLoading, location });
   
   // Show a loading indicator while auth state is initializing
   if (isLoading) {
@@ -74,6 +77,16 @@ function App() {
         </div>
       );
     }
+  }
+
+  if (hasResetToken) {
+    console.log("Reset token detected, showing Auth component");
+    return <Auth />;
+  }
+
+  if (user.mustChangePassword) {
+    console.log("User must change password before accessing the app");
+    return <ForcePasswordChange />;
   }
 
   return (

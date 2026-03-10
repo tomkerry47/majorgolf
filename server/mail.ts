@@ -5,6 +5,16 @@ type MailConfig = {
   fromAddress: string;
 };
 
+function getAppLoginUrl() {
+  const baseUrl = process.env.APP_BASE_URL;
+
+  if (!baseUrl) {
+    return null;
+  }
+
+  return new URL("/login", baseUrl).toString();
+}
+
 export function getMailConfig(): MailConfig {
   const tenantId = process.env.AZURE_MAIL_TENANT_ID;
   const clientId = process.env.AZURE_MAIL_CLIENT_ID;
@@ -100,11 +110,14 @@ async function sendMail(message: {
 
 export async function sendTemporaryPasswordEmail(to: string, username: string, temporaryPassword: string) {
   const subject = "Your Major Golf temporary password";
+  const loginUrl = getAppLoginUrl();
   const html = [
     `<p>Hello ${username},</p>`,
     "<p>An administrator reset your password for Major Golf.</p>",
     `<p>Your temporary password is <strong>${temporaryPassword}</strong>.</p>`,
-    "<p>Use this password to sign in.</p>",
+    loginUrl
+      ? `<p><a href="${loginUrl}">Sign in to Major Golf</a> and you will be asked to set a new password straight away.</p>`
+      : "<p>Use this password to sign in. You will be asked to set a new password straight away.</p>",
   ].join("");
 
   return sendMail({
@@ -116,10 +129,12 @@ export async function sendTemporaryPasswordEmail(to: string, username: string, t
 
 export async function sendPasswordResetLinkEmail(to: string, username: string, resetUrl: string) {
   const subject = "Reset your Major Golf password";
+  const loginUrl = getAppLoginUrl();
   const html = [
     `<p>Hello ${username},</p>`,
     "<p>We received a request to reset your Major Golf password.</p>",
     `<p><a href="${resetUrl}">Reset your password</a></p>`,
+    loginUrl ? `<p><a href="${loginUrl}">Back to Major Golf</a></p>` : "",
     "<p>This link expires in 1 hour. If you did not request this, you can ignore this email.</p>",
   ].join("");
 

@@ -7,6 +7,7 @@ interface LoginResponse {
     username: string;
     avatarUrl?: string;
     isAdmin: boolean;
+    mustChangePassword: boolean;
   };
   token: string;
 }
