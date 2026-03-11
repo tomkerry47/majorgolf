@@ -8,7 +8,8 @@ import {
   pointSystem, type PointSystem, type InsertPointSystem,
   wildcardGolfers, type WildcardGolfer, type InsertWildcardGolfer,
   holeInOnes, type HoleInOne, type InsertHoleInOne,
-  selectionRanks, type SelectionRank, type InsertSelectionRank // Import new schema items
+  selectionRanks, type SelectionRank, type InsertSelectionRank, // Import new schema items
+  passwordResetTokens
 } from "@shared/schema";
 import { db, pgClient, hashPassword } from "./db";
 import { eq, and, sql, desc, asc, count, inArray, ilike } from "drizzle-orm"; // Added ilike for case-insensitive matching
