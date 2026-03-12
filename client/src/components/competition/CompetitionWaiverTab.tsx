@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, ChevronsUpDown } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -62,6 +62,12 @@ export default function CompetitionWaiverTab({
   const waiverWindowEnd = new Date(deadline.getTime() + 24 * 60 * 60 * 1000);
   const now = new Date();
   const withinWaiverWindow = now > deadline && now <= waiverWindowEnd;
+  const waiverUsedInThisCompetition = Boolean(
+    user?.hasUsedWaiverChip && user?.waiverChipUsedCompetitionId === competitionId
+  );
+  const waiverUsedInAnotherCompetition = Boolean(
+    user?.hasUsedWaiverChip && user?.waiverChipUsedCompetitionId !== competitionId
+  );
 
   const { data: rawSelection, isLoading: isLoadingRawSelection } = useQuery<RawSelection | null>({
     queryKey: ["/api/selections/raw", competitionId],
@@ -81,12 +87,6 @@ export default function CompetitionWaiverTab({
     enabled: !!user,
   });
 
-  const { data: waiverStatus, isLoading: isLoadingWaiverStatus } = useQuery<{ hasUsedWaiverChip: boolean }>({
-    queryKey: ["/api/users", user?.id, "has-used-waiver-chip"],
-    queryFn: () => apiRequest<{ hasUsedWaiverChip: boolean }>(`/api/users/${user?.id}/has-used-waiver-chip`, "GET"),
-    enabled: !!user?.id,
-  });
-
   const allGolfers = golferResponse?.golfers || [];
   const historicalGolferIds = useMemo(() => {
     const usedIds = new Set<string>();
@@ -95,8 +95,10 @@ export default function CompetitionWaiverTab({
       if (selection.golfer2?.id) usedIds.add(selection.golfer2.id.toString());
       if (selection.golfer3?.id) usedIds.add(selection.golfer3.id.toString());
     });
+    if (user?.waiverChipOriginalGolferId) usedIds.add(user.waiverChipOriginalGolferId.toString());
+    if (user?.waiverChipReplacementGolferId) usedIds.add(user.waiverChipReplacementGolferId.toString());
     return usedIds;
-  }, [selectionHistory]);
+  }, [selectionHistory, user?.waiverChipOriginalGolferId, user?.waiverChipReplacementGolferId]);
 
   const availableGolfers = useMemo(() => {
     return [...allGolfers]
@@ -104,11 +106,33 @@ export default function CompetitionWaiverTab({
       .sort((a, b) => a.rank - b.rank);
   }, [allGolfers, historicalGolferIds]);
 
+  const existingWaiverSlot = useMemo(() => {
+    if (!waiverUsedInThisCompetition || !rawSelection || !user?.waiverChipReplacementGolferId) {
+      return null;
+    }
+
+    if (rawSelection.golfer1Id === user.waiverChipReplacementGolferId) return 1;
+    if (rawSelection.golfer2Id === user.waiverChipReplacementGolferId) return 2;
+    if (rawSelection.golfer3Id === user.waiverChipReplacementGolferId) return 3;
+    return null;
+  }, [rawSelection, user?.waiverChipReplacementGolferId, waiverUsedInThisCompetition]);
+
+  useEffect(() => {
+    if (waiverUsedInThisCompetition && existingWaiverSlot) {
+      setSelectedSlot(existingWaiverSlot);
+      return;
+    }
+
+    if (!waiverUsedInThisCompetition) {
+      setSelectedSlot(null);
+    }
+  }, [existingWaiverSlot, waiverUsedInThisCompetition]);
+
   const selectedReplacement = availableGolfers.find((golfer) => golfer.id.toString() === replacementGolferId);
   const waiverMutation = useMutation({
     mutationFn: () =>
       apiRequest(`/api/selections/${competitionId}/waiver`, "POST", {
-        updatedGolferSlot: selectedSlot,
+        updatedGolferSlot: selectedSlot ?? existingWaiverSlot,
         newGolferId: parseInt(replacementGolferId, 10),
       }),
     onSuccess: async (response: any) => {
@@ -120,13 +144,11 @@ export default function CompetitionWaiverTab({
         queryClient.invalidateQueries({ queryKey: [`/api/leaderboard/${competitionId}`] }),
         queryClient.invalidateQueries({ queryKey: [`/api/competitions/${competitionId}/chips`] }),
         queryClient.invalidateQueries({ queryKey: ["/api/selections/my-all"] }),
-        queryClient.invalidateQueries({ queryKey: ["/api/users", user?.id, "has-used-waiver-chip"] }),
       ]);
 
-      setSelectedSlot(null);
       setReplacementGolferId("");
       toast({
-        title: "Waiver used",
+        title: waiverUsedInThisCompetition ? "Waiver updated" : "Waiver used",
         description: response?.message || "Your waiver chip has been applied.",
       });
     },
@@ -140,10 +162,12 @@ export default function CompetitionWaiverTab({
   });
 
   const handleApplyWaiver = () => {
-    if (!selectedSlot || !replacementGolferId) {
+    if (!(selectedSlot ?? existingWaiverSlot) || !replacementGolferId) {
       toast({
         title: "Choose a swap",
-        description: "Select the golfer you want to replace and choose a new golfer.",
+        description: waiverUsedInThisCompetition
+          ? "Choose your new replacement golfer."
+          : "Select the golfer you want to replace and choose a new golfer.",
         variant: "destructive",
       });
       return;
@@ -152,7 +176,7 @@ export default function CompetitionWaiverTab({
     waiverMutation.mutate();
   };
 
-  if (isLoadingSelection || isLoadingRawSelection || isLoadingGolfers || isLoadingHistory || isLoadingWaiverStatus) {
+  if (isLoadingSelection || isLoadingRawSelection || isLoadingGolfers || isLoadingHistory) {
     return (
       <Card>
         <CardContent className="p-6">
@@ -189,7 +213,7 @@ export default function CompetitionWaiverTab({
     );
   }
 
-  if (waiverStatus?.hasUsedWaiverChip) {
+  if (waiverUsedInAnotherCompetition) {
     return (
       <Card>
         <CardHeader>
@@ -215,31 +239,42 @@ export default function CompetitionWaiverTab({
       <CardHeader>
         <CardTitle>Waiver Chip</CardTitle>
         <CardDescription>
-          You can make one waiver swap in the first 24 hours after the deadline. Pick exactly one golfer to replace.
+          {waiverUsedInThisCompetition
+            ? "You have already used your waiver chip in this tournament. You can still change the replacement golfer until the 24-hour window ends."
+            : "You can make one waiver swap in the first 24 hours after the deadline. Pick exactly one golfer to replace."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <Alert className="border-red-200 bg-red-50 text-red-900 [&>svg]:text-red-700">
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>One waiver chip only</AlertTitle>
+          <AlertTitle>{waiverUsedInThisCompetition ? "Still your only waiver chip" : "One waiver chip only"}</AlertTitle>
           <AlertDescription>
-            Using this now spends your only waiver chip for the entire five-tournament season. You will not get another waiver later.
+            {waiverUsedInThisCompetition
+              ? "You can change the replacement player during this 24-hour window, but it still counts as your only waiver chip for the full season."
+              : "Using this now spends your only waiver chip for the entire five-tournament season. You will not get another waiver later."}
           </AlertDescription>
         </Alert>
 
         <div className="grid gap-4 md:grid-cols-3">
           {userSelections.map((selection, index) => {
             const slot = (index + 1) as 1 | 2 | 3;
-            const isSelected = selectedSlot === slot;
+            const isSelected = (selectedSlot ?? existingWaiverSlot) === slot;
+            const isLockedByExistingWaiver = waiverUsedInThisCompetition && existingWaiverSlot !== slot;
 
             return (
               <button
                 key={selection.id}
                 type="button"
-                onClick={() => setSelectedSlot(slot)}
+                onClick={() => {
+                  if (!isLockedByExistingWaiver) {
+                    setSelectedSlot(slot);
+                  }
+                }}
+                disabled={isLockedByExistingWaiver}
                 className={cn(
                   "rounded-xl border p-4 text-left transition",
-                  isSelected ? "border-primary bg-primary/5 shadow-sm" : "border-slate-200 hover:border-primary/40"
+                  isSelected ? "border-primary bg-primary/5 shadow-sm" : "border-slate-200 hover:border-primary/40",
+                  isLockedByExistingWaiver && "cursor-not-allowed opacity-60 hover:border-slate-200"
                 )}
               >
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Selection {slot}</p>
@@ -247,7 +282,13 @@ export default function CompetitionWaiverTab({
                 <p className="mt-1 text-sm text-slate-500">Rank at deadline: {selection.golfer.rank || "N/A"}</p>
                 <div className="mt-4">
                   <Badge variant={isSelected ? "default" : "outline"}>
-                    {isSelected ? "Replacing this golfer" : "Select to replace"}
+                    {isSelected
+                      ? waiverUsedInThisCompetition
+                        ? "Current waiver slot"
+                        : "Replacing this golfer"
+                      : waiverUsedInThisCompetition
+                        ? "Waiver already locked here"
+                        : "Select to replace"}
                   </Badge>
                 </div>
               </button>
@@ -299,11 +340,16 @@ export default function CompetitionWaiverTab({
           <p className="text-xs text-slate-500">
             Previously used golfers are excluded automatically. This includes golfers you already used in other tournaments.
           </p>
+          {waiverUsedInThisCompetition && (
+            <p className="text-xs text-slate-500">
+              Your waived-out golfer is fixed. During this window you can only change the replacement player.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleApplyWaiver} disabled={!selectedSlot || !replacementGolferId || waiverMutation.isPending}>
-            {waiverMutation.isPending ? "Applying..." : "Use My Only Waiver Chip"}
+          <Button onClick={handleApplyWaiver} disabled={!(selectedSlot ?? existingWaiverSlot) || !replacementGolferId || waiverMutation.isPending}>
+            {waiverMutation.isPending ? "Applying..." : waiverUsedInThisCompetition ? "Update Waiver Player" : "Use My Only Waiver Chip"}
           </Button>
           <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
             Available until {waiverWindowEnd.toLocaleString()}

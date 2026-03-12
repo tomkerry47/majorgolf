@@ -1685,7 +1685,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      if (userProfile.hasUsedWaiverChip) {
+      const editingExistingWaiver =
+        userProfile.hasUsedWaiverChip &&
+        userProfile.waiverChipUsedCompetitionId === competitionId;
+
+      if (userProfile.hasUsedWaiverChip && !editingExistingWaiver) {
         return res.status(400).json({ error: 'You have already used your waiver chip.' });
       }
 
@@ -1701,6 +1705,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (selection.golfer2?.id) historicalGolferIds.add(selection.golfer2.id);
         if (selection.golfer3?.id) historicalGolferIds.add(selection.golfer3.id);
       });
+      if (userProfile.waiverChipOriginalGolferId) {
+        historicalGolferIds.add(userProfile.waiverChipOriginalGolferId);
+      }
+      if (userProfile.waiverChipReplacementGolferId) {
+        historicalGolferIds.add(userProfile.waiverChipReplacementGolferId);
+      }
 
       if (historicalGolferIds.has(newGolferId)) {
         return res.status(400).json({ error: 'You cannot reuse a golfer you have already selected.' });
@@ -1709,7 +1719,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const selectionUpdateData: Partial<Selection> = { waiverRank: null };
       let originalGolferId: number;
 
-      if (updatedGolferSlot === 1) {
+      if (editingExistingWaiver) {
+        const originalWaiverGolferId = userProfile.waiverChipOriginalGolferId;
+        const currentReplacementGolferId = userProfile.waiverChipReplacementGolferId;
+
+        if (!originalWaiverGolferId || !currentReplacementGolferId) {
+          return res.status(400).json({ error: 'Existing waiver details could not be found.' });
+        }
+
+        if (newGolferId === originalWaiverGolferId) {
+          return res.status(400).json({ error: 'Choose a different replacement golfer.' });
+        }
+
+        originalGolferId = originalWaiverGolferId;
+
+        if (existingSelection.golfer1Id === currentReplacementGolferId) {
+          selectionUpdateData.golfer1Id = newGolferId;
+        } else if (existingSelection.golfer2Id === currentReplacementGolferId) {
+          selectionUpdateData.golfer2Id = newGolferId;
+        } else if (existingSelection.golfer3Id === currentReplacementGolferId) {
+          selectionUpdateData.golfer3Id = newGolferId;
+        } else {
+          return res.status(400).json({ error: 'Could not identify the existing waiver slot.' });
+        }
+      } else if (updatedGolferSlot === 1) {
         originalGolferId = existingSelection.golfer1Id;
         selectionUpdateData.golfer1Id = newGolferId;
       } else if (updatedGolferSlot === 2) {
@@ -1735,7 +1768,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const updatedSelection = await storage.updateSelection(existingSelection.id, selectionUpdateData);
-      res.json({ success: true, message: 'Waiver chip used successfully.', selection: updatedSelection });
+      res.json({
+        success: true,
+        message: editingExistingWaiver ? 'Waiver updated successfully.' : 'Waiver chip used successfully.',
+        selection: updatedSelection
+      });
     } catch (error) {
       console.error('Use waiver chip error:', error);
       res.status(500).json({ error: 'Failed to use waiver chip' });
