@@ -13,9 +13,9 @@ const coreRules = [
 ];
 
 const prizes = [
-  { label: "Winner", value: "£240" },
-  { label: "Runner-up", value: "£120" },
-  { label: "Tournament top score", value: "£24" },
+  { label: "Winner", value: "£260" },
+  { label: "Runner-up", value: "£130" },
+  { label: "Tournament top score", value: "£26" },
 ];
 
 const points = [
