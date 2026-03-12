@@ -7,6 +7,10 @@ import * as schema from '../shared/schema'; // Import schema definitions
 
 const { Pool } = pg;
 
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is not set. Start the server from the project root or provide the environment variable explicitly.");
+}
+
 // Initialize PostgreSQL client using only the connection string
 // Ensure DATABASE_URL in .env is correctly formatted: 
 // postgresql://user:password@host:port/database_name

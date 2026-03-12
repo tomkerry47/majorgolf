@@ -1,15 +1,10 @@
-try {
-  await import('dotenv/config');
-} catch {
-  // Production can rely on platform-provided environment variables.
-}
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from 'cookie-parser'; // Import cookie-parser
 import cors from 'cors'; // Import cors
-import { registerRoutes } from "./routes";
 import fs from "fs"; // Import fs for checking directory existence
 import path from "path";
 import { fileURLToPath } from "url";
+import dotenv from "dotenv";
 
 // Set NODE_ENV if not already set
 if (!process.env.NODE_ENV) {
@@ -18,6 +13,9 @@ if (!process.env.NODE_ENV) {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const envPath = path.resolve(__dirname, "../.env");
+
+dotenv.config({ path: envPath });
 
 function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -159,8 +157,10 @@ app.use((req, res, next) => {
 
 (async () => {
   console.log("[Server Startup] Starting async IIFE..."); // Added log
+  console.log(`[Server Startup] DATABASE_URL configured: ${Boolean(process.env.DATABASE_URL)}`);
   
   console.log("[Server Startup] Registering routes..."); // Added log
+  const { registerRoutes } = await import("./routes");
   const server = await registerRoutes(app);
   console.log("[Server Startup] Routes registered."); // Added log
 
