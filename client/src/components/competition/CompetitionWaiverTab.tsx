@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { AlertTriangle, Check, ChevronsUpDown } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import type { Golfer } from "@shared/schema";
@@ -195,7 +196,14 @@ export default function CompetitionWaiverTab({
           <CardTitle>Waiver Chip</CardTitle>
           <CardDescription>Your one waiver chip across all five tournaments has already been used.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <Alert className="border-amber-200 bg-amber-50 text-amber-900 [&>svg]:text-amber-700">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Waiver chip already spent</AlertTitle>
+            <AlertDescription>
+              You only get one waiver chip for the full five-tournament season. There are no extra waiver chips later.
+            </AlertDescription>
+          </Alert>
           <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Already used</Badge>
         </CardContent>
       </Card>
@@ -211,6 +219,14 @@ export default function CompetitionWaiverTab({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <Alert className="border-red-200 bg-red-50 text-red-900 [&>svg]:text-red-700">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>One waiver chip only</AlertTitle>
+          <AlertDescription>
+            Using this now spends your only waiver chip for the entire five-tournament season. You will not get another waiver later.
+          </AlertDescription>
+        </Alert>
+
         <div className="grid gap-4 md:grid-cols-3">
           {userSelections.map((selection, index) => {
             const slot = (index + 1) as 1 | 2 | 3;
@@ -287,7 +303,7 @@ export default function CompetitionWaiverTab({
 
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={handleApplyWaiver} disabled={!selectedSlot || !replacementGolferId || waiverMutation.isPending}>
-            {waiverMutation.isPending ? "Applying..." : "Use Waiver Chip"}
+            {waiverMutation.isPending ? "Applying..." : "Use My Only Waiver Chip"}
           </Button>
           <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
             Available until {waiverWindowEnd.toLocaleString()}
