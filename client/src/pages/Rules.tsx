@@ -132,7 +132,7 @@ export default function Rules() {
         <Card>
           <CardHeader>
             <CardTitle>Prize Fund</CardTitle>
-            <CardDescription>Based on 24 players at £20 entry.</CardDescription>
+            <CardDescription>Based on 26 players at £20 entry.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-3">
