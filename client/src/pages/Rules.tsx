@@ -9,7 +9,13 @@ const ruleChanges = [
 const coreRules = [
   "Pick 3 golfers for each event. You cannot reuse golfers later, so you will use 15 golfers across the 5 events: the 4 Majors plus The Players.",
   "If you miss the selection deadline, you will be allocated the 3 lowest-ranked golfers you have left inside the world top 50.",
-  "Entry is £20. Prize split will be confirmed once numbers are finalised, but the current plan is 50% to the winner, 25% to the runner-up, and 25% spread across the top score in each tournament.",
+  "Entry is £20. Prize split: 50% to the winner, 25% to the runner-up, and 25% spread across the top score in each tournament.",
+];
+
+const prizes = [
+  { label: "Winner", value: "£240" },
+  { label: "Runner-up", value: "£120" },
+  { label: "Tournament top score", value: "£24" },
 ];
 
 const points = [
@@ -117,6 +123,26 @@ export default function Rules() {
                 >
                   <span className="text-sm font-medium text-slate-700">{item.label}</span>
                   <span className="text-sm font-semibold text-slate-900">{item.value}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Prize Fund</CardTitle>
+            <CardDescription>Based on 24 players at £20 entry.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {prizes.map((item) => (
+                <div
+                  key={item.label}
+                  className="flex flex-col items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-center"
+                >
+                  <span className="text-2xl font-bold text-amber-700">{item.value}</span>
+                  <span className="mt-1 text-sm font-medium text-slate-600">{item.label}</span>
                 </div>
               ))}
             </div>
