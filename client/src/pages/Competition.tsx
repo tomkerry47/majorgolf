@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import SelectionForm from "@/components/selections/SelectionForm";
+import CompetitionWaiverTab from "@/components/competition/CompetitionWaiverTab";
 import { Button } from "@/components/ui/button"; 
 import {
   Table,
@@ -360,6 +361,9 @@ export default function Competition() {
             <TabsTrigger value="leaderboard">Actual Leaderboard</TabsTrigger>
             <TabsTrigger value="results">Points Allocated</TabsTrigger>
             <TabsTrigger value="selections">Your Selections</TabsTrigger>
+            {deadlinePassed && (
+              <TabsTrigger value="waiver-chip">Waiver Chip</TabsTrigger>
+            )}
             {/* Render deadline-dependent triggers conditionally */}
             {deadlinePassed && (
               <TabsTrigger value="all-selections">All Selections</TabsTrigger>
@@ -417,6 +421,18 @@ export default function Competition() {
               </Card>
             ) : null}
           </TabsContent>
+
+          {deadlinePassed && competition && (
+            <TabsContent value="waiver-chip">
+              <CompetitionWaiverTab
+                competitionId={competitionId}
+                competitionName={competition.name}
+                selectionDeadline={competition.selectionDeadline}
+                userSelections={userSelections}
+                isLoadingSelection={isLoadingUserSelections}
+              />
+            </TabsContent>
+          )}
 
           <TabsContent value="predictor-leaderboard">
             <Card>

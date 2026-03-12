@@ -1639,6 +1639,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: 'Failed to fetch selection details' });
     }
   });
+  app.post('/api/selections/:competitionId/waiver', validateJWT, async (req: Request, res: Response) => {
+    try {
+      const competitionId = parseInt(req.params.competitionId);
+      const tokenUser = req.user as ExtendedUser;
+      const userId = tokenUser.database_id!;
+      const { updatedGolferSlot, newGolferId } = req.body;
+
+      if (isNaN(competitionId)) {
+        return res.status(400).json({ error: 'Invalid competition ID' });
+      }
+
+      if (![1, 2, 3].includes(updatedGolferSlot) || typeof newGolferId !== 'number') {
+        return res.status(400).json({ error: 'A valid golfer slot and replacement golfer are required.' });
+      }
+
+      const competition = await storage.getCompetitionById(competitionId);
+      if (!competition) {
+        return res.status(404).json({ error: 'Competition not found' });
+      }
+
+      const deadlineDate = new Date(competition.selectionDeadline);
+      const waiverWindowEnd = new Date(deadlineDate.getTime() + 24 * 60 * 60 * 1000);
+      const currentDate = new Date();
+
+      if (currentDate <= deadlineDate) {
+        return res.status(400).json({ error: 'Waivers are only available after the selection deadline.' });
+      }
+
+      if (currentDate > waiverWindowEnd) {
+        return res.status(400).json({ error: 'Round 2 has already started. No more waivers.' });
+      }
+
+      if (competition.isComplete) {
+        return res.status(400).json({ error: 'This competition is already complete.' });
+      }
+
+      const existingSelection = await storage.getUserSelections(userId, competitionId);
+      if (!existingSelection) {
+        return res.status(404).json({ error: 'You do not have a selection for this competition.' });
+      }
+
+      const userProfile = await storage.getUser(userId);
+      if (!userProfile) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      if (userProfile.hasUsedWaiverChip) {
+        return res.status(400).json({ error: 'You have already used your waiver chip.' });
+      }
+
+      const currentGolferIds = [existingSelection.golfer1Id, existingSelection.golfer2Id, existingSelection.golfer3Id];
+      if (currentGolferIds.includes(newGolferId)) {
+        return res.status(400).json({ error: 'Replacement golfer must be different from your current selections.' });
+      }
+
+      const selectionHistory = await storage.getUserSelectionsForAllCompetitions(userId);
+      const historicalGolferIds = new Set<number>();
+      selectionHistory.forEach((selection: any) => {
+        if (selection.golfer1?.id) historicalGolferIds.add(selection.golfer1.id);
+        if (selection.golfer2?.id) historicalGolferIds.add(selection.golfer2.id);
+        if (selection.golfer3?.id) historicalGolferIds.add(selection.golfer3.id);
+      });
+
+      if (historicalGolferIds.has(newGolferId)) {
+        return res.status(400).json({ error: 'You cannot reuse a golfer you have already selected.' });
+      }
+
+      const selectionUpdateData: Partial<Selection> = { waiverRank: null };
+      let originalGolferId: number;
+
+      if (updatedGolferSlot === 1) {
+        originalGolferId = existingSelection.golfer1Id;
+        selectionUpdateData.golfer1Id = newGolferId;
+      } else if (updatedGolferSlot === 2) {
+        originalGolferId = existingSelection.golfer2Id;
+        selectionUpdateData.golfer2Id = newGolferId;
+      } else {
+        originalGolferId = existingSelection.golfer3Id;
+        selectionUpdateData.golfer3Id = newGolferId;
+      }
+
+      const replacementGolfer = await storage.getGolferById(newGolferId);
+      if (!replacementGolfer) {
+        return res.status(404).json({ error: 'Replacement golfer not found.' });
+      }
+
+      selectionUpdateData.waiverRank = replacementGolfer.rank;
+
+      await storage.updateUser(userId, {
+        hasUsedWaiverChip: true,
+        waiverChipUsedCompetitionId: competitionId,
+        waiverChipOriginalGolferId: originalGolferId,
+        waiverChipReplacementGolferId: newGolferId,
+      });
+
+      const updatedSelection = await storage.updateSelection(existingSelection.id, selectionUpdateData);
+      res.json({ success: true, message: 'Waiver chip used successfully.', selection: updatedSelection });
+    } catch (error) {
+      console.error('Use waiver chip error:', error);
+      res.status(500).json({ error: 'Failed to use waiver chip' });
+    }
+  });
   app.post('/api/selections', validateJWT, async (req: Request, res: Response) => {
     try { const tokenUser = req.user as ExtendedUser; const userId = tokenUser.database_id!; const selectionData = selectionFormSchema.parse(req.body); const competition = await storage.getCompetitionById(selectionData.competitionId); if (!competition) { return res.status(404).json({ error: 'Competition not found' }); } const deadlineDate = new Date(competition.selectionDeadline); const currentDate = new Date(); if (currentDate > deadlineDate) { return res.status(400).json({ error: 'Selection deadline has passed' }); } const existingSelection = await storage.getUserSelections(userId, selectionData.competitionId); if (existingSelection) { return res.status(400).json({ error: 'You already have selections for this competition' }); } if (selectionData.useCaptainsChip) { const hasUsedCaptainsChip = await storage.hasUsedCaptainsChip(userId); if (hasUsedCaptainsChip) { return res.status(400).json({ error: 'You have already used your captain\'s chip in another competition' }); } } const newSelection = await storage.createSelection({ ...selectionData, userId }); res.status(201).json(newSelection); } catch (error) { if (error instanceof ZodError) { return res.status(400).json({ error: error.errors }); } console.error('Create selection error:', error); res.status(500).json({ error: 'Failed to create selection' }); }
   });
