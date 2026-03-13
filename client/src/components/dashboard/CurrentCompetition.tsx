@@ -267,17 +267,17 @@ export default function CurrentCompetition() {
         </CardContent>
         
         <CardFooter className="bg-slate-50 px-4 py-4 sm:px-6 border-t border-gray-200">
-          <div className="flex items-center justify-between w-full">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between w-full gap-3">
             <p className="text-sm font-medium text-gray-500">
               Total points for this competition: <span className="text-primary font-semibold">{totalPoints}</span>
             </p>
-            <div className="flex items-center gap-2">
-              <Button variant="secondary" size="sm" asChild>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button variant="secondary" size="sm" asChild className="w-full sm:w-auto">
                 <Link href={`/competitions/${currentCompetition.id}`}>
                   <i className="fas fa-trophy mr-1.5"></i> View Competition
                 </Link>
               </Button>
-              <Button variant="outline" size="sm" className="text-gray-700" asChild>
+              <Button variant="outline" size="sm" className="text-gray-700 w-full sm:w-auto" asChild>
                 <Link href="/leaderboard">
                   <i className="fas fa-eye mr-1.5"></i> View Full Leaderboard
                 </Link>
