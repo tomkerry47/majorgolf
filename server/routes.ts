@@ -1688,13 +1688,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const editingExistingWaiver =
         userProfile.hasUsedWaiverChip &&
         userProfile.waiverChipUsedCompetitionId === competitionId;
+      const currentReplacementGolferId = editingExistingWaiver
+        ? userProfile.waiverChipReplacementGolferId ?? null
+        : null;
 
       if (userProfile.hasUsedWaiverChip && !editingExistingWaiver) {
         return res.status(400).json({ error: 'You have already used your waiver chip.' });
       }
 
       const currentGolferIds = [existingSelection.golfer1Id, existingSelection.golfer2Id, existingSelection.golfer3Id];
-      if (currentGolferIds.includes(newGolferId)) {
+      if (editingExistingWaiver && currentReplacementGolferId && newGolferId === currentReplacementGolferId) {
+        return res.status(400).json({ error: 'Choose a new replacement golfer to update your waiver.' });
+      }
+
+      if (currentGolferIds.includes(newGolferId) && newGolferId !== currentReplacementGolferId) {
         return res.status(400).json({ error: 'Replacement golfer must be different from your current selections.' });
       }
 
@@ -1721,7 +1728,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (editingExistingWaiver) {
         const originalWaiverGolferId = userProfile.waiverChipOriginalGolferId;
-        const currentReplacementGolferId = userProfile.waiverChipReplacementGolferId;
 
         if (!originalWaiverGolferId || !currentReplacementGolferId) {
           return res.status(400).json({ error: 'Existing waiver details could not be found.' });

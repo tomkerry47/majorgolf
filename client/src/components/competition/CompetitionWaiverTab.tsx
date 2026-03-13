@@ -142,6 +142,13 @@ export default function CompetitionWaiverTab({
   }, [user?.waiverChipReplacementGolferId, waiverUsedInThisCompetition]);
 
   const selectedReplacement = allGolfers.find((golfer) => golfer.id.toString() === replacementGolferId);
+  const currentWaiverReplacementId = waiverUsedInThisCompetition && user?.waiverChipReplacementGolferId
+    ? user.waiverChipReplacementGolferId.toString()
+    : "";
+  const isSubmittingExistingWaiverChoice =
+    waiverUsedInThisCompetition &&
+    !!currentWaiverReplacementId &&
+    replacementGolferId === currentWaiverReplacementId;
   const waiverMutation = useMutation({
     mutationFn: () =>
       apiRequest(`/api/selections/${competitionId}/waiver`, "POST", {
@@ -358,10 +365,23 @@ export default function CompetitionWaiverTab({
               Your waived-out golfer is fixed. During this window you can only change the replacement player.
             </p>
           )}
+          {isSubmittingExistingWaiverChoice && (
+            <p className="text-xs text-amber-700">
+              Choose a different replacement golfer to update your waiver.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleApplyWaiver} disabled={!(selectedSlot ?? existingWaiverSlot) || !replacementGolferId || waiverMutation.isPending}>
+          <Button
+            onClick={handleApplyWaiver}
+            disabled={
+              !(selectedSlot ?? existingWaiverSlot) ||
+              !replacementGolferId ||
+              waiverMutation.isPending ||
+              isSubmittingExistingWaiverChoice
+            }
+          >
             {waiverMutation.isPending ? "Applying..." : waiverUsedInThisCompetition ? "Update Waiver Player" : "Use My Only Waiver Chip"}
           </Button>
           <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
