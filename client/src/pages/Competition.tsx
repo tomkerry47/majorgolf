@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/context/AuthContext";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import SelectionForm from "@/components/selections/SelectionForm";
 import CompetitionWaiverTab from "@/components/competition/CompetitionWaiverTab";
 import { Button } from "@/components/ui/button"; 
+import { Loader2, RefreshCw } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -19,6 +20,7 @@ import {
   TableCaption
 } from "@/components/ui/table";
 import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import LeaderboardTable from "@/components/leaderboard-table"; 
 import type { Competition as CompetitionType, Result, Golfer } from "@shared/schema";
 
@@ -171,6 +173,8 @@ function GolferSelectionDisplay({ selection }: { selection: UserCompetitionSelec
 
 export default function Competition() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [match, params] = useRoute("/competitions/:id");
   const competitionId = params?.id ? parseInt(params.id) : 0;
@@ -222,6 +226,32 @@ export default function Competition() {
     queryKey: [`/api/competitions/${competitionId}/chips`],
     queryFn: () => apiRequest<ChipUsageData>(`/api/competitions/${competitionId}/chips`, 'GET'),
     enabled: !!user && !!competitionId && isCompetitionSuccess && !!competition && (new Date() > new Date(competition.selectionDeadline)), 
+  });
+
+  const updateResultsMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('/api/admin/update-results', 'POST', { competitionId }),
+    onSuccess: async () => {
+      toast({
+        title: "Results update started",
+        description: "Latest results are being fetched and points are being recalculated.",
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [`/api/competitions/${competitionId}`] }),
+        queryClient.invalidateQueries({ queryKey: [`/api/results/${competitionId}`] }),
+        queryClient.invalidateQueries({ queryKey: [`/api/leaderboard/${competitionId}`] }),
+        queryClient.invalidateQueries({ queryKey: ['/api/competitions'] }),
+        queryClient.invalidateQueries({ queryKey: ['/api/competitions/all'] }),
+        queryClient.invalidateQueries({ queryKey: ['/api/competitions/active'] }),
+      ]);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Results update failed",
+        description: error?.message || "Failed to update results.",
+        variant: "destructive",
+      });
+    },
   });
 
   // --- End Unconditional Hook Calls ---
@@ -350,6 +380,41 @@ export default function Competition() {
                      )}
                    </p>
                  </div>
+               </div>
+             )}
+
+             {competition?.isActive && user?.isAdmin && (
+               <div className="mt-6 border-t border-slate-200 pt-4">
+                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                   <div>
+                     <h3 className="text-sm font-medium text-gray-900">Admin Results Update</h3>
+                     <p className="mt-1 text-sm text-gray-500">
+                       Fetch the latest leaderboard data and reallocate points for this active tournament.
+                     </p>
+                     {competition.lastResultsUpdateAt && (
+                       <p className="mt-1 text-xs text-gray-500">
+                         Last Updated: {new Date(competition.lastResultsUpdateAt).toLocaleString()}
+                       </p>
+                     )}
+                   </div>
+                   <Button
+                     onClick={() => updateResultsMutation.mutate()}
+                     disabled={updateResultsMutation.isPending}
+                     className="w-full md:w-auto"
+                   >
+                     {updateResultsMutation.isPending ? (
+                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                     ) : (
+                       <RefreshCw className="mr-2 h-4 w-4" />
+                     )}
+                     {updateResultsMutation.isPending ? "Updating Results..." : "Update Results"}
+                   </Button>
+                 </div>
+                 {updateResultsMutation.isError && (
+                   <p className="mt-3 text-sm text-red-600">
+                     {(updateResultsMutation.error as Error)?.message || "Failed to update results."}
+                   </p>
+                 )}
                </div>
              )}
           </CardContent>
