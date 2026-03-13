@@ -128,7 +128,20 @@ export default function CompetitionWaiverTab({
     }
   }, [existingWaiverSlot, waiverUsedInThisCompetition]);
 
-  const selectedReplacement = availableGolfers.find((golfer) => golfer.id.toString() === replacementGolferId);
+  useEffect(() => {
+    if (waiverUsedInThisCompetition && user?.waiverChipReplacementGolferId) {
+      setReplacementGolferId((currentValue) =>
+        currentValue || user.waiverChipReplacementGolferId!.toString()
+      );
+      return;
+    }
+
+    if (!waiverUsedInThisCompetition) {
+      setReplacementGolferId("");
+    }
+  }, [user?.waiverChipReplacementGolferId, waiverUsedInThisCompetition]);
+
+  const selectedReplacement = allGolfers.find((golfer) => golfer.id.toString() === replacementGolferId);
   const waiverMutation = useMutation({
     mutationFn: () =>
       apiRequest(`/api/selections/${competitionId}/waiver`, "POST", {
@@ -146,7 +159,7 @@ export default function CompetitionWaiverTab({
         queryClient.invalidateQueries({ queryKey: ["/api/selections/my-all"] }),
       ]);
 
-      setReplacementGolferId("");
+      setReplacementGolferId(replacementGolferId);
       toast({
         title: waiverUsedInThisCompetition ? "Waiver updated" : "Waiver used",
         description: response?.message || "Your waiver chip has been applied.",
