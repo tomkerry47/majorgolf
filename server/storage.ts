@@ -993,7 +993,10 @@ export class DatabaseStorage implements IStorage {
 
   async createSelection(selection: InsertSelection): Promise<Selection> {
     // Convert string dates to Date objects for database
-    // Include captainGolferId if provided, otherwise it defaults to null in DB
+    if (selection.useCaptainsChip && selection.captainGolferId == null) {
+      throw new Error("captainGolferId is required when useCaptainsChip is true");
+    }
+
     const selectionToInsert: any = { 
       ...selection,
       captainGolferId: selection.useCaptainsChip ? selection.captainGolferId : null 
@@ -1034,11 +1037,20 @@ export class DatabaseStorage implements IStorage {
 
   async updateSelection(id: number, selectionData: Partial<Selection>): Promise<Selection> {
     // Convert string dates to Date objects for database
-    // Include captainGolferId if provided, set to null if useCaptainsChip becomes false
-    const dataToUpdate: any = { 
-      ...selectionData,
-      captainGolferId: selectionData.useCaptainsChip ? selectionData.captainGolferId : null
-    };
+    const dataToUpdate: any = { ...selectionData };
+
+    if ("useCaptainsChip" in selectionData) {
+      if (selectionData.useCaptainsChip) {
+        if (selectionData.captainGolferId == null) {
+          throw new Error("captainGolferId is required when useCaptainsChip is true");
+        }
+        dataToUpdate.captainGolferId = selectionData.captainGolferId;
+      } else {
+        dataToUpdate.captainGolferId = null;
+      }
+    } else if ("captainGolferId" in selectionData) {
+      dataToUpdate.captainGolferId = selectionData.captainGolferId ?? null;
+    }
 
     if (typeof dataToUpdate.createdAt === 'string') {
       dataToUpdate.createdAt = new Date(dataToUpdate.createdAt);
