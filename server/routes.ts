@@ -63,6 +63,18 @@ function hashResetToken(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+function hasCompetitionStarted(competition: Pick<Competition, 'startDate' | 'isActive' | 'isComplete'> | null | undefined) {
+  if (!competition) return false;
+  if (competition.isComplete) return true;
+
+  const startDate = new Date(competition.startDate);
+  if (!Number.isNaN(startDate.getTime())) {
+    return new Date() >= startDate;
+  }
+
+  return competition.isActive;
+}
+
 // Extend Express Request type to include user property
 declare global {
   namespace Express {
@@ -986,6 +998,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof competitionId === 'number' && !isNaN(competitionId)) {
          const tokenUser = req.user as ExtendedUser | undefined;
          const currentUserId = tokenUser?.database_id; // Renamed for clarity
+         const competition = await storage.getCompetitionById(competitionId);
+
+         if (!competition) {
+           return res.status(404).json({ error: 'Competition not found' });
+         }
+
+         const competitionStarted = hasCompetitionStarted(competition);
         // Use leaderboardData.standings here
         const enhancedStandings = await Promise.all(leaderboardData.standings.map(async (entry: any) => { // Add type 'any' to entry for now
           // Fetch full user record to get waiver details along with chip status
@@ -993,13 +1012,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const hasUsedCaptainsChip = user?.hasUsedCaptainsChip ?? false;
           const hasUsedWaiverChip = user?.hasUsedWaiverChip ?? false;
           const waiverReplacementGolferId = user?.waiverChipReplacementGolferId; // Get replacement ID
+          const canViewSelections =
+            !!tokenUser?.isAdmin ||
+            competitionStarted ||
+            (typeof currentUserId === 'number' && currentUserId === entry.userId);
 
           let selectionRecord: Selection | undefined = undefined;
           // Fetch selections for the specific user in the leaderboard entry
           selectionRecord = await storage.getUserSelections(entry.userId, competitionId);
 
           // If no selection record, still return the entry with user-level chip status
-          if (!selectionRecord) {
+          if (!selectionRecord || !canViewSelections) {
             return { ...entry, selections: [], hasUsedCaptainsChip, hasUsedWaiverChip, captainGolferId: null, waiverReplacementGolferId: null };
           }
 
@@ -1353,16 +1376,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Invalid user ID parameter' });
       }
 
-      // Optional: Add authorization check if only admins or the user themselves should see this?
-      // For now, assuming any logged-in user can view history via leaderboard expansion.
-      // const tokenUser = req.user as ExtendedUser;
-      // if (!tokenUser.isAdmin && tokenUser.database_id !== userIdToFetch) {
-      //   return res.status(403).json({ error: 'Unauthorized to view this user\'s history' });
-      // }
+      const tokenUser = req.user as ExtendedUser;
+      const canViewAllHistory = tokenUser.isAdmin || tokenUser.database_id === userIdToFetch;
 
       const userSelections = await storage.getUserSelectionsForAllCompetitions(userIdToFetch);
-      console.log(`[Route /api/users/:userId/selections/all] Selections retrieved for user ${userIdToFetch}. Count: ${userSelections?.length ?? 0}`);
-      res.json(userSelections);
+      const visibleSelections = canViewAllHistory
+        ? userSelections
+        : userSelections.filter((selection: any) => hasCompetitionStarted(selection.competition));
+
+      console.log(`[Route /api/users/:userId/selections/all] Selections retrieved for user ${userIdToFetch}. Count: ${userSelections?.length ?? 0}. Visible count: ${visibleSelections?.length ?? 0}`);
+      res.json(visibleSelections);
       console.log(`[Route /api/users/:userId/selections/all] Response sent successfully for user ${userIdToFetch}.`);
     } catch (error) {
       console.error(`[Route /api/users/:userId/selections/all] Error caught for user ${req.params.userId}:`, error);
