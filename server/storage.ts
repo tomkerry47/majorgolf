@@ -248,7 +248,7 @@ export class DatabaseStorage implements IStorage {
   async updateUserPassword(id: number, passwordHash: string): Promise<void> {
     await db
       .update(users)
-      .set({ password: passwordHash })
+      .set({ password: passwordHash, passwordChangedAt: new Date() })
       .where(eq(users.id, id));
   }
 
