@@ -166,7 +166,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
+    // Match exact username OR spaces-stripped case-insensitive (e.g. "jamesbeaumont" matches "James Beaumont")
+    const [user] = await db.select().from(users).where(
+      sql`LOWER(${users.username}) = LOWER(${username}) OR LOWER(REPLACE(${users.username}, ' ', '')) = LOWER(${username})`
+    );
     return formatUserForResponse(user);
   }
 
